@@ -21,13 +21,24 @@
     .read-grid { display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr); }
     @media (min-width: 1024px) { .read-grid { grid-template-columns: minmax(0, 720px) 15rem; justify-content: space-between; gap: 64px; } }
     .rail-sec + .rail-sec { border-top: 1px solid var(--line); padding-top: 24px; }
+    /* share panel: popover on desktop, bottom sheet on phones */
+    #share-panel { position: fixed; z-index: 70; width: 340px; border-radius: 24px; background: var(--paper); padding: 18px;
+      box-shadow: 0 24px 64px rgba(5, 32, 30, .18), inset 0 0 0 1px var(--line-soft); }
+    #share-panel[data-open] { animation: popIn .25s var(--ease); }
+    @keyframes popIn { from { opacity: 0; transform: translateY(6px) scale(.98); } }
+    @media (max-width: 639px) { #share-panel { left: 8px !important; right: 8px; top: auto !important; bottom: 8px; width: auto; } }
+    #share-scrim { position: fixed; inset: 0; z-index: 69; background: rgba(7, 26, 24, .28); }
+    @media (min-width: 640px) { #share-scrim { background: transparent; } }
+    .sh-ch { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 0; border-radius: 14px; background: transparent; font: inherit; font-size: .75rem; color: var(--ink-2); cursor: pointer; transition: background-color .2s; }
+    .sh-ch:hover, .sh-ch[aria-pressed="true"] { background: rgba(16, 37, 35, .05); }
+    .sh-ch i { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 99px; font-style: normal; font-weight: 600; font-size: .8125rem; color: #fff; }
     .pn a { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     .pn a:hover .pn-t { color: var(--accent); }
     .prose pre { position: relative; }
     .prose pre::before { content: attr(data-lang); position: absolute; right: 14px; top: 10px; font-size: 11px; letter-spacing: .06em; color: rgba(215, 238, 234, .45); text-transform: uppercase; }
   </style>
 </head>
-<body class="silva" data-nav="blog" data-proto-states="default:完整;nocover:无封面;notoc:标题不足（无目录）">
+<body class="silva" data-nav="blog" data-proto-states="default:完整;sameday:更新与发布同日;nocover:无封面;notoc:标题不足（无目录）">
 <div id="progress" aria-hidden="true"></div>
 <div id="site-header"></div>
 
@@ -42,13 +53,17 @@
         <a href="category.html" class="chip chip-teal">后端 · 部署</a>
         <h1 class="mt-5 text-[2rem] sm:text-5xl lg:text-[3.5rem] leading-[1.12] font-semibold">基于 GitHub Actions 与 Docker 的 Go 项目部署实战</h1>
         <p class="t-lead ink-2 mt-5 max-w-[40em]">对于 Go 项目，怎样搭一套既简单可靠、又方便回滚的部署流程？这篇从多阶段构建讲到镜像推送、远程部署和一键回滚。</p>
-        <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 t-small">
+      </div>
+        <div class="meta mt-8 flex flex-wrap items-center justify-between gap-4 t-small">
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-3">
           <span class="flex items-center gap-3"><span class="grid place-items-center w-10 h-10 rounded-full bg-[var(--teal)] text-white font-semibold" aria-hidden="true">长</span><span><span class="block font-medium">长林啊</span><span class="block t-xs muted">全栈开发工程师</span></span></span>
-          <span class="muted">发布于 <time datetime="2026-11-18">2026-11-18</time></span>
+          <span class="muted">发布于 <time id="published" datetime="2026-11-18">2026-11-18</time><span id="updated-wrap"> · 更新于 <time id="updated" datetime="2026-11-20">2026-11-20</time></span></span>
           <span class="muted">阅读约 14 分钟</span>
           <span class="muted">4,260 字</span>
+          <span class="flex flex-wrap gap-1.5" aria-label="标签"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></span>
+          </div>
+          <button type="button" class="share-btn btn btn-ghost btn-sm shrink-0" data-share aria-haspopup="dialog" aria-expanded="false"><span data-ico="share"></span>分享</button>
         </div>
-      </div>
       <div data-state="default notoc" class="cover c-deep mt-10 aspect-[16/9] sm:aspect-[21/9] !rounded-[2rem]" role="img" aria-label="封面：CI/CD 字样的深色色板">
         <span class="cover-tag">GitHub Actions · Docker · Go</span>
         <span class="cover-mark !text-[clamp(4rem,12vw,11rem)]">ci/cd</span>
@@ -114,15 +129,8 @@ jobs:
           <p>这套流程没有用到任何复杂的编排工具，但覆盖了日常最需要的三件事：构建可复现、密钥不外泄、出了问题能马上回去。等服务多起来，再考虑引入更完整的平台也不迟。</p>
         </div>
 
-        <aside class="hidden lg:block" aria-label="本文信息与目录">
+        <aside class="hidden lg:block" aria-label="本文目录">
           <div class="sticky top-28 grid gap-6 t-small">
-            <section class="rail-sec grid gap-4" aria-labelledby="info-title">
-              <p id="info-title" class="kicker">本文信息</p>
-              <div><p class="t-xs muted">分类</p><a class="link font-medium" href="category.html">后端</a></div>
-              <div><p class="t-xs muted">标签</p><div class="mt-1.5 flex flex-wrap gap-1.5"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div></div>
-              <div><p class="t-xs muted">更新于</p><p class="font-medium">2026-11-20</p></div>
-              <button type="button" class="btn btn-ghost btn-sm justify-self-start" data-toast="链接已复制">复制链接</button>
-            </section>
             <section data-state="default nocover" class="rail-sec" aria-labelledby="toc-title">
               <p id="toc-title" class="kicker mb-3">On this page</p>
               <nav class="toc" data-toc aria-label="本文目录"></nav>
@@ -137,7 +145,10 @@ jobs:
     <!-- ===== After reading ===== -->
     <footer class="wrap mt-16">
       <div class="max-w-[720px]">
-        <div class="flex flex-wrap gap-2 lg:hidden"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div>
+        <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[rgba(16,37,35,.04)] px-5 py-4">
+          <p class="t-small ink-2">觉得有用？分享给可能需要的人。</p>
+          <button type="button" class="btn btn-dark btn-sm" data-share aria-haspopup="dialog" aria-expanded="false"><span data-ico="share"></span>分享这篇文章</button>
+        </div>
         <nav aria-label="上一篇与下一篇" class="pn mt-10 pt-6 border-t border-[var(--line)] grid gap-5 sm:grid-cols-2 t-small">
           <a href="blog-detail.html" rel="prev"><span class="t-xs muted">← 上一篇</span><span class="pn-t ink-2 truncate transition-colors">用不可变 revision 重写 CMS 的发布流程</span></a>
           <a href="blog-detail.html" rel="next" class="sm:items-end sm:text-right"><span class="t-xs muted">下一篇 →</span><span class="pn-t ink-2 truncate transition-colors max-w-full">Next.js 技术选型攻略：最佳实践与工具推荐</span></a>
@@ -155,10 +166,101 @@ jobs:
   </article>
 </main>
 
+<div id="share-scrim" hidden></div>
+<div id="share-panel" role="dialog" aria-modal="false" aria-labelledby="share-title" hidden>
+  <div class="flex items-center justify-between">
+    <p id="share-title" class="font-semibold">分享这篇文章</p>
+    <button type="button" class="grid place-items-center w-8 h-8 rounded-full hover:bg-[rgba(16,37,35,.06)]" data-share-close aria-label="关闭"><span data-ico="x"></span></button>
+  </div>
+  <div class="mt-4 flex items-center gap-2 rounded-full pl-4 pr-1 py-1 shadow-[inset_0_0_0_1px_var(--line)]">
+    <span id="share-url" class="flex-1 min-w-0 truncate t-small muted mono">silva.dev/blog/go-deploy-actions-docker</span>
+    <button type="button" class="btn btn-dark btn-sm !h-8" id="share-copy">复制链接</button>
+  </div>
+  <div class="mt-4 grid grid-cols-4 gap-1">
+    <button type="button" class="sh-ch" id="share-wechat" aria-pressed="false" aria-controls="share-qr"><i style="background:#07C160">微</i>微信</button>
+    <a class="sh-ch" id="share-weibo" target="_blank" rel="noopener"><i style="background:#E6162D">博</i>微博</a>
+    <a class="sh-ch" id="share-x" target="_blank" rel="noopener"><i style="background:#111">X</i>X</a>
+    <a class="sh-ch" id="share-mail"><i style="background:var(--teal)">@</i>邮件</a>
+  </div>
+  <div id="share-qr" hidden class="mt-3 flex items-center gap-4 rounded-2xl bg-[rgba(16,37,35,.04)] p-4">
+    <svg id="qr" viewBox="0 0 29 29" width="104" height="104" class="shrink-0 rounded-lg bg-white p-1.5" role="img" aria-label="本文链接的二维码"></svg>
+    <p class="t-small ink-2">打开微信「扫一扫」，<br>在手机上继续阅读或转发给朋友。</p>
+  </div>
+  <button type="button" id="share-native" hidden class="btn btn-ghost btn-sm w-full mt-3">更多分享方式…</button>
+</div>
+
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
+document.querySelectorAll('[data-ico]').forEach(el => {
+  const G = { share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/>' };
+  el.outerHTML = G[el.dataset.ico] ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${G[el.dataset.ico]}</svg>` : icon(el.dataset.ico, '', 16);
+});
+
+/* ---- 更新于：only when it differs from 发布于 ---- */
+function syncUpdated(state) {
+  const pub = document.getElementById('published'), up = document.getElementById('updated');
+  up.dateTime = up.textContent = state === 'sameday' ? pub.dateTime : '2026-11-20';
+  document.getElementById('updated-wrap').hidden = up.dateTime === pub.dateTime;
+}
+document.addEventListener('proto:state', e => syncUpdated(e.detail));
+syncUpdated();
+
+/* ---- share ---- */
+(() => {
+  const panel = document.getElementById('share-panel'), scrim = document.getElementById('share-scrim');
+  const url = 'https://silva.dev/blog/go-deploy-actions-docker', title = document.querySelector('h1').textContent;
+  const enc = encodeURIComponent;
+  document.getElementById('share-weibo').href = `https://service.weibo.com/share/share.php?url=${enc(url)}&title=${enc(title)}`;
+  document.getElementById('share-x').href = `https://x.com/intent/post?url=${enc(url)}&text=${enc(title)}`;
+  document.getElementById('share-mail').href = `mailto:?subject=${enc(title)}&body=${enc(title + '\n' + url)}`;
+  const nat = document.getElementById('share-native');
+  if (navigator.share) { nat.hidden = false; nat.onclick = () => navigator.share({ title, url }).catch(() => {}); }
+  let opener = null;
+  function place() {
+    if (!opener || innerWidth < 640) return;
+    const r = opener.getBoundingClientRect(), w = panel.offsetWidth, h = panel.offsetHeight;
+    const below = r.bottom + 10 + h < innerHeight;
+    panel.style.left = Math.max(12, Math.min(r.right - w, innerWidth - w - 12)) + 'px';
+    panel.style.top = Math.max(12, below ? r.bottom + 10 : r.top - h - 10) + 'px';
+  }
+  window.placeShare = place;
+  function open(btn) {
+    opener = btn; panel.hidden = false; scrim.hidden = false; panel.setAttribute('data-open', '');
+    place();
+    document.querySelectorAll('[data-share]').forEach(b => b.setAttribute('aria-expanded', String(b === btn)));
+    document.getElementById('share-copy').focus();
+  }
+  function close() {
+    if (panel.hidden) return;
+    panel.hidden = true; scrim.hidden = true; panel.removeAttribute('data-open');
+    document.querySelectorAll('[data-share]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+    opener && opener.focus();
+  }
+  document.querySelectorAll('[data-share]').forEach(b => b.addEventListener('click', () => panel.hidden ? open(b) : close()));
+  scrim.addEventListener('click', close);
+  panel.querySelector('[data-share-close]').addEventListener('click', close);
+  addEventListener('keydown', e => e.key === 'Escape' && close());
+  addEventListener('scroll', () => { if (!panel.hidden && innerWidth >= 640) close(); }, { passive: true });
+
+  const copy = document.getElementById('share-copy');
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); } catch (_) {}
+    copy.textContent = '已复制 ✓'; setTimeout(() => (copy.textContent = '复制链接'), 1800);
+  });
+
+  /* WeChat: QR panel (prototype draws a deterministic stand-in pattern; production renders the real URL) */
+  const wx = document.getElementById('share-wechat'), qrBox = document.getElementById('share-qr'), qr = document.getElementById('qr');
+  let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  let cells = '';
+  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="#102523"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#fff"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#102523"/>`;
+  const inFinder = (x, y) => (x < 8 && y < 8) || (x > 20 && y < 8) || (x < 8 && y > 20);
+  for (let y = 0; y < 29; y++) for (let x = 0; x < 29; x++) if (!inFinder(x, y) && rnd() > .52) cells += `<rect x="${x}" y="${y}" width="1" height="1" fill="#102523"/>`;
+  qr.innerHTML = cells + finder(0, 0) + finder(22, 0) + finder(0, 22);
+  wx.addEventListener('click', () => { const on = qrBox.hidden; qrBox.hidden = !on; wx.setAttribute('aria-pressed', String(on)); window.placeShare(); });
+})();
+
 const heads = [...document.querySelectorAll('#prose h2, #prose h3')];
 document.querySelectorAll('[data-toc]').forEach(nav => {
   nav.innerHTML = heads.map(h => `<a href="#${h.id}" class="${h.tagName === 'H3' ? 'sub' : ''}" data-for="${h.id}">${h.textContent}</a>`).join('');
