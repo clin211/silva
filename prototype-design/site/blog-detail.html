@@ -6,55 +6,64 @@
   <title>用不可变 revision 重写 CMS 的发布流程 · Silva</title>
   <meta name="description" content="把「保存」「批准」「上线」拆成三个独立状态：旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"> <!-- taste-skill-ignore: mono only inside real code blocks -->
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
   <style>
-    .toc a { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; color: var(--muted); text-decoration: none; transition: color .2s; }
-    .toc a::before { content: ""; flex: 0 0 8px; height: 8px; background: transparent; transform: translateY(-2px); transition: background-color .2s; }
+    .toc a { display: block; padding: 6px 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: .875rem; line-height: 1.5; transition: color .3s, border-color .3s; }
     .toc a:hover { color: var(--ink); }
-    .toc a.on { color: var(--ink); }
-    .toc a.on::before { background: var(--accent); }
-    .toc a.sub { padding-left: 18px; }
+    .toc a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+    .toc a.sub { padding-left: 26px; }
+    #progress { position: fixed; left: 0; top: 0; height: 3px; width: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--accent); z-index: 60; }
   </style>
 </head>
 <body class="silva" data-nav="blog" data-proto-states="default:完整;nocover:无封面;notoc:标题不足（无目录）">
+<div id="progress" aria-hidden="true"></div>
 <div id="site-header"></div>
 
 <main id="main">
-  <nav aria-label="面包屑" class="wrap pt-6 t-small"><p><a class="muted hover:text-[var(--ink)]" style="text-decoration:none" href="home.html">首页</a><span class="muted" aria-hidden="true">　/　</span><a class="muted hover:text-[var(--ink)]" style="text-decoration:none" href="blog.html">文章</a><span class="muted" aria-hidden="true">　/　</span><a class="muted hover:text-[var(--ink)]" style="text-decoration:none" href="category.html">后端工程</a></p></nav>
-
   <article>
-    <!-- 标题区 -->
-    <header class="wrap pt-[clamp(48px,6vw,96px)]">
-      <div class="grid12 gap-y-8 items-end" data-rise>
-        <h1 class="col-span-12 lg:col-span-8 t-head max-w-[12em]">用不可变 revision 重写发布流程</h1>
-        <p class="col-span-12 lg:col-start-9 lg:col-span-4 t-body muted">后端工程 · <time datetime="2026-11-18">2026 年 11 月 18 日</time> · 约 12 分钟<br><a class="link ink" href="about.html">周屿</a></p>
-        <p class="col-span-12 lg:col-span-7 t-lead max-w-[24em]">草稿、审核与上线是三条线。把它们拆开之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。</p>
+    <!-- ===== Title ===== -->
+    <header class="wrap pt-8 sm:pt-12">
+      <div class="max-w-[820px] mx-auto" data-rise>
+        <nav aria-label="面包屑" class="t-small muted flex flex-wrap items-center gap-2">
+          <a class="hover-accent" href="home.html">首页</a><span aria-hidden="true">/</span><a class="hover-accent" href="blog.html">文章</a><span aria-hidden="true">/</span><a class="hover-accent" href="category.html">后端工程</a>
+        </nav>
+        <div class="mt-8 flex flex-wrap items-center gap-3 t-small muted">
+          <a href="category.html" class="chip chip-teal">后端工程</a><time datetime="2026-11-18">2026 年 11 月 18 日</time><span>· 约 12 分钟</span>
+        </div>
+        <h1 class="t-h1 mt-5">用不可变 revision 重写 CMS 的发布流程</h1>
+        <p class="t-lead ink-2 mt-6">草稿、审核与上线是三条线。把它们拆开之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。</p>
+        <a href="about.html" class="group mt-8 inline-flex items-center gap-3">
+          <span class="grid place-items-center w-10 h-10 rounded-full bg-[var(--teal)] text-white font-semibold" aria-hidden="true">周</span>
+          <span><span class="block font-medium hover-accent">周屿</span><span class="block t-xs muted">后端工程师 · 杭州</span></span>
+        </a>
       </div>
     </header>
 
-    <!-- 封面（可选）：被照亮的一圈年轮 -->
-    <figure data-state="default notoc" class="mt-[clamp(56px,7vw,112px)] m-0">
-      <div class="photo lit aspect-[16/10] md:aspect-[21/9]" data-zoom><img src="img/tree-rings.jpg" width="1920" height="823" alt="刚锯开的树干横截面，一圈圈年轮从中心向外排开" class="object-[50%_55%]"></div>
-      <figcaption class="wrap mt-3 t-small muted">每一圈都留在原处，新的一圈长在外面。</figcaption>
+    <!-- ===== Cover (optional) ===== -->
+    <figure data-state="default notoc" class="mx-0 mb-0 mt-10 sm:mt-14">
+      <div class="wrap"><div class="bezel max-w-[1080px] mx-auto">
+        <div class="cover c-deep aspect-[16/9] md:aspect-[21/9]">
+          <span class="cover-tag">后端工程 · 发布系统</span>
+          <span class="cover-mark">rev:v2</span>
+        </div>
+      </div></div>
     </figure>
 
-    <!-- 正文 ＋ 目录 -->
-    <div class="wrap mt-[clamp(56px,7vw,112px)]">
-      <div class="grid12 gap-y-8">
-        <!-- 手机/平板目录：正文前，可折叠 -->
-        <div data-state="default nocover" class="col-span-12 lg:hidden">
-          <button type="button" class="btn btn-quiet w-full justify-between" data-toggle="toc-mobile" aria-expanded="false" aria-controls="toc-mobile">本文目录<span aria-hidden="true">＋</span></button>
-          <nav id="toc-mobile" hidden aria-label="本文目录（手机）" class="toc mt-4 t-body"></nav>
+    <!-- ===== Body + TOC ===== -->
+    <div class="wrap mt-12 sm:mt-16">
+      <div id="layout" class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_15rem] lg:gap-16 max-w-[1080px] mx-auto">
+        <!-- mobile TOC -->
+        <div data-state="default nocover" class="lg:hidden">
+          <button type="button" class="btn btn-ghost w-full justify-between" data-toggle="toc-mobile" aria-expanded="false" aria-controls="toc-mobile">本文目录<span aria-hidden="true">＋</span></button>
+          <nav id="toc-mobile" hidden aria-label="本文目录（手机）" class="toc panel mt-3 p-4"></nav>
         </div>
 
-        <div class="col-span-12 lg:col-start-2 lg:col-span-7 min-w-0">
-          <div id="article-body" class="prose" data-rise>
+        <div id="body-col" class="min-w-0">
+          <div id="article-body" class="prose">
             <p>在最早的版本里，文章只有一张表、一个 <code>status</code> 字段：草稿、已发布、已下线。它很直观，直到我第一次想在不影响线上内容的情况下修改一篇已发布的文章。</p>
             <h2 id="s1">一个字段承担了三件事</h2>
             <p><code>status = published</code> 同时意味着「这是最新内容」「它被批准过」「访客能看到它」。只要我开始编辑，这三件事就不再同时成立。</p>
@@ -68,14 +77,18 @@
             <table>
               <thead><tr><th>指针</th><th>含义</th><th>谁来改变它</th></tr></thead>
               <tbody>
-                <tr><td>current_revision</td><td>当前编辑的版本</td><td>保存 / 自动保存</td></tr>
-                <tr><td>desired_revision</td><td>期望公开的版本</td><td>发布、取消发布</td></tr>
-                <tr><td>live_revision</td><td>当前线上的版本</td><td>站点版本激活</td></tr>
+                <tr><td><code>current_revision</code></td><td>当前编辑的版本</td><td>保存 / 自动保存</td></tr>
+                <tr><td><code>desired_revision</code></td><td>期望公开的版本</td><td>发布、取消发布</td></tr>
+                <tr><td><code>live_revision</code></td><td>当前线上的版本</td><td>站点版本激活</td></tr>
               </tbody>
             </table>
-            <figure class="!mt-10 m-0" data-zoom>
-              <div class="photo aspect-[4/3]"><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1376" height="1032" alt="1937 年拍摄的西黄松树桩切面，标注了 1255 到 1930 年的年轮与火痕" loading="lazy" class="object-[50%_40%]"></div>
-              <figcaption class="mt-3 t-small muted">1937 年的一段西黄松切面，记着 1255 到 1930 年的年轮和火痕。后来的年份没有覆盖前面的，revision 也该这样。</figcaption>
+            <figure class="!mt-10 m-0">
+              <div class="rounded-2xl p-5 sm:p-6 bg-[var(--mist)] ring-1 ring-[var(--line-soft)] grid gap-3 sm:grid-cols-3 text-sm" aria-label="三个指针的示意">
+                <div class="panel p-4"><p class="mono t-xs muted">current</p><p class="font-semibold mt-1">r-7 · 草稿</p></div>
+                <div class="panel p-4"><p class="mono t-xs muted">desired</p><p class="font-semibold mt-1">r-6 · 已批准</p></div>
+                <div class="panel p-4 ring-2 ring-[var(--accent)]"><p class="mono t-xs muted">live</p><p class="font-semibold mt-1">r-5 · g-0141</p></div>
+              </div>
+              <figcaption class="mt-3 t-small muted">三个指针可以指向不同的 revision。新的 revision 长在外面，旧的不会被覆盖。</figcaption>
             </figure>
             <h3 id="s2-1">保存时带上期望版本</h3>
             <p>并发编辑用乐观锁处理。客户端保存时带上它看到的版本号，服务端不一致就返回冲突，而不是悄悄覆盖：</p>
@@ -95,55 +108,77 @@
             <p>三条线让每个状态都有唯一的来源。代价是表和接口多了一些，换来的是：旧版本永远不会被新草稿覆盖，也不会因为一次失败的构建而消失。</p>
           </div>
 
-          <p class="mt-12 t-body" data-rise><span class="muted">标签　</span><a class="link" href="tag.html">#CMS</a>　<a class="link" href="tag.html">#PostgreSQL</a>　<a class="link" href="tag.html">#Axum</a></p>
+          <div class="mt-12 flex flex-wrap items-center gap-2">
+            <span class="t-small muted mr-1">标签</span>
+            <a class="chip hash" href="tag.html">CMS</a><a class="chip hash" href="tag.html">PostgreSQL</a><a class="chip hash" href="tag.html">Axum</a>
+          </div>
+
+          <!-- author card -->
+          <aside aria-label="关于作者" class="bezel mt-10">
+            <div class="face p-6 sm:p-7 grid gap-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+              <span class="grid place-items-center w-14 h-14 rounded-full bg-[var(--teal)] text-white text-lg font-semibold" aria-hidden="true">周</span>
+              <div>
+                <p class="font-semibold">周屿</p>
+                <p class="t-small ink-2 mt-1">在杭州写 Rust 服务端的后端工程师。文章大多来自真实踩过的坑；发现错误欢迎写信指出。</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <a class="btn btn-dark btn-sm" href="about.html">关于我<span class="arrow">↗</span></a>
+                <a class="btn btn-ghost btn-sm" href="mailto:hello@example.com">写信</a>
+              </div>
+            </div>
+          </aside>
         </div>
 
-        <!-- 桌面右侧目录 -->
-        <aside data-state="default nocover" class="hidden lg:block lg:col-start-10 lg:col-span-3" aria-label="本文目录">
-          <div class="sticky top-[12vh]">
-            <h2 class="t-body muted mb-3">本文目录</h2>
-            <nav id="toc-desktop" class="toc t-body" data-rise></nav>
-            <p class="mt-6 t-small"><a class="link muted" href="#main">回到顶部</a></p>
+        <!-- desktop TOC -->
+        <aside id="toc-aside" data-state="default nocover" class="hidden lg:block" aria-label="本文目录">
+          <div class="sticky top-28">
+            <p class="kicker mb-3">本文目录</p>
+            <nav id="toc-desktop" class="toc"></nav>
+            <a class="mt-6 inline-flex items-center gap-2 t-small muted hover-accent" href="#main">回到顶部 ↑</a>
           </div>
         </aside>
       </div>
     </div>
   </article>
 
-  <!-- 上一篇 / 下一篇 -->
-  <nav aria-label="相邻文章" class="section wrap">
-    <div class="grid12 gap-y-14" data-rise>
-      <a href="blog-detail.html" class="col-span-12 md:col-span-5 flex gap-6 items-start no-underline group">
-        <div class="photo w-[120px] md:w-[160px] aspect-[4/5] shrink-0"><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="320" height="400" alt="松树树桩上的年轮" loading="lazy"></div>
-        <span><span class="block t-body muted">上一篇</span><span class="block t-lead mt-2 group-hover:underline underline-offset-4">Axum 中间件的执行顺序，一张图讲清楚</span></span>
-      </a>
-      <a href="blog-detail.html" class="col-span-12 md:col-start-8 md:col-span-5 flex gap-6 items-start no-underline group md:flex-row-reverse md:text-right">
-        <div class="photo w-[120px] md:w-[160px] aspect-[4/5] shrink-0"><img src="img/a-true-bamboo-forest-36443777482.jpg" width="320" height="400" alt="竹林里笔直的竹竿" loading="lazy"></div>
-        <span><span class="block t-body muted">下一篇</span><span class="block t-lead mt-2 group-hover:underline underline-offset-4">静态优先的 Astro 站点，什么时候才需要 Island</span></span>
-      </a>
+  <!-- ===== Prev / next ===== -->
+  <nav aria-label="相邻文章" class="band band-mist mt-20">
+    <div class="wrap">
+      <div class="grid gap-4 md:grid-cols-2">
+        <a href="blog-detail.html" class="group bezel block">
+          <div class="face lift p-4 grid grid-cols-[96px_1fr] sm:grid-cols-[120px_1fr] gap-5 items-center">
+            <div class="cover small c-coral r-md aspect-[4/3]"><span class="cover-mark">fn</span></div>
+            <span class="min-w-0"><span class="block t-small muted">← 上一篇</span><span class="block t-h3 mt-1 line-clamp-2 hover-accent">Axum 中间件的执行顺序，一张图讲清楚</span></span>
+          </div>
+        </a>
+        <a href="blog-detail.html" class="group bezel block">
+          <div class="face lift p-4 grid grid-cols-[1fr_96px] sm:grid-cols-[1fr_120px] gap-5 items-center text-right">
+            <span class="min-w-0"><span class="block t-small muted">下一篇 →</span><span class="block t-h3 mt-1 line-clamp-2 hover-accent">静态优先的 Astro 站点，什么时候才需要 Island</span></span>
+            <div class="cover small c-sun r-md aspect-[4/3]"><span class="cover-mark">&lt;/&gt;</span></div>
+          </div>
+        </a>
+      </div>
+      <p class="mt-10"><a class="btn btn-dark" href="blog.html">回到全部文章<span class="dot"><span class="arrow">↗</span></span></a></p>
     </div>
-    <p class="mt-16"><a class="btn" href="blog.html">回到全部文章<span class="arrow"></span></a></p>
   </nav>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-  // 目录：由正文 h2/h3 生成；标题不足（少于 3 个）时不显示目录
+  // 目录：由正文 h2/h3 生成
   const heads = [...document.querySelectorAll('#article-body h2, #article-body h3')];
   const tocHTML = heads.map(h => `<a href="#${h.id}" class="${h.tagName === 'H3' ? 'sub' : ''}" data-for="${h.id}">${h.textContent}</a>`).join('');
   document.getElementById('toc-desktop').innerHTML = tocHTML;
   document.getElementById('toc-mobile').innerHTML = tocHTML;
-  [...document.getElementById('toc-desktop').children].forEach((a, i) => a.style.setProperty('--n', i));
 
   // 手机目录：点选后收起
   document.getElementById('toc-mobile').addEventListener('click', e => {
     if (e.target.closest('a')) { document.getElementById('toc-mobile').hidden = true; document.querySelector('[aria-controls="toc-mobile"]').setAttribute('aria-expanded', 'false'); }
   });
 
-  // scroll-spy：当前章节 = ink + 青柠小方块
+  // scroll-spy
   const links = [...document.querySelectorAll('.toc a')];
   const setOn = id => links.forEach(a => a.classList.toggle('on', a.dataset.for === id));
   const spy = new IntersectionObserver(es => {
@@ -153,11 +188,17 @@
   heads.forEach(h => spy.observe(h));
   setOn(heads[0].id);
 
-  // notoc 状态：正文往中间靠
+  // 阅读进度
+  const bar = document.getElementById('progress'), art = document.getElementById('article-body');
+  const prog = () => { const r = art.getBoundingClientRect(); const t = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - innerHeight * .6))); bar.style.transform = `scaleX(${t})`; };
+  addEventListener('scroll', () => requestAnimationFrame(prog), { passive: true }); prog();
+
+  // notoc 状态：去掉目录列，正文居中
   document.addEventListener('proto:state', e => {
-    const body = document.getElementById('article-body').parentElement;
-    body.classList.toggle('lg:col-start-3', e.detail === 'notoc');
-    body.classList.toggle('lg:col-start-2', e.detail !== 'notoc');
+    const notoc = e.detail === 'notoc';
+    document.getElementById('layout').classList.toggle('lg:grid-cols-[minmax(0,1fr)_15rem]', !notoc);
+    document.getElementById('body-col').classList.toggle('max-w-[720px]', notoc);
+    document.getElementById('body-col').classList.toggle('mx-auto', notoc);
   });
 </script>
 </body>

@@ -4,254 +4,317 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>周屿 · Silva</title>
-  <meta name="description" content="周屿的技术主页。像树一样，一圈一圈地长：文章、项目、AI 开源项目的每日快照与 MCP Server 目录。">
+  <meta name="description" content="周屿的个人技术门户：后端工程实践的文章、做过的项目、AI 开源项目的每日趋势和 MCP Server 目录。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"> <!-- taste-skill-ignore: mono only for the literal snapshot input -->
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
-  <style>.snap-code { font-family: "JetBrains Mono", ui-monospace, monospace; } /* taste-skill-ignore: literal snapshot data */</style>
+  <style>
+    .hero-reveal { animation: heroIn 1.1s var(--ease) both; animation-delay: calc(var(--d, 0) * 120ms + 80ms); }
+    @keyframes heroIn { from { opacity: 0; transform: translateY(22px); filter: blur(6px); } }
+    @media (prefers-reduced-motion: reduce) { .hero-reveal { animation: none; } }
+    .hero-glow { position: absolute; inset: auto -10% -40% auto; width: 70vw; max-width: 900px; aspect-ratio: 1; border-radius: 50%;
+      background: radial-gradient(closest-side, rgba(94, 214, 204, .35), transparent); pointer-events: none; z-index: -1; }
+  </style>
 </head>
 <body class="silva" data-nav="home" data-proto-states="default:完整资料;noprofile:未配置个人档案;sparse:无精选项目">
 <div id="site-header"></div>
 
-<main id="main">
-  <!-- ===== Hero · lit strip: every frame is one ring the site has grown ===== -->
-  <section aria-labelledby="hero-title" class="relative flex flex-col justify-between min-h-[calc(100svh-88px)] pb-8 md:pb-11">
-    <div class="pt-[6vh] md:pt-[8vh]">
-      <div id="ring-strip" class="drag-row h-[46svh] md:h-[40vh] min-h-[260px] px-[var(--margin)]" data-lit="strip-cap" data-start="2" aria-label="最近长出的几圈：可左右拖动">
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · 用不可变 revision 重写发布流程" data-href="blog-detail.html"><div class="photo dim h-full aspect-[4/3]"><img src="img/tree-rings.jpg" width="1600" height="1200" alt="一段刚锯开的树干横截面，年轮清晰"></div></a>
-        <a href="ai-trending.html" class="block h-full" data-title="AI 趋势 · 本周增长最快：openmind-labs/agentkit +4,812" data-href="ai-trending.html"><div class="photo dim h-full aspect-[4/3]"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="1600" height="1200" alt="雾气中的峨眉山山脊"></div></a>
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · 每日快照相减：AI 榜单的增长口径" data-href="blog-detail.html"><div class="photo dim h-full aspect-[12/13]"><img src="img/cross-section-of-a-sequoia-sempervirens-showing.jpg" width="1600" height="1735" alt="红杉树干横截面，数千圈年轮"></div></a>
-        <a href="project-detail.html" class="block h-full" data-title="项目 · Silva Hub，这个站点本身" data-href="project-detail.html"><div class="photo dim h-full aspect-[3/2]"><img src="img/redshank-moss-forest-flickr-hedera-baltica.jpg" width="1600" height="977" alt="苔藓长出的细茎，像一片微型树林"></div></a>
-        <a href="mcp.html" class="block h-full" data-title="MCP 目录 · 22 个 Server，元数据逐个核对" data-href="mcp.html"><div class="photo dim h-full aspect-[2/3]"><img src="img/cathedral-grove-old-growth-forest-vancouver-island.jpg" width="1600" height="2400" alt="老林里高大的树干，地面长满蕨类"></div></a>
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · PostgreSQL 迁移为什么会锁表" data-href="blog-detail.html"><div class="photo dim h-full aspect-[2/3]"><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1376" height="1991" alt="1937 年拍摄的西黄松树桩切面，记录了 1255 到 1930 年的年轮与火痕"></div></a>
-        <a href="tools.html" class="block h-full" data-title="工具 · 我每天会打开的 18 个" data-href="tools.html"><div class="photo dim h-full aspect-[3/2]"><img src="img/a-true-bamboo-forest-36443777482.jpg" width="1600" height="1060" alt="竹林里笔直的竹竿"></div></a>
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · Axum 中间件的执行顺序" data-href="blog-detail.html"><div class="photo dim h-full aspect-[4/3]"><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="1600" height="1200" alt="松树树桩上的年轮"></div></a>
-        <a href="about.html" class="block h-full" data-title="关于 · 在杭州写后端的第六年" data-href="about.html"><div class="photo dim h-full aspect-[3/2]"><img src="img/longjing-tea-field-dragon-well-area-meijiawu.jpg" width="1600" height="1067" alt="杭州梅家坞的龙井茶田"></div></a>
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · 走出舒适区的第一个 Rust 项目" data-href="blog-detail.html"><div class="photo dim h-full aspect-[4/3]"><img src="img/fog-descending-on-a-pine-forest-unsplash.jpg" width="1600" height="1200" alt="雾气落在松林上"></div></a>
-        <a href="project-detail.html" class="block h-full" data-title="项目 · tidewatch，仓库指标的每日快照" data-href="project-detail.html"><div class="photo dim h-full aspect-[4/3]"><img src="img/mount-lushan-fog.jpg" width="1600" height="1200" alt="庐山的云雾与山崖"></div></a>
-        <a href="blog-detail.html" class="block h-full" data-title="文章 · 给 MCP Server 做目录，而不是做代理" data-href="blog-detail.html"><div class="photo dim h-full aspect-[3/2]"><img src="img/store-mosse-forest.jpg" width="1600" height="1067" alt="秋天的林地，阳光照进树干之间"></div></a>
-      </div>
-      <div class="px-[var(--margin)] mt-3 min-h-[1.6em]"><p id="strip-cap" class="t-small inline-block" aria-live="polite"></p></div>
-    </div>
+<main id="main" class="flush">
+  <!-- ===== Hero · full teal band, name set huge, a live site snapshot on the right ===== -->
+  <section aria-labelledby="hero-title" class="band-teal relative isolate overflow-hidden flex min-h-[calc(100dvh-3rem)] pt-32 pb-12 md:pb-20">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="wrap mt-auto grid gap-12 lg:grid-cols-12 lg:items-end">
+      <div class="lg:col-span-8">
+        <div class="hero-reveal flex flex-wrap items-center gap-3" style="--d:0">
+          <span class="eyebrow">Personal tech portal</span>
+          <span class="t-small muted" data-state="default sparse">浙江，杭州 · 后端工程师</span>
+        </div>
 
-    <div class="wrap w-full mt-[12svh] md:mt-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-      <div data-state="default sparse">
-        <h1 id="hero-title" class="t-head">周屿，一圈一圈地长</h1>
-        <p class="t-lead mt-6 max-w-[26em]">在杭州写 Rust 服务端的后端工程师。Silva 记下我长出的每一圈：文章、项目和每天的开源观察。</p>
+        <div data-state="default sparse">
+          <h1 id="hero-title" class="hero-reveal t-hero mt-6" style="--d:1">周屿</h1>
+          <p class="hero-reveal t-h2 mt-8 max-w-[18em] !leading-snug" style="--d:2">把踩过的坑，<span class="soft">写成能走通的路。</span></p>
+          <p class="hero-reveal t-lead ink-2 mt-5 max-w-[34em]" style="--d:2">这里记录 Rust 服务端和 PostgreSQL 的工程实践、做过的小项目，以及每天对 AI 开源生态的观察。写代码，也写代码之外。</p>
+        </div>
+        <div data-state="noprofile" hidden>
+          <h1 class="hero-reveal t-hero mt-6" style="--d:1">Silva</h1>
+          <p class="hero-reveal t-h2 mt-8 max-w-[18em] !leading-snug" style="--d:2">一个持续更新的<span class="soft">个人技术门户。</span></p>
+          <p class="hero-reveal t-lead ink-2 mt-5 max-w-[34em]" style="--d:2">文章、项目、AI 开源项目趋势与 MCP Server 目录。</p>
+        </div>
+
+        <div class="hero-reveal mt-10 flex flex-wrap gap-3" style="--d:3">
+          <a href="blog.html" class="btn btn-light">阅读最新文章<span class="dot"><span class="arrow">↗</span></span></a>
+          <a href="about.html" class="btn btn-ghost" data-state="default sparse">关于周屿<span class="arrow">↗</span></a>
+        </div>
+        <nav aria-label="继续探索" class="hero-reveal mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 t-small" style="--d:4">
+          <span class="muted">继续探索</span>
+          <a class="link" href="projects.html">项目</a><a class="link" href="tools.html">工具</a><a class="link" href="ai-trending.html">AI 趋势</a><a class="link" href="mcp.html">MCP 目录</a>
+        </nav>
       </div>
-      <div data-state="noprofile" hidden>
-        <h1 class="t-head">Silva，慢慢长大</h1>
-        <p class="t-lead mt-5 max-w-[26em]">一个持续更新的技术主页：文章、项目、AI 开源项目趋势与 MCP Server 目录。</p>
-      </div>
-      <a href="blog.html" class="btn shrink-0 self-start md:self-auto">读最近的文章<span class="arrow"></span></a>
+
+      <!-- live snapshot: what the current site generation contains -->
+      <aside aria-label="站点此刻" class="hero-reveal lg:col-span-4" style="--d:3">
+        <div class="rounded-[2rem] p-1.5 bg-white/10 ring-1 ring-white/15">
+          <div class="rounded-[calc(2rem-6px)] bg-[#06666E]/70 backdrop-blur p-6">
+            <div class="flex items-center justify-between">
+              <p class="kicker !text-white/60">Site snapshot</p>
+              <span class="flex items-center gap-2 t-xs text-white/70"><span class="w-2 h-2 rounded-full bg-[#F6BF35]"></span>g-0142 在线</span>
+            </div>
+            <dl class="mt-5 grid grid-cols-2 gap-x-4 gap-y-5">
+              <div><dt class="t-xs text-white/60">文章</dt><dd class="m-0 text-3xl font-semibold num">35</dd></div>
+              <div><dt class="t-xs text-white/60">项目</dt><dd class="m-0 text-3xl font-semibold num">7</dd></div>
+              <div><dt class="t-xs text-white/60">AI 榜单收录</dt><dd class="m-0 text-3xl font-semibold num">412</dd></div>
+              <div><dt class="t-xs text-white/60">MCP Server</dt><dd class="m-0 text-3xl font-semibold num">22</dd></div>
+            </dl>
+            <a href="ai-trending-detail.html" class="mt-6 flex items-center justify-between gap-4 rounded-2xl bg-white/10 px-4 py-3 hover:bg-white/15 transition-colors">
+              <span class="min-w-0"><span class="block t-xs text-white/60">本周增长最快</span><span class="block truncate font-medium">openmind-labs/agentkit</span></span>
+              <span class="mono num font-medium text-[#F6CF6B]">+4,812</span>
+            </a>
+          </div>
+        </div>
+      </aside>
     </div>
   </section>
 
-  <!-- ===== Writing · sticky photograph, active list ===== -->
-  <section aria-labelledby="writing-title" class="section wrap">
-    <div class="grid12 gap-y-10">
-      <div class="col-span-12 md:col-span-5">
-        <div class="md:sticky md:top-[12vh]">
-          <div class="photo aspect-[4/5] relative" id="writing-photo" data-zoom>
-            <img src="img/tree-rings.jpg" width="1200" height="1500" alt="" class="absolute inset-0">
+  <!-- ===== Recent writing ===== -->
+  <section aria-labelledby="recent-title" class="band">
+    <div class="wrap">
+      <header class="max-w-4xl" data-rise>
+        <span class="eyebrow">最近更新</span>
+        <h2 id="recent-title" class="t-h1 mt-5">最近写下的，<span class="soft">以及正在思考的。</span></h2>
+      </header>
+
+      <div class="mt-12 grid gap-8 lg:grid-cols-12">
+        <!-- featured -->
+        <article class="lg:col-span-7" data-rise>
+          <a href="blog-detail.html" class="group block bezel">
+            <div class="face overflow-hidden lift">
+              <div class="cover c-deep aspect-[16/9] !rounded-none">
+                <span class="cover-tag">后端 · 发布系统</span>
+                <span class="cover-mark">rev:v2</span>
+              </div>
+              <div class="p-6 md:p-8">
+                <div class="flex flex-wrap items-center gap-3 t-small muted">
+                  <span class="chip chip-teal">后端</span><time datetime="2026-11-18">2026-11-18</time><span>· 12 分钟</span>
+                </div>
+                <h3 class="t-h2 mt-4 hover-accent">用不可变 revision 重写 CMS 的发布流程</h3>
+                <p class="ink-2 mt-3 line-clamp-3">把「保存」「批准」「上线」拆成三个互不干扰的状态。新草稿在审核时，旧版本照常在线；构建失败也不会把线上拖下水。这篇从数据模型讲到发布队列，以及为什么 slug 首次发布后要锁定。</p>
+                <span class="mt-6 inline-flex items-center gap-2 t-small font-medium">阅读全文<span class="arrow">↗</span></span>
+              </div>
+            </div>
+          </a>
+        </article>
+
+        <!-- list -->
+        <div class="lg:col-span-5 flex flex-col" data-rise>
+          <div class="rows">
+            <article>
+              <a href="blog-detail.html" class="group grid grid-cols-[1fr_96px] sm:grid-cols-[1fr_120px] gap-5 py-6 first:pt-0">
+                <div class="min-w-0">
+                  <span class="chip">Rust</span>
+                  <h3 class="t-h3 mt-3 line-clamp-2 hover-accent">Axum 中间件的执行顺序</h3>
+                  <time class="block t-small muted mt-2" datetime="2026-11-12">2026-11-12</time>
+                </div>
+                <div class="cover small c-coral r-md aspect-[4/3]"><span class="cover-mark">fn</span></div>
+              </a>
+            </article>
+            <article>
+              <a href="blog-detail.html" class="group grid grid-cols-[1fr_96px] sm:grid-cols-[1fr_120px] gap-5 py-6">
+                <div class="min-w-0">
+                  <span class="chip">前端</span>
+                  <h3 class="t-h3 mt-3 line-clamp-2 hover-accent">静态优先的 Astro 站点，什么时候才需要 Island</h3>
+                  <time class="block t-small muted mt-2" datetime="2026-11-03">2026-11-03</time>
+                </div>
+                <div class="cover small c-sun r-md aspect-[4/3]"><span class="cover-mark">&lt;/&gt;</span></div>
+              </a>
+            </article>
+            <article>
+              <a href="blog-detail.html" class="group grid grid-cols-[1fr_96px] sm:grid-cols-[1fr_120px] gap-5 py-6">
+                <div class="min-w-0">
+                  <span class="chip">数据库</span>
+                  <h3 class="t-h3 mt-3 line-clamp-2 hover-accent">PostgreSQL 迁移为什么会锁表</h3>
+                  <time class="block t-small muted mt-2" datetime="2026-10-15">2026-10-15</time>
+                </div>
+                <div class="cover small c-ink r-md aspect-[4/3]"><span class="cover-mark">pg</span></div>
+              </a>
+            </article>
+          </div>
+          <a href="blog.html" class="mt-2 inline-flex items-center gap-2 font-medium hover-accent">查看全部 35 篇文章<span class="arrow arrow-r">→</span></a>
+
+          <div class="mt-auto pt-8 grid sm:grid-cols-2 gap-3">
+            <a href="category.html" class="panel group p-5 flex items-center justify-between gap-3">
+              <span><span class="block t-xs muted">热门分类</span><span class="block font-medium mt-1 hover-accent">后端工程 · 14 篇</span></span><span class="arrow arrow-r">→</span>
+            </a>
+            <a href="tools.html" class="panel group p-5 flex items-center justify-between gap-3">
+              <span><span class="block t-xs muted">顺手工具</span><span class="block font-medium mt-1 hover-accent">pgcli</span></span><span class="arrow arrow-r">→</span>
+            </a>
           </div>
         </div>
       </div>
-      <div class="col-span-12 md:col-start-7 md:col-span-6" data-rise>
-        <h2 id="writing-title" class="t-head mb-12">最近写的</h2>
-        <ul id="writing-list" class="list-none p-0 m-0">
-          <li><a class="link" href="blog-detail.html">用不可变 revision 重写 CMS 的发布流程</a></li>
-        </ul>
-        <a href="blog.html" class="link inline-block mt-10">全部 35 篇文章<span class="arrow"></span></a>
-      </div>
     </div>
   </section>
 
-  <!-- ===== Projects · loose scatter with pauses ===== -->
-  <section aria-labelledby="work-title" class="section wrap">
-    <h2 id="work-title" class="t-head">项目</h2>
-
-    <div data-state="default noprofile">
-      <figure class="grid12 mt-14 m-0" data-rise>
-        <a href="project-detail.html" class="col-span-12 md:col-span-6 block no-underline">
-          <figcaption class="t-body muted mb-3">Silva Hub · 维护中</figcaption>
-          <div class="photo aspect-[3/2]"><img src="img/redshank-moss-forest-flickr-hedera-baltica.jpg" width="1600" height="1067" alt="苔藓长出的细茎特写" loading="lazy"></div>
-          <p class="mt-4">这个站点本身：Astro 静态前台、React 后台和 Rust Axum API，内容按不可变修订发布。</p>
-        </a>
-      </figure>
-
-      <div class="grid12 md:-mt-20 mt-[72px]">
-        <p class="hidden md:block col-start-2 col-span-4 self-center t-lead max-w-[14em]">每个项目都从一个让我不太舒服的问题开始。</p>
-        <figure class="col-span-12 md:col-start-9 md:col-span-4 m-0 w-[68%] md:w-auto ml-auto" data-rise>
-          <a href="project-detail.html" class="block no-underline">
-            <figcaption class="t-body muted mb-3">tidewatch · 开发中</figcaption>
-            <div class="photo aspect-[4/5]"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="1200" height="1500" alt="雾中的山脊" loading="lazy"></div>
-            <p class="mt-4">采集 GitHub 仓库指标，每天存一次快照，用快照相减算增长。</p>
-          </a>
-        </figure>
-      </div>
-      <p class="md:hidden t-lead mt-[72px] max-w-[14em]">每个项目都从一个让我不太舒服的问题开始。</p>
-
-      <figure class="grid12 m-0 mt-[72px] md:mt-[24vh]" data-rise>
-        <a href="project-detail.html" class="col-span-12 md:col-start-3 md:col-span-7 block w-[82%] md:w-auto no-underline">
-          <figcaption class="t-body muted mb-3">pgmigrate-lint · 已归档</figcaption>
-          <div class="photo aspect-[16/9]"><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1600" height="900" alt="老树桩切面上的年轮与火痕" loading="lazy" class="object-[50%_35%]"></div>
-          <p class="mt-4">在 CI 里检查 PostgreSQL 迁移会不会锁表，在它伤到线上之前拦下来。</p>
-        </a>
-      </figure>
-
-      <figure class="grid12 m-0 mt-[72px] md:mt-[22vh]" data-rise>
-        <a href="project-detail.html" class="col-span-12 md:col-span-6 block no-underline">
-          <figcaption class="t-body muted mb-3">ring-log · 维护中</figcaption>
-          <div class="photo aspect-[3/2]"><img src="img/longjing-tea-field-dragon-well-area-meijiawu.jpg" width="1600" height="1067" alt="一垄一垄的龙井茶树" loading="lazy"></div>
-          <p class="mt-4">把每次部署记成一行只追加的日志，回看时像数年轮一样清楚。</p>
-        </a>
-      </figure>
-      <a href="projects.html" class="link inline-block mt-16">全部 7 个项目<span class="arrow"></span></a>
-    </div>
-
-    <div data-state="sparse" hidden class="mt-14 max-w-[34em]">
-      <p class="t-lead">还没有设为精选的项目。</p>
-      <a href="projects.html" class="link inline-block mt-6">浏览全部项目<span class="arrow"></span></a>
-    </div>
-  </section>
-
-  <!-- ===== The live thing · two snapshots, one growth (AI trending's real rule) ===== -->
-  <section aria-labelledby="snap-title" class="section">
-    <div class="grid md:grid-cols-2">
-      <div class="field-black relative md:min-h-[90svh] min-h-[62svh] px-[var(--margin)] pt-[12svh] md:pt-[27svh] pb-24">
-        <label for="snap-input" class="t-body block mb-4" style="color:#cfd6cc">改改这两天的快照试试，右边会立刻重算。</label>
-        <textarea id="snap-input" spellcheck="false" rows="4" class="snap-code w-full max-w-[34ch] bg-transparent text-white border-0 p-0 resize-none outline-none focus-visible:outline-2 focus-visible:outline-[var(--accent)] t-body leading-[1.7]" data-code>openmind-labs/agentkit
-2026-11-13  33402
-2026-11-20  38214</textarea>
-        <h2 id="snap-title" class="absolute left-[var(--margin)] bottom-8 t-head">两次快照</h2>
-      </div>
-      <div class="field-light relative md:min-h-[90svh] min-h-[62svh] px-[var(--margin)] pt-16 md:pt-[27svh] pb-28">
-        <div data-ui class="max-w-[480px]" aria-live="polite">
-          <p class="t-small muted">近 7 天 Stars 净增长</p>
-          <p id="snap-repo" class="t-lead mt-2 break-all">openmind-labs/agentkit</p>
-          <p id="snap-growth" class="mt-4 t-head">+4,812</p>
-          <p id="snap-note" class="mt-5 max-w-[30em]">两天都有快照，直接相减。</p>
-          <a href="ai-trending.html" class="link inline-block mt-8">看完整的 AI 开源项目榜单<span class="arrow"></span></a>
-          <p class="t-body muted mt-8 max-w-[34em]">榜单每天按 UTC 采集一次，只统计收录范围内的公开仓库。负增长照实显示，缺一天快照就写「数据不足」，不当成 0。</p>
+  <!-- ===== Happening now · projects, AI trending, inputs ===== -->
+  <section aria-labelledby="now-title" class="band band-deep">
+    <div class="wrap">
+      <header class="grid gap-6 lg:grid-cols-12 lg:items-end" data-rise>
+        <div class="lg:col-span-7">
+          <span class="eyebrow">正在发生</span>
+          <h2 id="now-title" class="t-h1 mt-5">此刻在做什么、<span class="soft block">在看什么？</span></h2>
         </div>
-        <p class="absolute right-[var(--margin)] bottom-8 t-head text-right" aria-hidden="true">一个增长</p>
+        <p class="lg:col-span-5 ink-2">一份持续更新的工作切片：正在维护的项目、AI 开源生态的每日变化，以及最近的输入。</p>
+      </header>
+
+      <div class="mt-12 grid gap-6 lg:grid-cols-12">
+        <!-- featured projects -->
+        <article class="bezel lg:col-span-7">
+          <div class="face h-full p-6 md:p-8 flex flex-col">
+            <header class="flex items-start justify-between gap-6">
+              <div><p class="kicker">Build log</p><h3 class="t-h2 mt-2">精选项目</h3></div>
+              <span class="mono text-4xl font-medium text-white/20 num" data-state="default noprofile">03</span>
+            </header>
+            <ol class="rows mt-6 list-none p-0" data-state="default noprofile">
+              <li class="py-5 first:pt-0">
+                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
+                  <span class="mono t-small muted pt-1">01</span>
+                  <div>
+                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">Silva Hub · 这个站点本身</h4><span class="chip chip-teal">维护中</span></div>
+                    <p class="t-small ink-2 mt-2">Astro 静态前台、React 后台和 Rust Axum API；内容按不可变修订发布，旧构建不会覆盖新版本。</p>
+                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">astro</span><span class="chip hash">postgres</span></div>
+                  </div>
+                </a>
+              </li>
+              <li class="py-5">
+                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
+                  <span class="mono t-small muted pt-1">02</span>
+                  <div>
+                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">tidewatch</h4><span class="chip chip-sun">开发中</span></div>
+                    <p class="t-small ink-2 mt-2">每天采集 GitHub 仓库指标，存一次快照，用快照相减算增长；缺一天就写「数据不足」。</p>
+                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">github-api</span><span class="chip hash">worker</span></div>
+                  </div>
+                </a>
+              </li>
+              <li class="py-5 pb-0">
+                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
+                  <span class="mono t-small muted pt-1">03</span>
+                  <div>
+                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">pgmigrate-lint</h4><span class="chip">已归档</span></div>
+                    <p class="t-small ink-2 mt-2">在 CI 里检查 PostgreSQL 迁移会不会锁表，在它伤到线上之前拦下来。</p>
+                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">postgres</span><span class="chip hash">ci</span></div>
+                  </div>
+                </a>
+              </li>
+            </ol>
+            <div data-state="sparse" hidden class="mt-6 rounded-2xl bg-white/5 p-6">
+              <p class="ink-2">还没有设为精选的项目。</p>
+            </div>
+            <a href="projects.html" class="mt-auto pt-6 inline-flex items-center gap-2 t-small font-medium hover-accent">全部 7 个项目<span class="arrow arrow-r">→</span></a>
+          </div>
+        </article>
+
+        <!-- AI trending -->
+        <article class="bezel lg:col-span-5">
+          <div class="face h-full p-6 md:p-8 flex flex-col">
+            <header class="flex items-start justify-between gap-6">
+              <div><p class="kicker">Field notes</p><h3 class="t-h2 mt-2">AI 开源趋势</h3></div>
+              <span class="chip chip-teal">近 7 天</span>
+            </header>
+            <p class="t-small muted mt-2">Stars 净增长 · 数据日期 <time datetime="2026-11-20">2026-11-20</time>（UTC）</p>
+            <ol class="mt-5 list-none p-0 grid gap-1">
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">1</span><span class="truncate hover-accent">openmind-labs/agentkit</span><span class="mono num t-small text-[#8FE6DE]">+4,812</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">2</span><span class="truncate hover-accent">vecstore/lattice</span><span class="mono num t-small text-[#8FE6DE]">+3,207</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">3</span><span class="truncate hover-accent">promptworks/evalkit</span><span class="mono num t-small text-[#8FE6DE]">+2,684</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">4</span><span class="truncate hover-accent">rustml/candle-serve</span><span class="mono num t-small text-[#8FE6DE]">+1,955</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">5</span><span class="truncate hover-accent">mcp-tools/gateway</span><span class="mono num t-small text-[#8FE6DE]">+1,402</span></a></li>
+            </ol>
+            <p class="t-xs muted mt-4">只统计收录范围内的公开仓库；负增长照实显示。</p>
+            <a href="ai-trending.html" class="mt-auto pt-6 inline-flex items-center gap-2 t-small font-medium hover-accent">看完整榜单<span class="arrow arrow-r">→</span></a>
+          </div>
+        </article>
+
+        <!-- inputs -->
+        <article class="bezel lg:col-span-12">
+          <div class="face p-6 md:p-8">
+            <header class="flex flex-wrap items-end justify-between gap-4">
+              <div><p class="kicker">Input stream</p><h3 class="t-h2 mt-2">正在输入</h3></div>
+              <p class="t-small muted max-w-md">阅读建立坐标，练习形成手感。进度只是切片，不是终点。</p>
+            </header>
+            <div class="mt-8 grid gap-10 md:grid-cols-2">
+              <div>
+                <p class="t-small font-medium muted">在读</p>
+                <ul class="mt-4 list-none p-0 grid gap-5">
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">Designing Data-Intensive Applications</p><p class="t-xs muted">Martin Kleppmann</p></div><span class="mono t-small num">70%</span></div><div class="bar mt-3"><i style="width:70%"></i></div></li>
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">Rust for Rustaceans</p><p class="t-xs muted">Jon Gjengset</p></div><span class="mono t-small num">45%</span></div><div class="bar mt-3"><i style="width:45%"></i></div></li>
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">PostgreSQL 14 Internals</p><p class="t-xs muted">Egor Rogov</p></div><span class="mono t-small num">30%</span></div><div class="bar mt-3"><i style="width:30%"></i></div></li>
+                </ul>
+              </div>
+              <div>
+                <p class="t-small font-medium muted">在练</p>
+                <ul class="mt-4 list-none p-0 grid gap-5">
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">Tokio 运行时与取消安全</p><p class="t-xs muted">select! 与 drop 的边界。</p></div><span class="mono t-small num">60%</span></div><div class="bar mt-3"><i style="width:60%"></i></div></li>
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">MCP 协议与传输方式</p><p class="t-xs muted">stdio、SSE 与 Streamable HTTP。</p></div><span class="mono t-small num">50%</span></div><div class="bar mt-3"><i style="width:50%"></i></div></li>
+                  <li><div class="flex justify-between gap-4"><div><p class="font-medium">Astro 内容集合与增量构建</p><p class="t-xs muted">构建快照与站点版本。</p></div><span class="mono t-small num">40%</span></div><div class="bar mt-3"><i style="width:40%"></i></div></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </article>
       </div>
     </div>
   </section>
 
-  <!-- ===== About · portrait as drop cap (the portrait is a ring, not a face) ===== -->
-  <section data-state="default sparse" aria-label="关于周屿" class="section wrap">
-    <div class="grid12 gap-y-10">
-      <dl class="col-span-12 md:col-span-2 order-2 md:order-1 grid grid-cols-3 md:grid-cols-1 gap-4 t-body content-start m-0">
-        <div><dt class="muted">在</dt><dd class="m-0">浙江杭州</dd></div>
-        <div><dt class="muted">写后端</dt><dd class="m-0">2020 年起</dd></div>
-        <div><dt class="muted">找我</dt><dd class="m-0"><a class="link" href="mailto:hello@example.com">发邮件</a></dd></div>
-      </dl>
-      <div class="col-span-12 md:col-start-3 md:col-span-10 order-1 md:order-2 t-lead" data-rise>
-        <p><span class="float-left w-[4.4em] h-[4.4em] mr-[.5em] mt-[.2em] photo"><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="400" height="400" alt="松树树桩的年轮" loading="lazy" class="w-full h-full object-cover"></span><span class="ink">周屿，</span><span class="muted">在杭州写后端的第六年。Silva 是我给自己的提醒：像树一样走出舒适区，一圈一圈地往外长。每篇文章、每个项目都是新长出的一圈，旧的那圈不会被抹掉。</span></p>
-        <p class="muted mt-[1.3em]">现在我关注 Rust 服务端、静态优先的构建流程，和让开发者更省心的工具。<a class="link ink" href="about.html">更完整的介绍</a>写在关于页。</p>
+  <!-- ===== About ===== -->
+  <section data-state="default sparse" aria-labelledby="about-title" class="band band-mist">
+    <div class="wrap grid gap-12 lg:grid-cols-12">
+      <div class="lg:col-span-6" data-rise>
+        <span class="eyebrow">关于周屿</span>
+        <h2 id="about-title" class="t-h1 mt-7">不求一下子长高，<span class="soft block">只求每年多长一圈。</span></h2>
+        <p class="t-lead ink-2 mt-7">我是周屿，在杭州写 Rust 服务端的后端工程师。关注发布链路、数据一致性，以及让开发者更省心的工具。</p>
+        <p class="ink-2 mt-4">Silva 不是「森林」，是像树一样走出舒适区、一圈一圈往外长。这里既是知识库，也是公开的成长记录。</p>
+        <dl class="mt-8 grid grid-cols-2 gap-6 max-w-sm">
+          <div><dt class="kicker">Base</dt><dd class="m-0 mt-1 font-medium">浙江，杭州</dd></div>
+          <div><dt class="kicker">Experience</dt><dd class="m-0 mt-1 font-medium">6 年后端经验</dd></div>
+        </dl>
+        <a href="about.html" class="btn btn-dark mt-10">查看完整介绍<span class="dot"><span class="arrow">↗</span></span></a>
       </div>
+
+      <aside class="lg:col-span-6 bezel" aria-labelledby="principle-title">
+        <div class="face h-full p-6 md:p-8 flex flex-col">
+          <header class="flex flex-wrap items-start justify-between gap-6">
+            <div><p class="kicker">Working principles</p><h3 id="principle-title" class="t-h2 mt-2">我的工作方法</h3></div>
+            <div class="text-right"><p class="mono text-3xl font-medium num">03</p><p class="t-xs muted">Principles</p></div>
+          </header>
+          <ol class="rows mt-6 list-none p-0">
+            <li class="grid grid-cols-[2.5rem_1fr] gap-3 py-5 first:pt-0"><span class="mono t-small text-[var(--accent)] pt-0.5">01</span><div><h4 class="font-semibold">一份数据只有一个可信来源</h4><p class="t-small ink-2 mt-1">先把状态和边界想清楚，再写代码；不清楚的地方留在设计里，不留在线上。</p></div></li>
+            <li class="grid grid-cols-[2.5rem_1fr] gap-3 py-5"><span class="mono t-small text-[var(--accent)] pt-0.5">02</span><div><h4 class="font-semibold">把过程写清楚</h4><p class="t-small ink-2 mt-1">记录判断、取舍与失败，让一次解决问题的经验可以被再次使用。</p></div></li>
+            <li class="grid grid-cols-[2.5rem_1fr] gap-3 py-5 pb-0"><span class="mono t-small text-[var(--accent)] pt-0.5">03</span><div><h4 class="font-semibold">持续做小作品</h4><p class="t-small ink-2 mt-1">用可以运行的东西验证想法，在交付和反馈中建立长期能力。</p></div></li>
+          </ol>
+          <footer class="mt-auto pt-8 flex flex-wrap gap-2">
+            <span class="chip hash">后端工程</span><span class="chip hash">技术写作</span><span class="chip hash">开源观察</span><span class="chip hash">走出舒适区</span>
+          </footer>
+        </div>
+      </aside>
     </div>
   </section>
 
-  <!-- ===== Contact · one field ===== -->
-  <section aria-labelledby="contact-title" class="wrap pt-[clamp(120px,14vw,200px)]">
-    <form id="ask" class="max-w-[520px]" action="mailto:hello@example.com" method="get">
-      <h2 id="contact-title" class="t-lead font-medium"><span class="muted block">想聊聊，或者发现文章里有错？</span><span class="block">写在这里，直接发到我的邮箱。</span></h2>
-      <div class="relative mt-7">
-        <label for="ask-text" class="sr-only">你想说的话</label>
-        <input id="ask-text" name="body" class="input" placeholder="比如：Axum 那篇的中间件顺序画反了" autocomplete="off">
-        <button class="sq absolute right-2 top-2 h-11" type="submit" aria-label="用邮件发送">→</button>
+  <!-- ===== Contact ===== -->
+  <section aria-labelledby="contact-title" class="band band-sun">
+    <div class="wrap" data-rise>
+      <span class="eyebrow">保持联系</span>
+      <h2 id="contact-title" class="mt-6 max-w-4xl text-4xl sm:text-5xl lg:text-6xl leading-[1.05] font-semibold">有值得继续聊的问题，<span class="block text-[#102523]/55">欢迎来找我。</span></h2>
+      <div class="mt-10 flex flex-wrap gap-3">
+        <a href="mailto:hello@example.com" class="btn btn-dark">发邮件<span class="dot"><span class="arrow">↗</span></span></a>
+        <a href="https://github.com/" target="_blank" rel="noopener" class="btn btn-ghost">GitHub<span class="arrow">↗</span><span class="sr-only">（新窗口打开）</span></a>
+        <a href="#rss" class="btn btn-ghost">RSS 订阅<span class="arrow">↗</span></a>
       </div>
-      <p class="t-body muted mt-4">会打开你自己的邮件客户端，不经过任何服务器。</p>
-    </form>
-    <dl class="mt-[72px] grid sm:grid-cols-3 gap-5 t-body max-w-[720px]">
-      <div><dt class="muted">邮箱</dt><dd class="m-0"><a class="link" href="mailto:hello@example.com">hello@example.com</a></dd></div>
-      <div><dt class="muted">GitHub</dt><dd class="m-0"><a class="link" href="https://github.com/" target="_blank" rel="noopener">@zhouyu</a></dd></div>
-      <div><dt class="muted">订阅</dt><dd class="m-0"><a class="link" href="#rss">RSS</a></dd></div>
-    </dl>
+    </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
-<script>
-/* ---- Writing list: active row crossfades the sticky photograph ---- */
-const POSTS = [
-  ['用不可变 revision 重写 CMS 的发布流程', '11-18', 'img/tree-rings.jpg', '把「保存」「批准」「上线」拆成三个独立状态。旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。'],
-  ['Axum 中间件的执行顺序', '11-12', 'img/growth-rings-on-stump-of-pine-2.jpg', '从 Layer 的包裹方向讲起，顺便整理 request ID 和 tracing 该放在哪一层。'],
-  ['静态优先的 Astro 站点，什么时候才需要 Island', '11-03', 'img/a-true-bamboo-forest-36443777482.jpg', '筛选、分页和图表之外，几乎所有页面都可以在构建时生成好。'],
-  ['每日快照相减：AI 榜单的增长口径', '10-27', 'img/cross-section-of-a-sequoia-sempervirens-showing.jpg', '为什么增长可以是负数，为什么缺一天就写「数据不足」，以及一批只成功一半时该怎么办。'],
-  ['PostgreSQL 迁移为什么会锁表', '10-15', 'img/1937-ponderosa-pine-stump-section-showing-tree.jpg', '加列、加索引、改类型分别会拿什么锁，以及怎样把一次迁移拆成不阻塞线上的几步。'],
-  ['给 MCP Server 做目录，而不是做代理', '10-02', 'img/cathedral-grove-old-growth-forest-vancouver-island.jpg', '目录只核对元数据，不运行、不代理、不保管密钥。这条边界让整件事简单了很多。'],
-  ['走出舒适区的第一个 Rust 项目', '09-20', 'img/fog-descending-on-a-pine-forest-unsplash.jpg', '从 Go 换到 Rust 的前三个月：和借用检查器吵架，然后慢慢开始信任它。'],
-];
-const list = document.getElementById('writing-list');
-const photo = document.getElementById('writing-photo');
-list.innerHTML = POSTS.map(([t, d, img, desc], i) => `
-  <li>
-    <a href="blog-detail.html" class="block py-4 no-underline" data-i="${i}" aria-describedby="wd-${i}">
-      <span class="flex items-baseline justify-between gap-6 t-lead">
-        <span class="row-title muted transition-colors duration-300">${t}</span>
-        <span class="t-small muted shrink-0">${d}</span>
-      </span>
-      <span id="wd-${i}" class="row-desc block t-body max-w-[30em] mt-2" hidden>${desc}</span>
-    </a>
-  </li>`).join('');
-const rows = [...list.querySelectorAll('a[data-i]')];
-let cur = -1;
-function activate(i) {
-  if (i === cur) return; cur = i;
-  rows.forEach((r, j) => {
-    const t = r.querySelector('.row-title');
-    t.classList.toggle('ink', j === i); t.classList.toggle('muted', j !== i);
-    r.querySelector('.row-desc').hidden = j !== i;
-  });
-  const img = document.createElement('img');
-  img.src = POSTS[i][2]; img.alt = ''; img.className = 'absolute inset-0 opacity-0 transition-opacity duration-300';
-  photo.appendChild(img);
-  requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('opacity-0')));
-  setTimeout(() => { while (photo.children.length > 1) photo.firstElementChild.remove(); }, 350);
-}
-rows.forEach(r => { const i = +r.dataset.i; r.addEventListener('mouseenter', () => activate(i)); r.addEventListener('focus', () => activate(i)); });
-const rowIO = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && activate(+e.target.dataset.i)), { rootMargin: '-45% 0px -45% 0px' });
-rows.forEach(r => rowIO.observe(r));
-activate(0);
-
-/* ---- Snapshot calculator: growth = newest − one week earlier; missing → 数据不足 ---- */
-const inp = document.getElementById('snap-input');
-function recompute() {
-  const lines = inp.value.split('\n').map(s => s.trim()).filter(Boolean);
-  const repo = lines.find(l => !/^\d{4}-\d{2}-\d{2}/.test(l)) || '未命名仓库';
-  const snaps = lines.filter(l => /^\d{4}-\d{2}-\d{2}/.test(l)).map(l => {
-    const [d, v] = l.split(/\s+/); const n = v ? Number(v.replace(/[,_]/g, '')) : NaN; return { d, n };
-  });
-  document.getElementById('snap-repo').textContent = repo;
-  const g = document.getElementById('snap-growth'), note = document.getElementById('snap-note');
-  if (snaps.length < 2 || snaps.slice(-2).some(s => !Number.isFinite(s.n))) {
-    g.textContent = '数据不足'; note.textContent = '少了一天的快照，增长没法算，所以照实写「数据不足」，不当成 0。';
-    return;
-  }
-  const [a, b] = snaps.slice(-2), diff = b.n - a.n;
-  g.textContent = (diff > 0 ? '+' : diff < 0 ? '−' : '') + Math.abs(diff).toLocaleString('en-US');
-  note.textContent = diff < 0 ? `${a.d} 到 ${b.d} 少了 ${Math.abs(diff).toLocaleString('en-US')} 颗星。负增长照实显示，不会被藏起来。` : `${a.d} 到 ${b.d} 两天都有快照，直接相减。`;
-}
-inp.addEventListener('input', recompute); recompute();
-
-/* ---- Contact: hand the words to the visitor's own mail client ---- */
-document.getElementById('ask').addEventListener('submit', e => {
-  e.preventDefault();
-  const body = document.getElementById('ask-text').value.trim();
-  location.href = 'mailto:hello@example.com?subject=' + encodeURIComponent('来自 Silva 的留言') + '&body=' + encodeURIComponent(body);
-});
-</script>
 </body>
 </html>

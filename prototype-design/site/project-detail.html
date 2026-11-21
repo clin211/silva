@@ -6,10 +6,8 @@
   <title>tidewatch · 项目 · Silva</title>
   <meta name="description" content="tidewatch：采集 GitHub 仓库指标并保存每日快照，用快照相减计算 7 天和 30 天增长。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"> <!-- taste-skill-ignore: mono only inside the real <pre><code> block -->
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
@@ -18,44 +16,45 @@
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Title ===== -->
-  <section aria-labelledby="page-title" class="wrap pt-8 md:pt-12">
-    <nav aria-label="面包屑" class="muted"><ol class="flex flex-wrap gap-2 list-none p-0 m-0">
-      <li><a class="link" href="home.html">首页</a></li><li aria-hidden="true">/</li>
-      <li><a class="link" href="projects.html">项目</a></li><li aria-hidden="true">/</li>
-      <li aria-current="page" class="ink">tidewatch</li>
+  <div class="wrap">
+    <nav aria-label="面包屑" class="pt-8 t-small muted"><ol class="flex flex-wrap gap-2 list-none p-0 m-0">
+      <li><a class="hover-accent" href="home.html">首页</a></li><li aria-hidden="true">/</li>
+      <li><a class="hover-accent" href="projects.html">项目</a></li><li aria-hidden="true">/</li>
+      <li aria-current="page" class="ink-2">tidewatch</li>
     </ol></nav>
 
-    <div class="grid12 gap-y-8 mt-12 md:mt-20 items-end" data-rise>
-      <div class="col-span-12 md:col-span-7">
-        <h1 id="page-title" class="t-head">tidewatch</h1>
-        <p class="mt-6"><span class="ink">开发中</span><span class="muted">，2026 年 6 月开始长，最近一次更新在 11 月 16 日。</span></p>
-        <p class="t-lead mt-6 max-w-[24em]">采集 GitHub 仓库指标并保存每日快照，用快照相减计算 7 天和 30 天增长；数据不足时如实标注，而不是显示 0。</p>
+    <!-- ===== Header ===== -->
+    <header class="grid gap-8 pt-8 pb-10 lg:grid-cols-12 lg:items-end" data-rise>
+      <div class="lg:col-span-7">
+        <div class="flex flex-wrap items-center gap-3"><span class="eyebrow">项目</span><span class="chip chip-sun">开发中</span></div>
+        <h1 id="page-title" class="t-h1 mt-4">tidewatch</h1>
+        <p class="t-lead ink-2 mt-5 max-w-[34em]">采集 GitHub 仓库指标并保存每日快照，用快照相减计算 7 天和 30 天增长；数据不足时如实标注，而不是显示 0。</p>
       </div>
       <!-- 只显示已配置的链接 -->
-      <div class="col-span-12 md:col-start-9 md:col-span-4 flex flex-wrap items-center gap-x-8 gap-y-4 md:justify-end">
-        <a class="btn" href="https://github.com/" target="_blank" rel="noopener">GitHub 仓库<span aria-hidden="true">↗</span><span class="sr-only">（外部链接，新标签页打开）</span></a>
-        <a data-state="default" class="link" href="https://example.com/" target="_blank" rel="noopener">在线演示 ↗<span class="sr-only">（外部链接，新标签页打开）</span></a>
-        <a data-state="default" class="link" href="https://example.com/" target="_blank" rel="noopener">项目主页 ↗<span class="sr-only">（外部链接，新标签页打开）</span></a>
+      <div class="lg:col-span-5 flex flex-wrap gap-3 lg:justify-end">
+        <a class="btn btn-dark" href="https://github.com/" target="_blank" rel="noopener">GitHub 仓库<span class="dot"><span class="arrow">↗</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a>
+        <a data-state="default" class="btn btn-ghost" href="https://example.com/" target="_blank" rel="noopener">在线演示<span class="arrow">↗</span><span class="sr-only">（外部链接，新标签页打开）</span></a>
+        <a data-state="default" class="btn btn-ghost" href="https://example.com/" target="_blank" rel="noopener">项目主页<span class="arrow">↗</span><span class="sr-only">（外部链接，新标签页打开）</span></a>
       </div>
-    </div>
-  </section>
+    </header>
 
-  <!-- ===== Cover: one lit, full-width photograph (optional) ===== -->
-  <figure data-state="default" class="m-0 mt-16 md:mt-24 px-[var(--margin)]" data-zoom>
-    <div class="photo lit aspect-[16/9] md:aspect-[21/9]"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="1920" height="823" alt="清晨雾气中的山脊，层层叠叠" class="object-[50%_40%]"></div>
-  </figure>
+    <!-- ===== Cover (optional) ===== -->
+    <figure data-state="default" class="m-0 bezel">
+      <div class="cover c-deep aspect-[16/9] md:aspect-[21/8]">
+        <span class="cover-tag">snapshot 2026-11-20 − snapshot 2026-11-13</span>
+        <span class="cover-mark">+4,812</span>
+      </div>
+    </figure>
 
-  <!-- ===== Facts + description ===== -->
-  <section class="wrap mt-20 md:mt-28">
-    <div class="grid12 gap-y-14">
-      <aside aria-label="项目信息" class="col-span-12 md:col-span-3" data-rise>
-        <dl class="md:sticky md:top-[12vh] grid grid-cols-2 md:grid-cols-1 gap-x-6 gap-y-7 m-0">
-          <div class="col-span-2 md:col-span-1"><dt class="muted">技术栈</dt><dd class="m-0 mt-1">Rust、Tokio、reqwest、PostgreSQL</dd></div>
-          <div><dt class="muted">开始于</dt><dd class="m-0 mt-1">2026 年 6 月</dd></div>
-          <div><dt class="muted">最近更新</dt><dd class="m-0 mt-1">2026 年 11 月 16 日</dd></div>
-          <div class="col-span-2 md:col-span-1"><dt class="muted">相关链接</dt>
-            <dd class="m-0 mt-1"><ul class="list-none p-0 m-0 grid gap-2">
+    <!-- ===== Facts + description ===== -->
+    <div class="grid gap-10 py-12 md:py-16 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14">
+      <aside aria-label="项目信息">
+        <dl class="lg:sticky lg:top-28 panel p-6 grid grid-cols-2 lg:grid-cols-1 gap-x-6 gap-y-5 m-0 t-small">
+          <div class="col-span-2 lg:col-span-1"><dt class="t-xs muted">技术栈</dt><dd class="m-0 mt-2 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">tokio</span><span class="chip hash">reqwest</span><span class="chip hash">postgresql</span></dd></div>
+          <div><dt class="t-xs muted">开始于</dt><dd class="m-0 mt-1 font-medium">2026 年 6 月</dd></div>
+          <div><dt class="t-xs muted">最近更新</dt><dd class="m-0 mt-1 font-medium">2026 年 11 月 16 日</dd></div>
+          <div class="col-span-2 lg:col-span-1 border-t border-[var(--line-soft)] pt-5"><dt class="t-xs muted">相关链接</dt>
+            <dd class="m-0 mt-2"><ul class="list-none p-0 m-0 grid gap-2">
               <li><a class="link" href="blog-detail.html">设计笔记：限流、退避与幂等批次</a></li>
               <li data-state="default"><a class="link" href="https://example.com/" target="_blank" rel="noopener">更新日志 ↗<span class="sr-only">（外部链接）</span></a></li>
             </ul></dd>
@@ -63,17 +62,17 @@
         </dl>
       </aside>
 
-      <article class="col-span-12 md:col-start-5 md:col-span-8">
+      <article class="min-w-0">
         <div class="prose" data-rise>
-          <h2 id="why">为什么做它</h2>
+          <h2 id="why" style="margin-top:0">为什么做它</h2>
           <p>GitHub 页面只显示当前 Stars，看不出最近一周涨了多少。tidewatch 每天在固定的 UTC 时间窗口抓取一次指标，保存为快照，增长由两份快照相减得到。</p>
-          <p>就像数年轮：单看树干的粗细说明不了什么，要看最近长出的那一圈有多宽。</p>
+          <p>单看总数说明不了什么，要看最近这段时间长了多少。</p>
         </div>
 
-        <figure class="m-0 my-14 grid grid-cols-2 gap-[10px]" data-rise>
-          <div class="photo aspect-square"><img src="img/cross-section-of-a-sequoia-sempervirens-showing.jpg" width="900" height="900" alt="红杉树干横截面，数千圈年轮" loading="lazy"></div>
-          <div class="photo aspect-square"><img src="img/tree-rings.jpg" width="900" height="900" alt="一段刚锯开的树干，年轮清晰" loading="lazy"></div>
-          <figcaption class="col-span-2 muted mt-3">增长看的是最外面那一圈，不是整棵树有多粗。</figcaption>
+        <figure class="m-0 my-10 grid grid-cols-2 gap-3 max-w-[720px]" data-rise>
+          <div class="panel p-5"><p class="t-xs muted">2026-11-13 快照</p><p class="mono text-2xl md:text-3xl font-medium mt-2 num">33,402</p></div>
+          <div class="panel p-5"><p class="t-xs muted">2026-11-20 快照</p><p class="mono text-2xl md:text-3xl font-medium mt-2 num">38,214</p></div>
+          <figcaption class="col-span-2 t-small muted">两天都有快照才相减：+4,812。缺一天就写「数据不足」。</figcaption>
         </figure>
 
         <div class="prose" data-rise>
@@ -91,23 +90,28 @@ batch 2026-11-20 committed</code></pre>
         </div>
       </article>
     </div>
-  </section>
+  </div>
 
-  <!-- ===== Next ring ===== -->
-  <section aria-labelledby="next-title" class="section wrap">
-    <a href="project-detail.html" class="grid12 gap-y-6 no-underline items-end">
-      <div class="col-span-12 md:col-span-7 photo aspect-[16/9]" data-zoom><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1600" height="900" alt="1937 年拍摄的老树桩切面，年轮与火痕" loading="lazy" class="object-[50%_35%]"></div>
-      <div class="col-span-12 md:col-start-9 md:col-span-4" data-rise>
-        <h2 id="next-title" class="t-head">pgmigrate-lint</h2>
-        <p class="mt-4">下一个项目，已归档。在 CI 里检查 PostgreSQL 迁移会不会锁表。<span class="arrow"></span></p>
-      </div>
-    </a>
-    <a href="projects.html" class="link inline-block mt-16">返回全部项目</a>
+  <!-- ===== Next ===== -->
+  <section aria-labelledby="next-title" class="band band-mist">
+    <div class="wrap">
+      <p class="kicker">Next project</p>
+      <a href="project-detail.html" class="group mt-4 block bezel">
+        <div class="face grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-center p-1.5 lift">
+        <div class="cover c-ink r-md aspect-[16/9]"><span class="cover-mark">pg</span></div>
+        <div class="p-4 md:p-8">
+          <div class="flex flex-wrap items-center gap-3"><h2 id="next-title" class="t-h2 hover-accent">pgmigrate-lint</h2><span class="chip">已归档</span></div>
+          <p class="ink-2 mt-3">在 CI 里检查 PostgreSQL 迁移会不会锁表。</p>
+          <span class="mt-5 inline-flex items-center gap-2 t-small font-medium">查看项目<span class="arrow arrow-r">→</span></span>
+        </div>
+        </div>
+      </a>
+      <a href="projects.html" class="mt-8 inline-flex items-center gap-2 font-medium hover-accent"><span aria-hidden="true">←</span>返回全部项目</a>
+    </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 </body>

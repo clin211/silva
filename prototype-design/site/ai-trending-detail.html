@@ -6,133 +6,126 @@
   <title>openmind-labs/agentkit · AI 趋势 · Silva</title>
   <meta name="description" content="openmind-labs/agentkit 的每日快照：Stars、Forks、近 7 / 30 天增长与 60 天趋势。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
-  <style>.sign { font-family: "Noto Serif SC", serif; } /* Boska draws + as a bar */</style>
 </head>
 <body class="silva" data-nav="ai-trending" data-proto-states="default:样本充足;insufficient:样本不足">
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Repo: name, description, topics, GitHub — beside a lit photograph ===== -->
-  <section aria-labelledby="repo-title" class="wrap pt-8 md:pt-12">
-    <nav aria-label="面包屑" class="t-body muted" data-rise>
-      <a href="ai-trending.html" class="link">AI 趋势</a> <span aria-hidden="true">/</span> <span aria-current="page">openmind-labs/agentkit</span>
+  <div class="wrap">
+    <nav aria-label="面包屑" class="t-small muted pt-8">
+      <a href="ai-trending.html" class="hover-accent">AI 趋势</a> <span aria-hidden="true" class="mx-1">/</span> <span aria-current="page" class="text-[var(--ink)]">openmind-labs/agentkit</span>
     </nav>
-    <div class="grid12 gap-y-10 mt-10 md:mt-14 items-end">
-      <div class="col-span-12 md:col-span-7" data-rise>
-        <h1 id="repo-title" class="t-head break-all">openmind-labs/agentkit</h1>
-        <p class="t-lead mt-8 max-w-[24em]">面向生产环境的多智能体编排框架，提供任务分解、工具调用重试和可追踪的执行轨迹。</p>
-        <p class="t-body muted mt-5">Python · agents · llm · tool-use</p>
-        <div class="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
-          <a href="https://github.com/" target="_blank" rel="noopener" class="btn">在 GitHub 查看<span class="arrow"></span><span class="sr-only">（外部链接）</span></a>
-          <p class="t-body muted">最近一次快照：<time datetime="2026-11-20" class="ink">2026 年 11 月 20 日</time>（UTC）</p>
+
+    <!-- ===== Header ===== -->
+    <header aria-labelledby="repo-title" class="grid gap-8 border-b border-[var(--line)] pt-6 pb-12 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-14 lg:pb-14" data-rise>
+      <div>
+        <div class="flex flex-wrap items-center gap-2"><span class="eyebrow">仓库快照</span><span class="chip">Python</span><span class="chip hash">agents</span><span class="chip hash">llm</span><span class="chip hash">tool-use</span></div>
+        <h1 id="repo-title" class="t-h1 mt-5 break-all">openmind-labs/agentkit</h1>
+        <p class="t-lead ink-2 mt-5 max-w-[34em]">面向生产环境的多智能体编排框架，提供任务分解、工具调用重试和可追踪的执行轨迹。</p>
+        <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <a href="https://github.com/" target="_blank" rel="noopener" class="btn btn-dark">在 GitHub 查看<span class="dot"><span class="arrow">↗</span></span><span class="sr-only">（外部链接）</span></a>
+          <p class="t-small muted">最近一次快照：<time datetime="2026-11-20" class="text-[var(--ink)] font-medium">2026-11-20</time>（UTC）</p>
         </div>
       </div>
-      <figure class="col-span-12 md:col-start-9 md:col-span-4 m-0" data-zoom>
-        <div class="photo aspect-[4/5]"><img src="img/redshank-moss-forest-flickr-hedera-baltica.jpg" width="1200" height="1500" alt="苔藓长出的细茎，一根根往上长" class="object-[30%_50%]"></div>
-      </figure>
-    </div>
-  </section>
-
-  <!-- ===== Figures, set large as plain text ===== -->
-  <section aria-labelledby="metrics-title" class="wrap section">
-    <h2 id="metrics-title" class="sr-only">摘要指标</h2>
-    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-10 m-0" data-rise>
-      <div class="flex flex-col-reverse"><dt class="t-body muted mt-2">近 7 天 Stars 净增长</dt>
-        <dd class="m-0 t-head up" data-state="default"><span class="sign">+</span>4,812</dd><!-- taste-skill-ignore: Boska has no usable plus sign -->
-        <dd class="m-0 t-lead muted" data-state="insufficient" hidden>数据不足</dd></div>
-      <div class="flex flex-col-reverse"><dt class="t-body muted mt-2">近 30 天 Stars 净增长</dt>
-        <dd class="m-0 t-head up" data-state="default"><span class="sign">+</span>12,960</dd>
-        <dd class="m-0 mt-2 t-lead muted" data-state="insufficient" hidden>数据不足</dd></div>
-    </dl>
-    <dl class="grid grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-8 mt-14 m-0" data-rise>
-      <div><dt class="t-body muted">Stars</dt><dd class="m-0 mt-1 t-lead">28,416</dd></div>
-      <div><dt class="t-body muted">Forks</dt><dd class="m-0 mt-1 t-lead">2,903</dd></div>
-      <div><dt class="t-body muted">Open Issues</dt><dd class="m-0 mt-1 t-lead">187</dd></div>
-      <div><dt class="t-body muted">最新 Release</dt><dd class="m-0 mt-1 t-lead">v0.14.2 <span class="t-body muted">· 11 月 15 日</span></dd></div>
-    </dl>
-    <p class="t-body muted mt-10 max-w-[38em]">增长是每日快照相减得出的，可能是负数；刚收录、快照天数不够时写「数据不足」。</p>
-  </section>
-
-  <!-- ===== Trend chart + snapshot table ===== -->
-  <section aria-labelledby="trend-title" class="wrap section">
-    <div class="flex flex-wrap items-end justify-between gap-6" data-rise>
-      <h2 id="trend-title" class="t-head">60 天的生长曲线</h2>
-      <div data-state="default" class="choice" role="group" aria-label="切换指标">
-        <button type="button" data-metric="stars" aria-pressed="true">Stars</button>
-        <button type="button" data-metric="forks" aria-pressed="false">Forks</button>
-      </div>
-    </div>
-
-    <div data-state="default" class="grid12 gap-y-14 mt-12" data-rise>
-      <figure class="col-span-12 lg:col-span-8 m-0" data-ui>
-        <div class="relative">
-          <svg id="chart" class="w-full h-[280px] md:h-[380px] block" role="img" tabindex="0" aria-describedby="chart-help"></svg>
-          <div id="tip" hidden class="pointer-events-none absolute z-10 px-3 py-2 t-small whitespace-nowrap" style="background:var(--surface-2);color:var(--ink)"></div>
+      <!-- growth figures -->
+      <dl class="bezel self-end m-0">
+        <div class="face p-6 grid grid-cols-2 gap-5">
+          <div><dt class="t-xs muted">近 7 天 Stars 净增长</dt>
+            <dd class="m-0 mt-1 text-3xl font-semibold mono up" data-state="default">+4,812</dd>
+            <dd class="m-0 mt-1 text-xl font-medium muted" data-state="insufficient" hidden>数据不足</dd></div>
+          <div><dt class="t-xs muted">近 30 天 Stars 净增长</dt>
+            <dd class="m-0 mt-1 text-3xl font-semibold mono up" data-state="default">+12,960</dd>
+            <dd class="m-0 mt-1 text-xl font-medium muted" data-state="insufficient" hidden>数据不足</dd></div>
+          <p class="col-span-2 t-xs muted border-t border-[var(--line-soft)] pt-4">增长是每日快照相减得出的，可能是负数；刚收录、快照天数不够时写「数据不足」。</p>
         </div>
-        <figcaption id="chart-help" class="t-body muted mt-4 max-w-[38em]">近 60 天的每日快照（UTC）。把鼠标放在曲线上，或聚焦图表后用左右方向键、Home、End 逐日查看。</figcaption>
-      </figure>
-      <div class="col-span-12 lg:col-start-10 lg:col-span-3">
-        <h3 class="t-lead">最近 14 天</h3>
-        <div class="overflow-auto max-h-[440px] mt-4">
+      </dl>
+    </header>
+
+    <!-- ===== Metrics ===== -->
+    <section aria-labelledby="metrics-title" class="pt-10">
+      <h2 id="metrics-title" class="sr-only">摘要指标</h2>
+      <dl class="grid grid-cols-2 lg:grid-cols-4 gap-3 m-0" data-rise>
+        <div class="panel p-5"><dt class="t-xs muted">Stars</dt><dd class="m-0 mt-1 text-2xl font-semibold mono">28,416</dd></div>
+        <div class="panel p-5"><dt class="t-xs muted">Forks</dt><dd class="m-0 mt-1 text-2xl font-semibold mono">2,903</dd></div>
+        <div class="panel p-5"><dt class="t-xs muted">Open Issues</dt><dd class="m-0 mt-1 text-2xl font-semibold mono">187</dd></div>
+        <div class="panel p-5"><dt class="t-xs muted">最新 Release</dt><dd class="m-0 mt-1 text-2xl font-semibold mono">v0.14.2</dd><dd class="m-0 t-xs muted">2026-11-15</dd></div>
+      </dl>
+    </section>
+
+    <!-- ===== Trend chart + snapshot table ===== -->
+    <section aria-labelledby="trend-title" class="pt-16">
+      <div class="flex flex-wrap items-end justify-between gap-6">
+        <div><span class="eyebrow">趋势</span><h2 id="trend-title" class="t-h2 mt-3">近 60 天每日快照</h2></div>
+        <div data-state="default" class="choice" role="group" aria-label="切换指标">
+          <button type="button" data-metric="stars" aria-pressed="true">Stars</button>
+          <button type="button" data-metric="forks" aria-pressed="false">Forks</button>
+        </div>
+      </div>
+
+      <div data-state="default" class="grid gap-6 mt-8 lg:grid-cols-12">
+        <figure class="lg:col-span-8 m-0 bezel">
+          <div class="face p-4 md:p-6 h-full">
+            <div class="relative">
+              <svg id="chart" class="w-full h-[260px] md:h-[360px] block" role="img" tabindex="0" aria-describedby="chart-help"></svg>
+              <div id="tip" hidden class="pointer-events-none absolute z-10 px-3 py-2 t-small whitespace-nowrap rounded-xl bg-[var(--ink)] text-white shadow-lg"></div>
+            </div>
+            <figcaption id="chart-help" class="t-xs muted mt-3">近 60 天的每日快照（UTC）。把鼠标放在曲线上，或聚焦图表后用左右方向键、Home、End 逐日查看。</figcaption>
+          </div>
+        </figure>
+        <div class="lg:col-span-4 bezel">
+          <div class="face p-4 md:p-6 h-full">
+            <h3 class="t-h3">最近 14 天</h3>
+            <div class="overflow-auto max-h-[400px] mt-3 -mx-2">
+              <table class="data-table">
+                <thead><tr><th scope="col">日期</th><th scope="col" class="num">Stars</th><th scope="col" class="num">较前日</th></tr></thead>
+                <tbody id="snap-rows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- insufficient samples: say why, show what exists -->
+      <div data-state="insufficient" hidden class="mt-8 rounded-[1.5rem] bg-[var(--mist)] p-8 md:p-12 grid gap-8 md:grid-cols-2 md:items-center">
+        <div>
+          <span class="chip">样本不足</span>
+          <h3 class="t-h2 mt-4">快照还太少，画不出曲线</h3>
+          <p class="ink-2 mt-3">这个仓库 11 月 18 日才进入收录范围，目前只有 3 份每日快照。至少要有 7 份，才能算近 7 天的增长并画出曲线。</p>
+        </div>
+        <div class="panel p-4">
           <table class="data-table">
-            <thead><tr><th scope="col">日期</th><th scope="col" class="num">Stars</th><th scope="col" class="num">较前日</th></tr></thead>
-            <tbody id="snap-rows"></tbody>
+            <caption class="sr-only">已有快照</caption>
+            <thead><tr><th scope="col">日期</th><th scope="col" class="num">Stars</th></tr></thead>
+            <tbody>
+              <tr><td>2026-11-18</td><td class="num mono">27,102</td></tr>
+              <tr><td>2026-11-19</td><td class="num mono">27,780</td></tr>
+              <tr><td>2026-11-20</td><td class="num mono">28,416</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- insufficient samples: say why, show what exists -->
-    <div data-state="insufficient" hidden class="grid12 gap-y-10 mt-12 items-center">
-      <div class="col-span-12 md:col-span-5">
-        <div class="photo aspect-[4/3]"><img src="img/fog-descending-on-a-pine-forest-unsplash.jpg" width="1200" height="900" alt="雾气落在松林上" loading="lazy"></div>
+    <!-- ===== Why it is listed ===== -->
+    <section aria-labelledby="why-title" class="py-16">
+      <div class="rounded-[1.5rem] bg-[var(--teal)] text-white p-8 md:p-10 grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+        <div class="max-w-2xl">
+          <p class="t-xs text-white/70">收录说明</p>
+          <h2 id="why-title" class="t-h2 mt-3">为什么它在榜上</h2>
+          <p class="text-white/85 mt-3">它命中了 agents 这个 topic，是公开仓库，不是 fork，也没有归档，所以从 9 月 22 日起每天都有一张快照。</p>
+        </div>
+        <a href="ai-trending.html" class="btn btn-light">← 回到 AI 趋势榜</a>
       </div>
-      <div class="col-span-12 md:col-start-7 md:col-span-6" data-rise>
-        <h3 class="t-lead">快照还太少，画不出曲线</h3>
-        <p class="t-body mt-5 max-w-[32em]">这个仓库 11 月 18 日才进入收录范围，目前只有 3 份每日快照。至少要有 7 份，才能算近 7 天的增长并画出曲线。</p>
-        <table class="data-table mt-8 max-w-[360px]">
-          <caption class="sr-only">已有快照</caption>
-          <thead><tr><th scope="col">日期</th><th scope="col" class="num">Stars</th></tr></thead>
-          <tbody>
-            <tr><td>11 月 18 日</td><td class="num">27,102</td></tr>
-            <tr><td>11 月 19 日</td><td class="num">27,780</td></tr>
-            <tr><td>11 月 20 日</td><td class="num">28,416</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Why it is listed: a pause with three photographs ===== -->
-  <section aria-labelledby="why-title" class="wrap section">
-    <div class="grid12 gap-y-10">
-      <div class="col-span-12 md:col-span-7">
-        <div class="photo aspect-[16/9]" data-zoom><img src="img/a-true-bamboo-forest-36443777482.jpg" width="1600" height="900" alt="竹林里一根根笔直的竹竿" loading="lazy"></div>
-      </div>
-      <div class="col-span-12 md:col-start-9 md:col-span-4 self-end" data-rise>
-        <h2 id="why-title" class="t-lead">为什么它在榜上</h2>
-        <p class="t-body mt-5">它命中了 agents 这个 topic，是公开仓库，不是 fork，也没有归档，所以从 9 月 22 日起每天都有一张快照。</p>
-        <a href="ai-trending.html" class="link inline-block mt-8">← 回到 AI 趋势榜</a>
-      </div>
-      <div class="col-span-6 md:col-start-2 md:col-span-3 md:-mt-10" data-zoom>
-        <div class="photo aspect-square"><img src="img/tree-rings.jpg" width="800" height="800" alt="锯开的树干横截面" loading="lazy"></div>
-      </div>
-      <div class="col-span-6 md:col-start-6 md:col-span-3 mt-16 md:mt-24" data-zoom>
-        <div class="photo aspect-[3/4]"><img src="img/longjing-tea-field-dragon-well-area-meijiawu.jpg" width="900" height="1200" alt="一垄一垄的龙井茶树" loading="lazy" class="object-[60%_50%]"></div>
-      </div>
-    </div>
-  </section>
+    </section>
+  </div>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
@@ -152,16 +145,16 @@
   const kf = 2903 - snaps[N - 1].forks; snaps.forEach(x => x.forks += kf);
 
   const fmt = n => n.toLocaleString('en-US');
-  const md = d => `${+d.slice(5, 7)} 月 ${+d.slice(8)} 日`;
-  const signed = n => `<span class="${n < 0 ? 'down' : 'up'}"><span class="sign">${n < 0 ? '−' : '+'}</span>${fmt(Math.abs(n))}</span>`;
+  const md = d => d.slice(5);
+  const signed = n => `<span class="${n < 0 ? 'down' : 'up'} mono">${n < 0 ? '−' : '+'}${fmt(Math.abs(n))}</span>`;
   const svg = document.getElementById('chart');
   const tip = document.getElementById('tip');
   let metric = 'stars', idx = N - 1, geo = null;
-  const FONT = 'Boska, Noto Serif SC, serif';
+  const FONT = 'Geist Mono, ui-monospace, monospace';
 
   function draw() {
     const W = svg.clientWidth || 800, H = svg.clientHeight || 300;
-    const m = { l: 64, r: 12, t: 14, b: 32 };
+    const m = { l: 56, r: 10, t: 14, b: 30 };
     const vals = snaps.map(x => x[metric]);
     let lo = Math.min(...vals), hi = Math.max(...vals);
     const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
@@ -172,18 +165,20 @@
     let grid = '';
     for (let i = 0; i <= 4; i++) {
       const v = lo + (hi - lo) * i / 4, y = Y(v);
-      grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="#2a442b" stroke-width="1"/>
-               <text x="${m.l - 12}" y="${y + 5}" text-anchor="end" font-size="14" fill="#b3bdb1" font-family="${FONT}">${fmt(Math.round(v))}</text>`;
+      grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="rgba(16,37,35,.08)" stroke-width="1"/>
+               <text x="${m.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#5B6F6C" font-family="${FONT}">${fmt(Math.round(v))}</text>`;
     }
-    const xl = [0, 15, 30, 45, N - 1].map(i => `<text x="${X(i)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === N - 1 ? 'end' : 'middle'}" font-size="14" fill="#b3bdb1" font-family="${FONT}">${md(snaps[i].d)}</text>`).join('');
+    const ticks = W < 500 ? [0, 30, N - 1] : [0, 15, 30, 45, N - 1];
+    const xl = ticks.map(i => `<text x="${X(i)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === N - 1 ? 'end' : 'middle'}" font-size="11" fill="#5B6F6C" font-family="${FONT}">${md(snaps[i].d)}</text>`).join('');
     const line = vals.map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1)).join(' ');
     const area = line + ` L${X(N - 1)} ${H - m.b} L${X(0)} ${H - m.b} Z`;
-    svg.innerHTML = `${grid}${xl}
-      <path d="${area}" fill="#c6f19d" fill-opacity=".07"/>
-      <path d="${line}" fill="none" stroke="#c6f19d" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>
-      <line id="cur-line" y1="${m.t}" y2="${H - m.b}" stroke="#f1f4ee" stroke-opacity=".35" stroke-dasharray="3 3"/>
-      <circle id="cur-dot" r="5" fill="#0f1f10" stroke="#c6f19d" stroke-width="2.5"/>`;
-    svg.setAttribute('aria-label', `${metric === 'stars' ? 'Stars' : 'Forks'} 近 60 天趋势：从 ${md(snaps[0].d)}的 ${fmt(vals[0])} 到 ${md(snaps[N - 1].d)}的 ${fmt(vals[N - 1])}。`);
+    svg.innerHTML = `<defs><linearGradient id="fillg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B8992" stop-opacity=".18"/><stop offset="1" stop-color="#0B8992" stop-opacity="0"/></linearGradient></defs>
+      ${grid}${xl}
+      <path d="${area}" fill="url(#fillg)"/>
+      <path d="${line}" fill="none" stroke="#0B8992" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>
+      <line id="cur-line" y1="${m.t}" y2="${H - m.b}" stroke="#102523" stroke-opacity=".25" stroke-dasharray="3 3"/>
+      <circle id="cur-dot" r="5" fill="#fff" stroke="#0B8992" stroke-width="2.5"/>`;
+    svg.setAttribute('aria-label', `${metric === 'stars' ? 'Stars' : 'Forks'} 近 60 天趋势：从 ${snaps[0].d} 的 ${fmt(vals[0])} 到 ${snaps[N - 1].d} 的 ${fmt(vals[N - 1])}。`);
     focus(idx, false);
   }
   function focus(i, show = true) {
@@ -193,7 +188,8 @@
     const dot = svg.querySelector('#cur-dot'); dot.setAttribute('cx', x); dot.setAttribute('cy', y);
     if (!show) { tip.hidden = true; return; }
     const prev = idx ? snaps[idx][metric] - snaps[idx - 1][metric] : null;
-    tip.innerHTML = `<div class="muted">${md(snaps[idx].d)}</div><div>${metric === 'stars' ? 'Stars' : 'Forks'} ${fmt(snaps[idx][metric])}</div>${prev === null ? '' : `<div>较前一日 ${signed(prev)}</div>`}`;
+    const sg = n => `<span class="mono ${n < 0 ? 'text-[#FFB4A8]' : 'text-[#8FE6DE]'}">${n < 0 ? '−' : '+'}${fmt(Math.abs(n))}</span>`;
+    tip.innerHTML = `<div class="text-white/60">${snaps[idx].d}</div><div>${metric === 'stars' ? 'Stars' : 'Forks'} <span class="mono">${fmt(snaps[idx][metric])}</span></div>${prev === null ? '' : `<div>较前一日 ${sg(prev)}</div>`}`;
     tip.hidden = false;
     const r = svg.getBoundingClientRect(), sx = r.width / geo.W;
     let left = x * sx + 12; if (left + tip.offsetWidth > r.width) left = x * sx - tip.offsetWidth - 12;
@@ -222,7 +218,7 @@
 
   document.getElementById('snap-rows').innerHTML = snaps.slice(-14).reverse().map((x, i, arr) => {
     const p = arr[i + 1] || snaps[N - 15];
-    return `<tr><td class="whitespace-nowrap">${md(x.d)}</td><td class="num">${fmt(x.stars)}</td><td class="num">${signed(x.stars - p.stars)}</td></tr>`;
+    return `<tr><td class="whitespace-nowrap">${md(x.d)}</td><td class="num mono">${fmt(x.stars)}</td><td class="num">${signed(x.stars - p.stars)}</td></tr>`;
   }).join('');
   draw();
 })();

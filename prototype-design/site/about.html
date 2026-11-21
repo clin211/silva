@@ -4,198 +4,217 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>关于周屿 · Silva</title>
-  <meta name="description" content="周屿，在杭州写 Rust 服务端的后端工程师。Silva 的意思是像树一样，一圈一圈地长。">
+  <meta name="description" content="周屿，在杭州写 Rust 服务端的后端工程师。个人简介、工作经历与技术能力。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
   <style>
-    #rings path { fill: none; stroke: var(--muted); stroke-opacity: .55; stroke-width: 1.4; transition: stroke .35s, stroke-opacity .35s, stroke-width .35s; }
-    #rings path.on { stroke: var(--accent); stroke-opacity: 1; stroke-width: 2.6; }
-    #rings text { fill: var(--muted); font-size: 15px; font-family: var(--font); transition: fill .35s; }
-    #rings text.on { fill: var(--accent); }
-    .exp-item[aria-pressed="true"] .exp-role { color: var(--accent); }
+    .sec { border-bottom: 1px solid var(--line); padding-block: clamp(40px, 5vw, 56px); }
+    .sec:last-child { border-bottom: 0; }
+    .sec-head { display: grid; gap: 4px; margin-bottom: 32px; }
+    @media (min-width: 640px) { .sec-head { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; } }
+    .job + .job { border-top: 1px solid var(--line-soft); }
+    .job ul li { position: relative; padding-left: 18px; }
+    .job ul li::before { content: ""; position: absolute; left: 2px; top: .75em; width: 6px; height: 6px; border-radius: 99px; background: var(--accent); opacity: .6; }
+    .chapter { transition: transform .7s var(--ease); }
+    .chapter:hover { transform: translateY(-4px); }
   </style>
 </head>
 <body class="silva" data-nav="about" data-proto-states="default:完整资料;partial:无经历与技能;noprofile:未配置个人档案">
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== First screen · one dim picture above, the name along the bottom ===== -->
-  <section aria-labelledby="about-title" class="relative min-h-[calc(100svh-88px)] flex flex-col">
-    <div class="photo relative flex-1 min-h-[42svh] mx-[var(--margin)]" data-zoom>
-      <img src="img/looking-for-a-monastery-in-the-misty.jpg" width="1920" height="4589" alt="明代陈淳《山中寻寺图》局部：云雾里的山石与松树" class="absolute inset-0 object-[50%_38%]">
-    </div>
-    <div class="wrap w-full pt-8 pb-10 grid12 gap-y-6 items-end">
-      <div class="col-span-12 md:col-span-8" data-state="default partial">
-        <h1 id="about-title" class="t-head">关于周屿</h1>
-        <p class="t-lead mt-5 max-w-[24em]">在杭州写 Rust 服务端的后端工程师，写了六年，还在一圈一圈地长。</p>
+  <div class="wrap">
+    <!-- ===== Header ===== -->
+    <header data-state="default partial" class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
+      <div>
+        <span class="eyebrow">个人档案</span>
+        <h1 class="t-h1 mt-4">关于我</h1>
       </div>
-      <div class="col-span-12 md:col-span-8" data-state="noprofile" hidden>
-        <h1 class="t-head">关于这个站点</h1>
-        <p class="t-lead mt-5 max-w-[24em]">个人档案还在整理中。可以先读读文章，或者看看做过的项目。</p>
-        <div class="mt-8 flex flex-wrap gap-6 items-center"><a class="btn" href="blog.html">读文章<span class="arrow"></span></a><a class="link" href="projects.html">看项目</a></div>
+      <div>
+        <p class="t-lead">一名把<strong class="font-semibold">数据一致性、发布链路和开发者体验</strong>放在一起思考的后端工程师。</p>
+        <p class="ink-2 mt-3">这里记录着我一路走来的思考、实践与积累。Silva 的意思是像树一样走出舒适区，一圈一圈地往外长。</p>
+        <dl class="mt-8 grid sm:grid-cols-2 gap-3">
+          <div class="panel p-4"><dt class="t-xs muted">内容发布系统</dt><dd class="m-0 mt-1 font-medium">不可变修订 / 审核 / 站点版本</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">订单与对账</dt><dd class="m-0 mt-1 font-medium">服务化拆分 / 幂等 / 对账任务</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">数据采集</dt><dd class="m-0 mt-1 font-medium">GitHub 快照 / 限流 / 增长口径</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">开发者工具</dt><dd class="m-0 mt-1 font-medium">迁移检查 / CI / MCP 目录</dd></div>
+        </dl>
       </div>
-      <dl data-state="default partial" class="col-span-12 md:col-span-4 m-0 grid grid-cols-2 md:grid-cols-1 gap-3 md:justify-items-end md:text-right">
-        <div><dt class="muted t-small">在</dt><dd class="m-0">浙江杭州</dd></div>
-        <div><dt class="muted t-small">GitHub</dt><dd class="m-0"><a class="link" href="https://github.com/" target="_blank" rel="noopener">@zhouyu<span class="sr-only">（新窗口打开）</span></a></dd></div>
-        <div class="col-span-2 md:col-span-1"><dt class="muted t-small">邮箱</dt><dd class="m-0"><a class="link" href="mailto:hello@example.com">hello@example.com</a></dd></div>
-      </dl>
-    </div>
-  </section>
+    </header>
 
-  <!-- ===== What Silva means · photograph beside a statement ===== -->
-  <section data-state="default partial" aria-labelledby="silva-title" class="section wrap">
-    <div class="grid12 gap-y-10 items-center">
-      <div class="col-span-12 md:col-span-5 photo aspect-[4/5]" data-zoom>
-        <img src="img/tree-rings.jpg" width="1600" height="1200" alt="锯开的树干横截面，年轮从中心一圈圈向外" loading="lazy" class="object-[38%_50%]">
-      </div>
-      <div class="col-span-12 md:col-start-7 md:col-span-6" data-rise>
-        <h2 id="silva-title" class="t-head">Silva 是什么</h2>
-        <p class="t-lead mt-8">像树一样，走出自己的舒适区，慢慢地长，向外蔓延，然后变得结实。</p>
-        <p class="mt-6 max-w-[32em]">它不是「森林」的意思，是我给自己的一个提醒：不求一下子长很高，只求每年都多长一圈。这里的每篇文章、每个项目，都是新长出的一圈；旧的那圈留着，不会被新的覆盖掉。</p>
-      </div>
-    </div>
-  </section>
+    <header data-state="noprofile" hidden class="py-20 max-w-2xl">
+      <span class="eyebrow">个人档案</span>
+      <h1 class="t-h1 mt-4">关于这个站点</h1>
+      <p class="t-lead ink-2 mt-5">个人档案还在整理中。可以先读读文章，或者看看做过的项目。</p>
+      <div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-dark" href="blog.html">读文章<span class="dot"><span class="arrow">↗</span></span></a><a class="btn btn-ghost" href="projects.html">看项目</a></div>
+    </header>
 
-  <!-- ===== Bio · the profile's Markdown, read in a narrow column ===== -->
-  <section data-state="default partial" aria-labelledby="bio-title" class="section wrap">
-    <div class="grid12 gap-y-8">
-      <h2 id="bio-title" class="col-span-12 md:col-span-3 t-lead">个人简介</h2>
-      <div class="col-span-12 md:col-start-5 md:col-span-7 prose" data-rise>
-        <p>我从一家物流公司的订单系统开始写后端。那几年学会的最重要一件事是：一份数据只能有一个可信来源。后来在内容平台负责发布链路，把「写好了」「审过了」「上线了」拆成三件互不干扰的事。</p>
-        <p>从 Go 换到 Rust，是我这几年离开舒适区最远的一次。头三个月几乎天天和借用检查器争论，后来慢慢发现，它挡住的大多是我本来就该想清楚的事。</p>
-        <p>现在主要关注这些方向：</p>
-        <ul>
-          <li>Rust 服务端与 PostgreSQL 的工程实践</li>
-          <li>静态优先的站点与可回放的构建流程</li>
-          <li>AI 开源生态里的开发者工具与 MCP Server</li>
-        </ul>
-        <p>写作对我来说是整理思路的方式。文章大多来自真实踩过的坑，我尽量把上下文和取舍讲清楚，而不是只给结论。</p>
-      </div>
-    </div>
-  </section>
+    <div data-state="default partial" class="grid lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14">
+      <!-- ===== Profile card ===== -->
+      <aside class="border-b border-[var(--line)] py-10 lg:border-b-0 lg:border-r lg:pr-10 lg:py-14" aria-label="个人信息">
+        <div class="lg:sticky lg:top-28">
+          <div class="grid place-items-center w-20 h-20 rounded-full bg-[var(--teal)] text-white text-2xl font-semibold" aria-hidden="true">周</div>
+          <h2 class="text-xl font-semibold mt-5">周屿</h2>
+          <p class="t-small muted">后端工程师 · Rust / PostgreSQL</p>
+          <dl class="mt-6 grid gap-4 t-small">
+            <div class="flex items-center gap-3"><span class="grid place-items-center w-9 h-9 rounded-full bg-[rgba(16,37,35,.05)] muted" id="i-pin"></span><div><dt class="t-xs muted">所在地</dt><dd class="m-0 font-medium">浙江，杭州</dd></div></div>
+            <div class="flex items-center gap-3"><span class="grid place-items-center w-9 h-9 rounded-full bg-[rgba(16,37,35,.05)] muted" id="i-clock"></span><div><dt class="t-xs muted">工作经验</dt><dd class="m-0 font-medium">6 年后端经验</dd></div></div>
+            <div class="flex items-center gap-3"><span class="grid place-items-center w-9 h-9 rounded-full bg-[rgba(16,37,35,.05)] muted" id="i-mail"></span><div><dt class="t-xs muted">邮箱</dt><dd class="m-0 font-medium"><a class="link" href="mailto:hello@example.com">hello@example.com</a></dd></div></div>
+          </dl>
+          <div class="mt-6 flex flex-wrap gap-2">
+            <a class="btn btn-dark btn-sm" href="https://github.com/" target="_blank" rel="noopener">GitHub<span class="arrow">↗</span><span class="sr-only">（新窗口打开）</span></a>
+            <a class="btn btn-ghost btn-sm" href="#rss">RSS<span class="arrow">↗</span></a>
+          </div>
 
-  <!-- ===== Experience · the live thing: each year is a ring, each role lights its rings ===== -->
-  <section data-state="default" aria-labelledby="exp-title" class="section field-surface py-[clamp(80px,10vw,140px)]">
-    <div class="wrap grid12 gap-y-12 items-center">
-      <div class="col-span-12 md:col-span-6">
-        <h2 id="exp-title" class="t-head">一年一圈</h2>
-        <p class="mt-6 max-w-[30em] muted">从 2020 年写第一行后端代码算起，每年一圈。点选下面的经历，看它占了哪几圈。</p>
-        <ul class="list-none p-0 m-0 mt-10 grid gap-2" role="list">
-          <li><button type="button" class="exp-item w-full text-left bg-transparent border-0 p-0 py-4 cursor-pointer text-[inherit] font-[inherit]" data-from="2023" data-to="2026" aria-pressed="false">
-            <span class="flex flex-wrap items-baseline justify-between gap-x-6"><span class="exp-role t-lead transition-colors">高级后端工程师</span><span class="muted">2023 年 4 月起</span></span>
-            <span class="block mt-1">某内容平台，发布基础设施组</span>
-            <span class="block mt-1 muted max-w-[34em]">负责内容发布链路与静态站点构建，把整站构建从小时级缩短到分钟级，并引入可追溯的站点版本。</span>
-          </button></li>
-          <li><button type="button" class="exp-item w-full text-left bg-transparent border-0 p-0 py-4 cursor-pointer text-[inherit] font-[inherit]" data-from="2020" data-to="2023" aria-pressed="false">
-            <span class="flex flex-wrap items-baseline justify-between gap-x-6"><span class="exp-role t-lead transition-colors">后端工程师</span><span class="muted">2020 年 7 月到 2023 年 3 月</span></span>
-            <span class="block mt-1">某物流科技公司，订单中台</span>
-            <span class="block mt-1 muted max-w-[34em]">参与订单系统从单体到服务化的拆分，主导对账任务与幂等设计。</span>
-          </button></li>
-          <li><button type="button" class="exp-item w-full text-left bg-transparent border-0 p-0 py-4 cursor-pointer text-[inherit] font-[inherit]" data-from="" data-to="" aria-pressed="false">
-            <span class="flex flex-wrap items-baseline justify-between gap-x-6"><span class="exp-role t-lead transition-colors">开源贡献者</span><span class="muted">没有固定的起止时间</span></span>
-            <span class="block mt-1">若干 Rust 生态项目</span>
-            <span class="block mt-1 muted max-w-[34em]">为数据库迁移工具和 HTTP 中间件提交过修复与文档。</span>
-          </button></li>
-        </ul>
-      </div>
-      <div class="col-span-12 md:col-start-8 md:col-span-5">
-        <svg id="rings" viewBox="0 0 600 600" class="w-full max-w-[560px] mx-auto" role="img" aria-label="年轮示意：2020 到 2026 年，每年一圈"></svg>
-        <p id="rings-note" class="t-small muted mt-4 text-center min-h-[1.5em]" aria-live="polite"></p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Skills · plain grouped lists, no boxes ===== -->
-  <section data-state="default" aria-labelledby="skill-title" class="section wrap">
-    <div class="grid12 gap-y-12">
-      <div class="col-span-12 md:col-span-4">
-        <h2 id="skill-title" class="t-head">会的东西</h2>
-        <p class="mt-6 muted max-w-[22em]">熟练程度照我在后台写的原话，不换算成百分比。</p>
-        <div class="photo aspect-[3/4] mt-12 hidden md:block" data-zoom>
-          <img src="img/a-true-bamboo-forest-36443777482.jpg" width="1600" height="1060" alt="竹林里一根根笔直的竹子" loading="lazy">
+          <section class="mt-9 border-t border-[var(--line-soft)] pt-7" aria-labelledby="gh-title">
+            <div class="flex items-start justify-between gap-3">
+              <div><p id="gh-title" class="font-medium t-small">GitHub 概览</p><p class="t-xs muted mt-0.5">按代码字节数统计 · 更新于 2026-11-20</p></div>
+              <div class="text-right"><span class="block text-2xl font-semibold num">27</span><span class="t-xs muted whitespace-nowrap">公开仓库</span></div>
+            </div>
+            <div class="mt-5 flex h-2 rounded-full overflow-hidden" aria-hidden="true">
+              <i class="block bg-[#DEA584]" style="width:58.4%"></i><i class="block bg-[#00ADD8]" style="width:21.2%"></i><i class="block bg-[#3178C6]" style="width:11.6%"></i><i class="block bg-[#336791]" style="width:4.9%"></i><i class="block bg-[#C8D3D1]" style="width:3.9%"></i>
+            </div>
+            <dl class="mt-4 grid gap-2 t-small">
+              <div class="flex justify-between"><dt class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-[#DEA584]"></i>Rust</dt><dd class="m-0 num muted">58.4%</dd></div>
+              <div class="flex justify-between"><dt class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-[#00ADD8]"></i>Go</dt><dd class="m-0 num muted">21.2%</dd></div>
+              <div class="flex justify-between"><dt class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-[#3178C6]"></i>TypeScript</dt><dd class="m-0 num muted">11.6%</dd></div>
+              <div class="flex justify-between"><dt class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-[#336791]"></i>PLpgSQL</dt><dd class="m-0 num muted">4.9%</dd></div>
+              <div class="flex justify-between"><dt class="flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-[#C8D3D1]"></i>Other</dt><dd class="m-0 num muted">3.9%</dd></div>
+            </dl>
+          </section>
         </div>
+      </aside>
+
+      <div>
+        <!-- ===== Bio ===== -->
+        <section class="sec" aria-labelledby="bio-title">
+          <header class="sec-head"><h2 id="bio-title" class="t-h2">个人简介</h2><p class="t-small muted">背景与关注方向</p></header>
+          <div class="prose">
+            <p>你好，我是周屿，一名常驻杭州的后端工程师。2020 年从一家物流公司的订单系统开始写后端，那几年学会的最重要一件事是：一份数据只能有一个可信来源。</p>
+            <p>后来在内容平台负责发布链路，把「写好了」「审过了」「上线了」拆成三件互不干扰的事。从 Go 换到 Rust，是我这几年离开舒适区最远的一次：头三个月几乎天天和借用检查器争论，后来慢慢发现，它挡住的大多是我本来就该想清楚的事。</p>
+            <p>写作对我来说是整理思路的方式。文章大多来自真实踩过的坑，我尽量把上下文和取舍讲清楚，而不是只给结论。</p>
+          </div>
+          <p class="t-small font-medium muted mt-8">目前关注</p>
+          <ul class="mt-3 flex flex-wrap gap-2 list-none p-0">
+            <li class="chip chip-teal">Rust 服务端</li><li class="chip chip-teal">PostgreSQL</li><li class="chip chip-teal">静态优先的构建流程</li><li class="chip chip-teal">MCP 与开发者工具</li>
+          </ul>
+        </section>
+
+        <!-- ===== Experience ===== -->
+        <section data-state="default" class="sec" aria-labelledby="exp-title">
+          <header class="sec-head"><h2 id="exp-title" class="t-h2">工作经历</h2><p class="t-small muted">2020 至今</p></header>
+          <article class="job grid gap-4 py-8 first:pt-0 md:grid-cols-[9rem_minmax(0,1fr)] md:gap-8">
+            <div><p class="font-medium t-small num">2023.04 – 至今</p><p class="t-xs muted mt-1">杭州</p></div>
+            <div>
+              <div class="flex flex-wrap items-center gap-3"><h3 class="t-h3">高级后端工程师</h3><span class="chip chip-teal">当前职位</span></div>
+              <p class="t-small muted mt-1">某内容平台 · 发布基础设施组</p>
+              <p class="ink-2 mt-4">负责内容发布链路与静态站点构建，围绕修订、审核和站点版本建立可追溯的发布流程。</p>
+              <ul class="mt-4 grid gap-2 list-none p-0 ink-2 t-small">
+                <li>设计不可变 revision 模型，旧版本在新草稿审核期间保持在线，构建失败不替换线上产物</li>
+                <li>把整站构建从小时级缩短到分钟级，引入可追溯的站点版本（generation）与按序激活</li>
+                <li>建立发布任务的失败可见性：后台显示失败原因，管理员可以重试当前待上线版本</li>
+                <li>推动结构化日志与 request ID 贯穿 API、Worker 与构建器，排障时间明显缩短</li>
+              </ul>
+            </div>
+          </article>
+          <article class="job grid gap-4 py-8 md:grid-cols-[9rem_minmax(0,1fr)] md:gap-8">
+            <div><p class="font-medium t-small num">2020.07 – 2023.03</p><p class="t-xs muted mt-1">杭州</p></div>
+            <div>
+              <h3 class="t-h3">后端工程师</h3>
+              <p class="t-small muted mt-1">某物流科技公司 · 订单中台</p>
+              <p class="ink-2 mt-4">参与订单系统从单体到服务化的拆分，负责对账与幂等相关的核心模块。</p>
+              <ul class="mt-4 grid gap-2 list-none p-0 ink-2 t-small">
+                <li>主导对账任务重写：按批次落库、可重跑、不重复入账</li>
+                <li>为下单与回调接口统一幂等键设计，重复请求不再产生脏数据</li>
+                <li>编写 PostgreSQL 迁移检查脚本，后来整理成开源项目 pgmigrate-lint</li>
+              </ul>
+            </div>
+          </article>
+          <article class="job grid gap-4 py-8 pb-0 md:grid-cols-[9rem_minmax(0,1fr)] md:gap-8">
+            <div><p class="font-medium t-small">不定期</p><p class="t-xs muted mt-1">远程</p></div>
+            <div>
+              <h3 class="t-h3">开源贡献者</h3>
+              <p class="t-small muted mt-1">若干 Rust 生态项目</p>
+              <p class="ink-2 mt-4">为数据库迁移工具和 HTTP 中间件提交过修复与文档。</p>
+            </div>
+          </article>
+        </section>
+
+        <!-- ===== Skills ===== -->
+        <section data-state="default" class="sec" aria-labelledby="skill-title">
+          <header class="sec-head"><h2 id="skill-title" class="t-h2">技术能力</h2><p class="t-small muted">工具会变，判断需要积累</p></header>
+          <div class="panel p-5 flex flex-wrap items-center gap-3">
+            <p class="kicker mr-2">Primary languages</p>
+            <span class="chip">Rust</span><span class="chip">Go</span><span class="chip">TypeScript</span><span class="chip">SQL</span>
+          </div>
+          <div class="rows mt-4">
+            <article class="py-7"><p class="mono t-small text-[var(--accent)]">01</p><h3 class="t-h3 mt-2">语言是长期使用的工具</h3><p class="ink-2 mt-2">日常主要写 Rust 和 Go，前端用 TypeScript。它们覆盖服务端、Worker、构建工具和后台界面，熟练程度照实说：Rust、Go 日常使用，TypeScript 熟悉。</p></article>
+            <article class="py-7"><p class="mono t-small text-[var(--accent)]">02</p><h3 class="t-h3 mt-2">生态按问题取用</h3><p class="ink-2 mt-2">Axum 与 Tokio、PostgreSQL、Redis、消息队列；前端用 Astro、React 和 Tailwind CSS；交付靠 Docker 与持续集成。选型看团队、复杂度、维护成本与交付周期，而不是为了用某项技术去找场景。</p></article>
+            <article class="py-7 pb-0"><p class="mono t-small text-[var(--accent)]">03</p><h3 class="t-h3 mt-2">AI 降低门槛，但不代替判断</h3><p class="ink-2 mt-2">AI 让理解新技术变得前所未有地容易。但如何拆解问题、划分边界、权衡取舍，并让系统在长期迭代中保持可靠，依然需要经验沉淀。</p></article>
+          </div>
+        </section>
       </div>
-      <div class="col-span-12 md:col-start-6 md:col-span-7 grid sm:grid-cols-2 gap-x-10 gap-y-14" data-rise>
-        <div><h3 class="t-lead">语言</h3>
-          <ul class="list-none p-0 m-0 mt-5 grid gap-3">
-            <li class="flex justify-between gap-4"><span>Rust</span><span class="muted">日常使用</span></li>
-            <li class="flex justify-between gap-4"><span>Go</span><span class="muted">日常使用</span></li>
-            <li class="flex justify-between gap-4"><span>TypeScript</span><span class="muted">熟悉</span></li>
-            <li>SQL</li>
-          </ul></div>
-        <div><h3 class="t-lead">后端与数据</h3>
-          <ul class="list-none p-0 m-0 mt-5 grid gap-3"><li>Axum 与 Tokio</li><li>PostgreSQL</li><li>Redis</li><li>消息队列与任务调度</li></ul></div>
-        <div><h3 class="t-lead">前端</h3>
-          <ul class="list-none p-0 m-0 mt-5 grid gap-3"><li>Astro</li><li>React</li><li>Tailwind CSS</li></ul></div>
-        <div><h3 class="t-lead">其他</h3>
-          <ul class="list-none p-0 m-0 mt-5 grid gap-3"><li>Docker 与持续集成</li><li>技术写作</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ===== Personal notes ===== -->
+  <section data-state="default partial" aria-labelledby="notes-title" class="band band-mist mt-4">
+    <div class="wrap">
+      <header class="max-w-3xl" data-rise>
+        <p class="kicker">Personal notes</p>
+        <h2 id="notes-title" class="t-h1 mt-4">一些自叙</h2>
+        <p class="ink-2 mt-4">工作之外，也关于选择。写下那些塑造了我，也仍在改变我的事情。</p>
+      </header>
+      <div class="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-rise>
+        <article class="chapter relative overflow-hidden rounded-[1.5rem] bg-[var(--teal)] text-white px-6 py-8">
+          <span class="absolute -right-2 -top-6 mono text-[7rem] font-medium leading-none text-white/10" aria-hidden="true">01</span>
+          <p class="t-xs text-white/70">Chapter 01</p>
+          <h3 class="t-h3 mt-5">关于 Silva 这个名字</h3>
+          <p class="t-small text-white/85 mt-4">它不是「森林」的意思，是我给自己的提醒：像树一样走出舒适区，慢慢地长，向外蔓延，然后变得结实。不求一下子长很高，只求每年多长一圈。</p>
+        </article>
+        <article class="chapter relative overflow-hidden rounded-[1.5rem] bg-[var(--paper)] ring-1 ring-[var(--line-soft)] px-6 py-8">
+          <span class="absolute -right-2 -top-6 mono text-[7rem] font-medium leading-none text-[#102523]/5" aria-hidden="true">02</span>
+          <p class="t-xs muted">Chapter 02</p>
+          <h3 class="t-h3 mt-5">关于从 Go 到 Rust</h3>
+          <p class="t-small ink-2 mt-4">换语言不是为了新鲜。Rust 逼我在写代码之前想清楚所有权和生命周期，而这些问题在 Go 里只是被推迟到了线上。</p>
+        </article>
+        <article class="chapter relative overflow-hidden rounded-[1.5rem] bg-[var(--sun)] px-6 py-8">
+          <span class="absolute -right-2 -top-6 mono text-[7rem] font-medium leading-none text-[#102523]/10" aria-hidden="true">03</span>
+          <p class="t-xs text-[#102523]/70">Chapter 03</p>
+          <h3 class="t-h3 mt-5">关于写作</h3>
+          <p class="t-small text-[#102523]/85 mt-4">写下来才知道自己哪里没想清楚。我更愿意保留认识变化的过程：旧文章不删，只在开头写一句「现在我会怎么做」。</p>
+        </article>
+        <article class="chapter relative overflow-hidden rounded-[1.5rem] bg-[var(--deep)] text-white px-6 py-8">
+          <span class="absolute -right-2 -top-6 mono text-[7rem] font-medium leading-none text-white/10" aria-hidden="true">04</span>
+          <p class="t-xs text-white/60">Chapter 04</p>
+          <h3 class="t-h3 mt-5">关于现在</h3>
+          <p class="t-small text-white/80 mt-4">最近把更多时间放在 AI 开源生态和 MCP 上。我感兴趣的不只是模型能力，而是它怎么稳定、可控地进入开发者的日常工作流。</p>
+        </article>
       </div>
     </div>
   </section>
 
-  <!-- ===== Keep in touch · a wide picture and two actions ===== -->
-  <section aria-labelledby="keep-title" class="section">
-    <div class="photo h-[56svh] min-h-[320px]" data-zoom>
-      <img src="img/longjing-tea-field-dragon-well-area-meijiawu.jpg" width="1600" height="1067" alt="杭州梅家坞的龙井茶田，一垄一垄向山上长" loading="lazy">
-    </div>
-    <div class="wrap grid12 gap-y-8 mt-12 items-end">
-      <div class="col-span-12 md:col-span-7">
-        <h2 id="keep-title" class="t-head">保持联系</h2>
-        <p class="t-lead mt-6 max-w-[22em]">聊技术、指出文章里的错，或者只是打个招呼，都欢迎写信。</p>
+  <!-- ===== Footer CTA ===== -->
+  <div class="wrap">
+    <footer class="grid gap-5 py-12 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div><p class="t-h3">继续了解我的代码与技术记录</p><p class="t-small muted mt-1">GitHub 公开项目与站内文章会持续更新。</p></div>
+      <div class="flex flex-wrap gap-3">
+        <a class="btn btn-dark" href="blog.html">阅读文章<span class="dot"><span class="arrow">↗</span></span></a>
+        <a class="btn btn-ghost" href="mailto:hello@example.com">写信给我</a>
       </div>
-      <div class="col-span-12 md:col-span-5 flex flex-wrap gap-x-8 gap-y-4 items-center md:justify-end">
-        <a class="btn" href="mailto:hello@example.com">写信给我<span class="arrow"></span></a>
-        <a class="link" href="blog.html">读文章</a>
-        <a class="link" href="projects.html">看项目</a>
-      </div>
-    </div>
-  </section>
+    </footer>
+  </div>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-/* ---- Growth rings: one irregular ring per year since 2020 (drawn, deterministic) ---- */
-const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026];
-const svg = document.getElementById('rings');
-const cx = 300, cy = 300;
-const rnd = i => { const x = Math.sin(i * 12.9898 + 4.1) * 43758.5453; return x - Math.floor(x); };
-const ph = [0, 1, 2, 3].map(i => rnd(i + 1) * Math.PI * 2);
-let out = '';
-YEARS.forEach((y, k) => {
-  const base = 46 + k * 36 + (rnd(k + 9) - .5) * 10;
-  const pts = [];
-  for (let a = 0; a <= 360; a += 3) {
-    const t = a * Math.PI / 180;
-    const n = .07 * Math.sin(2 * t + ph[0] + k * .2) + .045 * Math.sin(3 * t + ph[1] - k * .15) + .02 * Math.sin(7 * t + ph[2]);
-    pts.push([cx + Math.cos(t) * base * (1 + n), cy + Math.sin(t) * base * (1 + n) * .94]);
-  }
-  out += `<path data-year="${y}" d="${pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ')}Z"/>`;
-  const lx = cx + base * 1.02 * Math.cos(-1.05), ly = cy + base * .96 * Math.sin(-1.05);
-  out += `<text data-year="${y}" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" dx="6">${y}</text>`;
-});
-svg.innerHTML = out;
-
-const note = document.getElementById('rings-note');
-const items = [...document.querySelectorAll('.exp-item')];
-function light(btn) {
-  items.forEach(b => b.setAttribute('aria-pressed', b === btn));
-  const from = +btn.dataset.from, to = +btn.dataset.to;
-  svg.querySelectorAll('[data-year]').forEach(el => {
-    const y = +el.dataset.year; el.classList.toggle('on', !!from && y >= from && y <= to);
-  });
-  note.textContent = from ? `${from} 到 ${to}，共 ${to - from + 1} 圈` : '没有固定起止时间，所以不画进年轮里';
-}
-items.forEach(b => { b.addEventListener('click', () => light(b)); b.addEventListener('mouseenter', () => light(b)); b.addEventListener('focus', () => light(b)); });
-light(items[0]);
+  [['i-pin', 'pin'], ['i-clock', 'clock'], ['i-mail', 'mail']].forEach(([id, n]) => { const el = document.getElementById(id); if (el) el.innerHTML = icon(n, '', 16); });
 </script>
 </body>
 </html>

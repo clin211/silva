@@ -4,12 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>项目 · Silva</title>
-  <meta name="description" content="周屿在工作之外自己做、自己维护的项目：有的还在长，有的已经归档。">
+  <meta name="description" content="周屿工作之外自己做、自己维护的项目：维护中、开发中和已归档的状态都照实写着。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
@@ -18,121 +16,109 @@
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Title: one statement beside one lit ring ===== -->
-  <section aria-labelledby="page-title" class="wrap pt-10 md:pt-16">
-    <div class="grid12 gap-y-10 items-end">
-      <div class="col-span-12 md:col-span-5" data-rise>
-        <h1 id="page-title" class="t-head">长出来的项目</h1>
-        <p class="t-lead mt-8 max-w-[24em]">工作之外自己做、自己维护的东西。有的还在长，有的已经停下来归档，状态都照实写着。</p>
-        <p data-state="default nofeatured" class="muted mt-8">维护中 4 个，开发中 2 个，已归档 1 个。</p>
+  <div class="wrap">
+    <!-- ===== Header ===== -->
+    <header class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
+      <div>
+        <span class="eyebrow">项目</span>
+        <h1 id="page-title" class="t-h1 mt-4">长出来的项目</h1>
       </div>
-      <div class="col-span-10 md:col-start-6 md:col-span-7" data-zoom>
-        <div class="photo lit aspect-[5/6] md:aspect-auto md:h-[68vh]"><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="1200" height="1500" alt="松树树桩上一圈一圈的年轮"></div>
+      <div>
+        <p class="t-lead">工作之外自己做、自己维护的东西。有的还在长，有的已经停下来归档，状态都照实写着。</p>
+        <dl data-state="default nofeatured" class="mt-8 grid grid-cols-3 gap-3 max-w-xl">
+          <div class="panel p-4"><dt class="t-xs muted">维护中</dt><dd class="m-0 mt-1 text-2xl font-semibold num">4</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">开发中</dt><dd class="m-0 mt-1 text-2xl font-semibold num">2</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">已归档</dt><dd class="m-0 mt-1 text-2xl font-semibold num">1</dd></div>
+        </dl>
+      </div>
+    </header>
+  </div>
+
+  <!-- ===== Featured ===== -->
+  <section data-state="default" aria-labelledby="featured-title" class="band !pt-14">
+    <div class="wrap">
+      <header class="flex flex-wrap items-end justify-between gap-4" data-rise>
+        <div><p class="kicker">Featured</p><h2 id="featured-title" class="t-h2 mt-2">正在长的</h2></div>
+        <p class="t-small muted max-w-sm">每个项目都从一个让我不太舒服的问题开始。</p>
+      </header>
+      <div class="mt-8 grid gap-6 lg:grid-cols-2" data-rise>
+        <article>
+          <a href="project-detail.html" class="group block bezel h-full">
+            <div class="face h-full overflow-hidden lift">
+              <div class="cover c-deep aspect-[16/9] !rounded-none"><span class="cover-tag">rust · astro · postgres</span><span class="cover-mark">hub</span></div>
+              <div class="p-6 md:p-8">
+                <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="t-h2 hover-accent">Silva Hub</h3><span class="chip chip-teal">维护中</span></div>
+                <p class="ink-2 mt-3">这个站点本身。Astro 静态前台、React 管理后台和 Rust Axum API，内容发布基于不可变修订与站点版本。</p>
+                <div class="mt-5 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">axum</span><span class="chip hash">astro</span><span class="chip hash">postgresql</span></div>
+              </div>
+            </div>
+          </a>
+        </article>
+        <article>
+          <a href="project-detail.html" class="group block bezel h-full">
+            <div class="face h-full overflow-hidden lift">
+              <div class="cover c-sun aspect-[16/9] !rounded-none"><span class="cover-tag">github-api · worker</span><span class="cover-mark">+Δ7d</span></div>
+              <div class="p-6 md:p-8">
+                <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="t-h2 hover-accent">tidewatch</h3><span class="chip chip-sun">开发中</span></div>
+                <p class="ink-2 mt-3">采集 GitHub 仓库指标并保存每日快照，用快照相减算增长，数据不足时照实标注。</p>
+                <div class="mt-5 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">tokio</span><span class="chip hash">github-api</span></div>
+              </div>
+            </div>
+          </a>
+        </article>
       </div>
     </div>
   </section>
 
-  <!-- ===== Featured: loose scatter with pauses ===== -->
-  <section data-state="default" aria-labelledby="featured-title" class="section wrap">
-    <h2 id="featured-title" class="t-head">正在长的</h2>
-
-    <figure class="grid12 mt-14 m-0" data-rise>
-      <a href="project-detail.html" class="col-span-12 md:col-span-6 block no-underline">
-        <figcaption class="muted mb-3">Silva Hub · 维护中</figcaption>
-        <div class="photo aspect-[3/2]"><img src="img/redshank-moss-forest-flickr-hedera-baltica.jpg" width="1600" height="1067" alt="苔藓长出的细茎特写" loading="lazy"></div>
-        <p class="mt-4 max-w-[34em]">这个站点本身。Astro 静态前台、React 管理后台和 Rust Axum API，内容发布基于不可变修订与站点版本。</p>
-        <p class="muted mt-2">Rust、Axum、Astro、PostgreSQL</p>
-      </a>
-    </figure>
-
-    <div class="grid12 md:-mt-24 mt-[72px]">
-      <p class="hidden md:block col-start-2 col-span-4 self-center t-lead max-w-[13em]">每个项目都从一个让我不太舒服的问题开始。</p>
-      <figure class="col-span-12 md:col-start-9 md:col-span-4 m-0 w-[72%] md:w-auto ml-auto" data-rise>
-        <a href="project-detail.html" class="block no-underline">
-          <figcaption class="muted mb-3">tidewatch · 开发中</figcaption>
-          <div class="photo aspect-[4/5]"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="1200" height="1500" alt="雾中的山脊" loading="lazy"></div>
-          <p class="mt-4">采集 GitHub 仓库指标并保存每日快照，用快照相减算增长，数据不足时照实标注。</p>
-          <p class="muted mt-2">Rust、Tokio、GitHub API</p>
-        </a>
-      </figure>
-    </div>
-    <p class="md:hidden t-lead mt-[72px] max-w-[14em]">每个项目都从一个让我不太舒服的问题开始。</p>
-  </section>
-
-  <!-- ===== Index: dense text list, sticky photograph follows the active row ===== -->
-  <section data-state="default nofeatured" aria-labelledby="all-title" class="section wrap">
-    <div class="grid12 gap-y-10">
-      <div class="col-span-12 md:col-span-4 order-2 md:order-1 hidden md:block">
-        <div class="sticky top-[12vh]">
-          <div class="photo aspect-[4/5] relative" id="index-photo" data-zoom>
-            <img src="img/longjing-tea-field-dragon-well-area-meijiawu.jpg" width="1200" height="1500" alt="" class="absolute inset-0">
-          </div>
-        </div>
-      </div>
-      <div class="col-span-12 md:col-start-6 md:col-span-7 order-1 md:order-2" data-rise>
-        <h2 id="all-title" class="t-head"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2>
-        <p class="muted mt-4">按展示顺序排列。</p>
-        <ul id="index" class="list-none p-0 m-0 mt-10"></ul>
-      </div>
+  <!-- ===== All ===== -->
+  <section data-state="default nofeatured" aria-labelledby="all-title" class="band band-mist">
+    <div class="wrap">
+      <header class="flex flex-wrap items-end justify-between gap-4" data-rise>
+        <div><p class="kicker">Index</p><h2 id="all-title" class="t-h2 mt-2"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2></div>
+        <p class="t-small muted">按展示顺序排列。</p>
+      </header>
+      <ul id="index" class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 list-none p-0"></ul>
     </div>
   </section>
 
   <!-- ===== Empty ===== -->
-  <section data-state="empty" hidden class="section wrap">
-    <div class="grid12 gap-y-8">
-      <div class="col-span-12 md:col-span-6">
-        <h2 class="t-head">还没有公开的项目</h2>
-        <p class="t-lead mt-6 max-w-[20em] muted">项目上线后会出现在这里。先读读文章吧。</p>
-        <a href="blog.html" class="btn mt-10">浏览文章<span class="arrow"></span></a>
-      </div>
-      <div class="col-span-12 md:col-start-8 md:col-span-5">
-        <div class="photo aspect-[3/2]"><img src="img/fog-descending-on-a-pine-forest-unsplash.jpg" width="1600" height="1067" alt="雾气落在松林上" loading="lazy"></div>
-      </div>
+  <section data-state="empty" hidden class="band !pt-14">
+    <div class="wrap">
+      <div class="bezel max-w-2xl"><div class="face p-8 md:p-10">
+        <p class="kicker">Empty</p>
+        <h2 class="t-h2 mt-2">还没有公开的项目</h2>
+        <p class="ink-2 mt-3">项目上线后会出现在这里。先读读文章吧。</p>
+        <a href="blog.html" class="btn btn-dark mt-8">浏览文章<span class="dot"><span class="arrow">↗</span></span></a>
+      </div></div>
     </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script>
   const PROJECTS = [
-    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: '维护中', t: 'Rust、Axum、Astro', img: 'img/redshank-moss-forest-flickr-hedera-baltica.jpg', nf: true },
-    { n: 'tidewatch', d: '采集 GitHub 仓库指标，保存每日快照，用快照相减算增长。', s: '开发中', t: 'Rust、Tokio', img: 'img/china-emei-shan-9-misty-mountains-135961844.jpg', nf: true },
-    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移会不会长时间锁表，给出分步执行建议。', s: '已归档', t: 'Rust、SQL', img: 'img/1937-ponderosa-pine-stump-section-showing-tree.jpg' },
-    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: '维护中', t: 'Rust、tower', img: 'img/a-true-bamboo-forest-36443777482.jpg' },
-    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览：白名单渲染，禁止原始 HTML，代码高亮。', s: '维护中', t: 'TypeScript、React', img: 'img/cross-section-of-a-sequoia-sempervirens-showing.jpg' },
-    { n: 'astro-snapshot-loader', d: '构建时从带版本号的不可变快照读取内容，校验失败就停止构建。', s: '开发中', t: 'TypeScript、Astro', img: 'img/mount-lushan-fog.jpg' },
-    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附一键安装脚本。', s: '维护中', t: 'Shell、Neovim', img: 'img/longjing-tea-field-dragon-well-area-meijiawu.jpg' },
+    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: '维护中', t: ['rust', 'axum', 'astro'], c: 'c-deep', m: 'hub', nf: true },
+    { n: 'tidewatch', d: '采集 GitHub 仓库指标，保存每日快照，用快照相减算增长。', s: '开发中', t: ['rust', 'tokio'], c: 'c-sun', m: '+Δ', nf: true },
+    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移会不会长时间锁表，给出分步执行建议。', s: '已归档', t: ['rust', 'sql'], c: 'c-ink', m: 'pg' },
+    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: '维护中', t: ['rust', 'tower'], c: 'c-coral', m: 'rid' },
+    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览：白名单渲染，禁止原始 HTML，代码高亮。', s: '维护中', t: ['typescript', 'react'], c: 'c-mist', m: 'md' },
+    { n: 'astro-snapshot-loader', d: '构建时从带版本号的不可变快照读取内容，校验失败就停止构建。', s: '开发中', t: ['typescript', 'astro'], c: 'c-teal', m: 'snap' },
+    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附一键安装脚本。', s: '维护中', t: ['shell', 'neovim'], c: 'c-deep', m: '~/.' },
   ];
-  const index = document.getElementById('index');
-  index.innerHTML = PROJECTS.map((p, i) => `
+  const chip = s => s === '维护中' ? 'chip-teal' : s === '开发中' ? 'chip-sun' : '';
+  document.getElementById('index').innerHTML = PROJECTS.map(p => `
     <li ${p.nf ? 'data-state="nofeatured" hidden' : ''}>
-      <a href="project-detail.html" class="block py-5 no-underline" data-i="${i}">
-        <span class="flex items-baseline justify-between gap-6">
-          <span class="t-lead row-title muted transition-colors duration-300">${p.n}</span>
-          <span class="shrink-0 ${p.s === '已归档' ? 'muted' : 'ink'}">${p.s}</span>
-        </span>
-        <span class="block mt-2 max-w-[34em]">${p.d}</span>
-        <span class="block mt-1 muted">${p.t}</span>
+      <a href="project-detail.html" class="group panel h-full p-2 flex flex-col lift">
+        <div class="cover small ${p.c} r-md aspect-[16/7]"><span class="cover-mark">${p.m}</span></div>
+        <div class="p-4 flex flex-col flex-1">
+          <div class="flex items-center justify-between gap-3"><h3 class="t-h3 hover-accent truncate">${p.n}</h3><span class="chip ${chip(p.s)}">${p.s}</span></div>
+          <p class="t-small ink-2 mt-2">${p.d}</p>
+          <div class="mt-auto pt-4 flex flex-wrap gap-2">${p.t.map(x => `<span class="chip hash">${x}</span>`).join('')}</div>
+        </div>
       </a>
     </li>`).join('');
-  const rows = [...index.querySelectorAll('a[data-i]')];
-  const photo = document.getElementById('index-photo');
-  let cur = -1;
-  function activate(i) {
-    if (i === cur) return; cur = i;
-    rows.forEach(r => { const on = +r.dataset.i === i; const t = r.querySelector('.row-title'); t.classList.toggle('ink', on); t.classList.toggle('muted', !on); });
-    const img = document.createElement('img');
-    img.src = PROJECTS[i].img; img.alt = ''; img.className = 'absolute inset-0 opacity-0 transition-opacity duration-300';
-    photo.appendChild(img);
-    requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove('opacity-0')));
-    setTimeout(() => { while (photo.children.length > 1) photo.firstElementChild.remove(); }, 350);
-  }
-  rows.forEach(r => { const i = +r.dataset.i; r.addEventListener('mouseenter', () => activate(i)); r.addEventListener('focus', () => activate(i)); });
-  const rowIO = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && activate(+e.target.dataset.i)), { rootMargin: '-45% 0px -45% 0px' });
-  rows.forEach(r => rowIO.observe(r));
-  document.addEventListener('proto:state', () => { const first = rows.find(r => r.offsetParent); first && (cur = -1, activate(+first.dataset.i)); });
+  observeRise();
 </script>
 <script src="../assets/proto.js"></script>
 </body>

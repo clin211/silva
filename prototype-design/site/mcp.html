@@ -6,10 +6,8 @@
   <title>MCP Server 目录 · Silva</title>
   <meta name="description" content="一份手工维护的 MCP Server 目录：按分类、Transport 与语言筛选。核对的是元数据，不是安全认证。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
@@ -19,84 +17,88 @@
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Intro ===== -->
-  <section aria-labelledby="page-title" class="wrap pt-10 md:pt-16">
-    <div class="grid12 gap-y-10 items-end">
-      <div class="col-span-12 md:col-span-5" data-rise>
-        <h1 id="page-title" class="t-head">MCP Server 目录</h1>
-        <p class="t-lead mt-8 max-w-[22em]">我一条条记下来的 MCP Server：它说自己支持哪些 Transport、用什么语言写、在哪里能找到。</p>
-        <p class="t-body mt-6 max-w-[30em]">「元数据已核对」只表示我核对过名称、链接、License 这些信息，不代表安全认证、跑过测试或服务可用。这里也不运行、不代理任何 Server。</p>
+  <div class="wrap">
+    <!-- ===== Header ===== -->
+    <header aria-labelledby="page-title" class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[24rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
+      <div>
+        <span class="eyebrow">MCP 目录</span>
+        <h1 id="page-title" class="t-h1 mt-4">MCP Server 目录</h1>
       </div>
-      <figure class="col-span-12 md:col-start-6 md:col-span-7 m-0" data-zoom>
-        <div class="photo aspect-[5/4]"><img src="img/store-mosse-forest.jpg" width="1600" height="1280" alt="秋天的林地，阳光照进一棵棵树干之间"></div>
-      </figure>
-    </div>
-  </section>
-
-  <!-- ===== Filters ===== -->
-  <section aria-label="目录筛选" class="wrap mt-24 md:mt-32" data-state="default noresult error generation">
-    <form id="filters" class="flex flex-wrap items-end gap-x-6 gap-y-5" onsubmit="return false" data-rise>
-      <label class="block"><span class="t-small muted block mb-2">分类</span><select name="cat" class="select w-40"></select></label>
-      <label class="block"><span class="t-small muted block mb-2">Transport</span><select name="transport" class="select w-48"></select></label>
-      <label class="block"><span class="t-small muted block mb-2">语言</span><select name="lang" class="select w-36"></select></label>
-      <button type="button" id="clear-btn" class="link t-body bg-transparent border-0 p-0 min-h-[48px] cursor-pointer text-[var(--ink)]">清除筛选</button>
-      <p id="summary" class="t-body muted md:ml-auto min-h-[48px] flex items-center" aria-live="polite"></p>
-    </form>
-  </section>
-
-  <!-- ===== Feedback · request failed (black field) ===== -->
-  <section data-state="error" hidden role="alert" class="mt-20 field-black" aria-labelledby="error-title">
-    <div class="wrap py-16 md:py-20 grid12 gap-y-6 items-end">
-      <div class="col-span-12 md:col-span-8">
-        <h2 id="error-title" class="t-head down">目录没有取回来</h2>
-        <p class="t-body mt-6 max-w-[34em]">可能是网络中断，或者服务暂时不可用。筛选条件还在，重试一次就好。</p>
+      <div>
+        <p class="t-lead">我一条条记下来的 MCP Server：它说自己支持哪些 Transport、用什么语言写、在哪里能找到。</p>
+        <dl class="mt-8 grid sm:grid-cols-3 gap-3">
+          <div class="panel p-4"><dt class="t-xs muted">收录条目</dt><dd class="m-0 mt-1 font-medium">22 个，手工维护</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">核对范围</dt><dd class="m-0 mt-1 font-medium">名称、链接、License 等元数据</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">本站不做</dt><dd class="m-0 mt-1 font-medium">运行、代理、保管密钥</dd></div>
+        </dl>
+        <p class="t-small muted mt-4">「元数据已核对」只表示我核对过这些信息，不代表安全认证、跑过测试或服务可用。</p>
       </div>
-      <div class="col-span-12 md:col-span-4 md:text-right"><button type="button" class="btn" data-toast="正在重试…">重试<span class="arrow"></span></button></div>
-    </div>
-  </section>
+    </header>
 
-  <!-- ===== Feedback · site generation changed (white field) ===== -->
-  <section data-state="generation" hidden role="alert" class="mt-20 field-light" aria-labelledby="gen-title">
-    <div class="wrap py-16 md:py-20 grid12 gap-y-6 items-end">
-      <div class="col-span-12 md:col-span-8">
-        <h2 id="gen-title" class="t-head">站点刚长出新的一圈</h2>
-        <p class="t-body mt-6 max-w-[34em]">目录随新版本更新了。为了不把两个版本的条目混在一起，旧结果已经清掉，刷新一下就好。</p>
+    <!-- ===== Filters ===== -->
+    <section aria-label="目录筛选" class="pt-10" data-state="default noresult error generation">
+      <form id="filters" class="flex flex-wrap items-end gap-x-4 gap-y-4" onsubmit="return false">
+        <label class="block"><span class="t-xs muted block mb-2">分类</span><select name="cat" class="select w-40"></select></label>
+        <label class="block"><span class="t-xs muted block mb-2">Transport</span><select name="transport" class="select w-44"></select></label>
+        <label class="block"><span class="t-xs muted block mb-2">语言</span><select name="lang" class="select w-36"></select></label>
+        <button type="button" id="clear-btn" class="btn btn-ghost btn-sm !h-10">清除筛选</button>
+        <p id="summary" class="t-small muted md:ml-auto h-10 flex items-center" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- ===== Notice · request failed ===== -->
+    <section data-state="error" hidden role="alert" class="mt-10" aria-labelledby="error-title">
+      <div class="rounded-[1.5rem] bg-[rgba(178,58,43,.07)] ring-1 ring-[rgba(178,58,43,.18)] p-6 md:p-8 flex flex-wrap items-center justify-between gap-6">
+        <div class="max-w-2xl">
+          <h2 id="error-title" class="t-h3 down">目录没有取回来</h2>
+          <p class="ink-2 mt-2">可能是网络中断，或者服务暂时不可用。筛选条件还在，重试一次就好。</p>
+        </div>
+        <button type="button" class="btn btn-dark" data-toast="正在重试…">重试</button>
       </div>
-      <div class="col-span-12 md:col-span-4 md:text-right"><button type="button" class="btn" style="background:var(--bg);color:var(--ink)" onclick="location.href=location.pathname">刷新页面<span class="arrow"></span></button></div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ===== The index ===== -->
-  <section aria-labelledby="index-title" class="wrap mt-16 md:mt-20" data-state="default noresult">
-    <h2 id="index-title" class="sr-only">MCP Server 条目</h2>
-    <div id="empty" hidden class="max-w-[36em] py-10">
-      <p class="t-lead">没有符合条件的结果。换一个分类、Transport 或语言，或者把筛选全部清掉。</p>
-      <button type="button" id="empty-clear" class="btn mt-8">清除筛选<span class="arrow"></span></button>
-    </div>
-    <ol id="grid" class="list-none p-0 m-0" data-rise></ol>
-    <nav id="pager" aria-label="目录分页" class="mt-12 flex flex-wrap items-center justify-between gap-4"></nav>
-  </section>
+    <!-- ===== Notice · site generation changed ===== -->
+    <section data-state="generation" hidden role="alert" class="mt-10" aria-labelledby="gen-title">
+      <div class="rounded-[1.5rem] bg-[rgba(246,191,53,.18)] ring-1 ring-[rgba(246,191,53,.5)] p-6 md:p-8 flex flex-wrap items-center justify-between gap-6">
+        <div class="max-w-2xl">
+          <h2 id="gen-title" class="t-h3">站点刚发布了新版本</h2>
+          <p class="ink-2 mt-2">目录随新版本更新了。为了不把两个版本的条目混在一起，旧结果已经清掉，刷新一下就好。</p>
+        </div>
+        <button type="button" class="btn btn-dark" onclick="location.href=location.pathname">刷新页面</button>
+      </div>
+    </section>
+
+    <!-- ===== The index ===== -->
+    <section aria-labelledby="index-title" class="pt-8" data-state="default noresult">
+      <h2 id="index-title" class="sr-only">MCP Server 条目</h2>
+      <div id="empty" hidden class="rounded-[1.5rem] bg-[var(--mist)] p-8 md:p-12 max-w-3xl">
+        <p class="t-lead">没有符合条件的结果。</p>
+        <p class="ink-2 mt-2">换一个分类、Transport 或语言，或者把筛选全部清掉。</p>
+        <button type="button" id="empty-clear" class="btn btn-dark mt-6">清除筛选</button>
+      </div>
+      <ol id="grid" class="list-none p-0 m-0 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></ol>
+      <nav id="pager" aria-label="目录分页" class="mt-8 flex flex-wrap items-center justify-between gap-4"></nav>
+    </section>
+  </div>
 
   <!-- ===== What verification is, and is not ===== -->
-  <section aria-labelledby="verify-title" class="wrap section">
-    <div class="grid12 gap-y-10">
-      <div class="col-span-12 md:col-span-4">
-        <div class="photo aspect-[2/3]" data-zoom><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1000" height="1500" alt="一段老松树切面，年轮上标着年份" loading="lazy"></div>
+  <section aria-labelledby="verify-title" class="band band-mist mt-20">
+    <div class="wrap grid gap-10 lg:grid-cols-12">
+      <div class="lg:col-span-4" data-rise>
+        <span class="eyebrow">核对说明</span>
+        <h2 id="verify-title" class="t-h1 mt-5">核对了什么</h2>
+        <p class="ink-2 mt-4">目录只记录写在纸面上的信息。用之前，请自己读一读它的仓库。</p>
       </div>
-      <div class="col-span-12 md:col-start-6 md:col-span-6 self-end" data-rise>
-        <h2 id="verify-title" class="t-head">核对了什么</h2>
-        <div class="t-body mt-8 grid gap-5 max-w-[34em]">
-          <p>我核对的是写在纸面上的东西：名称、简介、仓库和文档链接、License、声明的 Transport 和实现语言，最后记下核对的日期。</p>
-          <p>我不审计代码，不跑测试，也不保证它今天还能连上。用之前，请自己读一读它的仓库。</p>
-          <p>还没核对过的条目会写「元数据尚未核对」，照样列出来，不藏起来。</p>
-        </div>
-      </div>
+      <ol class="lg:col-span-8 list-none p-0 grid sm:grid-cols-3 gap-4" data-rise>
+        <li class="panel p-6"><span class="chip chip-teal">核对</span><h3 class="t-h3 mt-3">纸面上的信息</h3><p class="t-small ink-2 mt-2">名称、简介、仓库和文档链接、License、声明的 Transport 和实现语言，最后记下核对日期。</p></li>
+        <li class="panel p-6"><span class="chip chip-coral">不做</span><h3 class="t-h3 mt-3">不审计、不运行</h3><p class="t-small ink-2 mt-2">我不审计代码，不跑测试，也不保证它今天还能连上；本站不运行、不代理任何 Server。</p></li>
+        <li class="panel p-6"><span class="chip">未核对</span><h3 class="t-h3 mt-3">照样列出来</h3><p class="t-small ink-2 mt-2">还没核对过的条目会写「元数据尚未核对」，照样列出来，不藏起来。</p></li>
+      </ol>
     </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
@@ -125,13 +127,6 @@
     verified: i % 5 === 3 ? null : { m: 9 + (i % 3), d: 2 + (i * 7) % 26 },
     version: `v${(i % 3)}.${(i * 3) % 10}.${i % 4}`,
   }));
-  // photographs interleaved in the index, alternating sides
-  const PICS = [
-    ['img/a-true-bamboo-forest-36443777482.jpg', '竹林里笔直的竹竿'],
-    ['img/mount-lushan-fog.jpg', '庐山的云雾与山崖'],
-    ['img/china-emei-shan-9-misty-mountains-135961844.jpg', '雾中的山脊'],
-    ['img/longjing-tea-field-dragon-well-area-meijiawu.jpg', '一垄一垄的龙井茶树'],
-  ];
   const DEF = { cat: '', transport: '', lang: '', page: '1' };
   const KEYS = Object.keys(DEF), PER = 9;
   const form = document.getElementById('filters');
@@ -145,22 +140,22 @@
     history.pushState(s, '', location.pathname + (q.toString() ? '?' + q : ''));
   };
   let state = readURL();
+  const pad = n => String(n).padStart(2, '0');
 
-  const row = d => `
+  const card = d => `
     <li>
-      <a href="mcp-detail.html" class="grid12 gap-y-2 py-6 no-underline group">
-        <span class="col-span-12 md:col-span-4 t-lead break-all group-hover:underline underline-offset-4 decoration-1">${d.name}</span>
-        <span class="col-span-12 md:col-span-5 t-body">${d.desc}<span class="block muted mt-1">${d.cat} · ${d.lang} · ${d.version}</span></span>
-        <span class="col-span-12 md:col-span-3 t-body muted md:text-right">${d.transports.join('、')}<span class="block mt-1 ${d.verified ? '' : 'ink'}">${d.verified ? `元数据已核对，${d.verified.m} 月 ${d.verified.d} 日` : '元数据尚未核对'}</span></span>
+      <a href="mcp-detail.html" class="group block bezel h-full">
+        <div class="face lift h-full p-6 flex flex-col">
+          <div class="flex items-center justify-between gap-3"><span class="chip">${d.cat}</span><span class="t-xs muted mono">${d.version}</span></div>
+          <h3 class="font-semibold text-lg mt-4 break-all mono hover-accent">${d.name}</h3>
+          <p class="t-small ink-2 mt-2">${d.desc}</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">${d.transports.map(t => `<span class="chip chip-teal">${t}</span>`).join('')}<span class="chip">${d.lang}</span></div>
+          <p class="t-xs mt-auto pt-5 flex items-center gap-2 ${d.verified ? 'muted' : 'text-[#6B4E00]'}">
+            <span class="w-1.5 h-1.5 rounded-full ${d.verified ? 'bg-[var(--accent)]' : 'bg-[var(--sun)]'}"></span>
+            ${d.verified ? `元数据已核对 · 2026-${pad(d.verified.m)}-${pad(d.verified.d)}` : '元数据尚未核对'}</p>
+        </div>
       </a>
     </li>`;
-  const pic = (k, page) => {
-    const [src, alt] = PICS[(k + page * 2) % PICS.length];
-    const right = k % 2 === 1;
-    return `<li aria-hidden="true" class="grid12 my-10 md:my-16">
-      <div class="col-span-9 md:col-span-6 ${right ? 'col-start-4 md:col-start-7' : ''}"><div class="photo aspect-[16/9]"><img src="${src}" alt="${alt}" width="1600" height="900" loading="lazy"></div></div>
-    </li>`;
-  };
 
   function render() {
     ['cat', 'transport', 'lang'].forEach(k => form.elements[k].value = state[k]);
@@ -173,17 +168,10 @@
     document.getElementById('empty').hidden = !empty;
     document.getElementById('grid').hidden = empty;
     document.getElementById('pager').hidden = empty;
-    let html = '';
-    slice.forEach((d, i) => {
-      html += row(d);
-      if ((i + 1) % 3 === 0 && i < slice.length - 1) html += pic(Math.floor(i / 3), page);
-    });
-    const grid = document.getElementById('grid');
-    grid.innerHTML = html;
-    [...grid.children].forEach((c, i) => c.style.setProperty('--n', Math.min(i, 8)));
-    const b = (p, label, cur) => `<button type="button" data-page="${p}" class="min-w-[44px] min-h-[44px] px-2 bg-transparent border-0 cursor-pointer t-body ${cur ? 'link ink' : 'muted hover:text-[var(--ink)]'}" ${cur ? 'aria-current="page"' : ''}>${label}</button>`;
-    document.getElementById('pager').innerHTML = `<span class="t-body muted">第 ${page} 页，共 ${pages} 页</span>
-      <div class="flex items-center gap-1">${page > 1 ? b(page - 1, '上一页') : ''}${Array.from({ length: pages }, (_, i) => b(i + 1, i + 1, i + 1 === page)).join('')}${page < pages ? b(page + 1, '下一页') : ''}</div>`;
+    document.getElementById('grid').innerHTML = slice.map(card).join('');
+    const b = (p, label, cur) => `<button type="button" data-page="${p}" class="min-w-[40px] h-10 px-3 rounded-full border-0 cursor-pointer t-small font-medium transition-colors ${cur ? 'bg-[var(--ink)] text-white' : 'bg-transparent text-[var(--ink-2)] hover:bg-[rgba(16,37,35,.06)]'}" ${cur ? 'aria-current="page"' : ''}>${label}</button>`;
+    document.getElementById('pager').innerHTML = `<span class="t-small muted">第 ${page} 页，共 ${pages} 页</span>
+      <div class="flex flex-wrap items-center gap-1">${page > 1 ? b(page - 1, '上一页') : ''}${Array.from({ length: pages }, (_, i) => b(i + 1, i + 1, i + 1 === page)).join('')}${page < pages ? b(page + 1, '下一页') : ''}</div>`;
   }
   const update = (patch, reset = true) => { state = { ...state, ...patch }; if (reset) state.page = '1'; writeURL(state); render(); };
   form.addEventListener('change', e => update({ [e.target.name]: e.target.value }));

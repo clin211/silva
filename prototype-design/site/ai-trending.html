@@ -6,176 +6,165 @@
   <title>AI 开源项目趋势 · Silva</title>
   <meta name="description" content="每天按 UTC 给收录范围内的 AI 开源仓库拍一次快照，用快照相减算出增长：负增长照实显示，缺快照写「数据不足」。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
-  <style>.sign { font-family: "Noto Serif SC", serif; } /* Boska draws + as a bar */</style>
 </head>
 <body class="silva" data-nav="ai-trending"
       data-proto-states="default:有榜单;nobatch:尚无成功批次;noresult:筛选无结果;error:请求失败;generation:站点版本变化">
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Intro: title, scope, data date — beside one lit cross-section ===== -->
-  <section aria-labelledby="page-title" class="wrap pt-10 md:pt-16">
-    <div class="grid12 gap-y-10 items-end">
-      <div class="col-span-12 md:col-span-5" data-rise>
-        <h1 id="page-title" class="t-head">AI 开源项目，每天长多少</h1>
-        <p class="t-lead mt-8 max-w-[24em]">每天按 UTC 给收录范围内的仓库拍一次快照，用相邻的快照相减算出增长。范围是命中 AI 相关 topic 的公开仓库，不含 fork 和已归档仓库，不代表整个 GitHub。</p>
-        <p data-state="default noresult error generation" class="t-body mt-6">这一版榜单的数据日期是 <time datetime="2026-11-20" class="ink">2026 年 11 月 20 日</time>（UTC）。</p>
-        <p data-state="nobatch" hidden class="t-body mt-6 muted">还没有一次完整成功的采集，所以暂时没有数据日期。</p>
-      </div>
-      <figure class="col-span-12 md:col-start-6 md:col-span-7 m-0" data-zoom>
-        <div class="photo aspect-[5/4]"><img src="img/cross-section-of-a-sequoia-sempervirens-showing.jpg" width="1200" height="1500" alt="红杉树干的横截面，上千圈年轮由内向外排开"></div>
-        <figcaption class="t-small muted mt-3">一圈年轮是一年；这张榜单的每一行，是两天快照的差。</figcaption>
-      </figure>
-    </div>
-  </section>
-
-  <!-- ===== Filters ===== -->
-  <section aria-label="榜单筛选" class="wrap mt-24 md:mt-32" data-state="default noresult error generation">
-    <form id="filters" class="flex flex-wrap items-end gap-x-6 gap-y-5" onsubmit="return false">
+  <div class="wrap">
+    <!-- ===== Header ===== -->
+    <header aria-labelledby="page-title" class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[24rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
       <div>
-        <p class="t-small muted mb-2" id="win-label">时间窗口</p>
-        <div class="choice" role="group" aria-labelledby="win-label">
-          <button type="button" data-window="7" aria-pressed="true">近 7 天</button>
-          <button type="button" data-window="30" aria-pressed="false">近 30 天</button>
+        <span class="eyebrow">AI 趋势</span>
+        <h1 id="page-title" class="t-h1 mt-4">AI 开源项目，<span class="soft block">每天长多少</span></h1>
+      </div>
+      <div>
+        <p class="t-lead">每天按 UTC 给收录范围内的仓库拍一次快照，用相邻的快照相减算出增长。</p>
+        <p class="ink-2 mt-3">范围是命中 AI 相关 topic 的公开仓库，不含 fork 和已归档仓库，不代表整个 GitHub。</p>
+        <dl class="mt-8 grid sm:grid-cols-3 gap-3">
+          <div class="panel p-4"><dt class="t-xs muted">数据日期（UTC）</dt>
+            <dd data-state="default noresult error generation" class="m-0 mt-1 font-medium"><time datetime="2026-11-20">2026-11-20</time></dd>
+            <dd data-state="nobatch" hidden class="m-0 mt-1 font-medium muted">暂无</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">采集频率</dt><dd class="m-0 mt-1 font-medium">每天一次，按 UTC 窗口</dd></div>
+          <div class="panel p-4"><dt class="t-xs muted">增长口径</dt><dd class="m-0 mt-1 font-medium">快照相减，可为负数</dd></div>
+        </dl>
+        <p data-state="nobatch" hidden class="t-small muted mt-4">还没有一次完整成功的采集，所以暂时没有数据日期。</p>
+      </div>
+    </header>
+
+    <!-- ===== Filters ===== -->
+    <section aria-label="榜单筛选" class="pt-10" data-state="default noresult error generation">
+      <form id="filters" class="flex flex-wrap items-end gap-x-4 gap-y-4" onsubmit="return false">
+        <div>
+          <p class="t-xs muted mb-2" id="win-label">时间窗口</p>
+          <div class="choice" role="group" aria-labelledby="win-label">
+            <button type="button" data-window="7" aria-pressed="true">近 7 天</button>
+            <button type="button" data-window="30" aria-pressed="false">近 30 天</button>
+          </div>
         </div>
-      </div>
-      <label class="block"><span class="t-small muted block mb-2">排序</span>
-        <select name="sort" class="select w-44">
-          <option value="stars_growth">Stars 净增长</option>
-          <option value="forks_growth">Forks 增长</option>
-          <option value="stars">Stars 总数</option>
-          <option value="updated">最近更新</option>
-        </select></label>
-      <label class="block"><span class="t-small muted block mb-2">语言</span><select name="lang" class="select w-36"></select></label>
-      <label class="block"><span class="t-small muted block mb-2">Topic</span><select name="topic" class="select w-44"></select></label>
-      <label class="block"><span class="t-small muted block mb-2">分类</span><select name="cat" class="select w-36"></select></label>
-      <button type="button" id="clear-btn" class="link t-body bg-transparent border-0 p-0 min-h-[48px] cursor-pointer text-[var(--ink)]">清除筛选</button>
-    </form>
-  </section>
+        <label class="block"><span class="t-xs muted block mb-2">排序</span>
+          <select name="sort" class="select w-40">
+            <option value="stars_growth">Stars 净增长</option>
+            <option value="forks_growth">Forks 增长</option>
+            <option value="stars">Stars 总数</option>
+            <option value="updated">最近更新</option>
+          </select></label>
+        <label class="block"><span class="t-xs muted block mb-2">语言</span><select name="lang" class="select w-36"></select></label>
+        <label class="block"><span class="t-xs muted block mb-2">Topic</span><select name="topic" class="select w-40"></select></label>
+        <label class="block"><span class="t-xs muted block mb-2">分类</span><select name="cat" class="select w-36"></select></label>
+        <button type="button" id="clear-btn" class="btn btn-ghost btn-sm !h-10">清除筛选</button>
+      </form>
+    </section>
 
-  <!-- ===== Feedback 1 · no successful batch yet (neutral, a lit photograph) ===== -->
-  <section data-state="nobatch" hidden class="wrap mt-20" aria-labelledby="nobatch-title">
-    <div class="grid12 gap-y-8 items-center field-surface py-14 md:py-20">
-      <div class="col-span-12 md:col-span-5 px-6 md:pl-12 md:pr-0">
-        <div class="photo aspect-[4/3]"><img src="img/fog-descending-on-a-pine-forest-unsplash.jpg" width="1200" height="900" alt="雾气落在松林上" loading="lazy"></div>
-      </div>
-      <div class="col-span-12 md:col-start-7 md:col-span-5 px-6 md:px-0">
-        <h2 id="nobatch-title" class="t-head">暂无榜单数据</h2>
-        <p class="t-body mt-6 max-w-[30em]">还没有完成过一次成功的采集批次。第一批成功并上线后，榜单会出现在这里。这不代表这些项目没有增长。</p>
-        <a href="home.html" class="link inline-block mt-8">回首页<span class="arrow"></span></a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Feedback 2 · request failed (black field) ===== -->
-  <section data-state="error" hidden role="alert" class="mt-20 field-black" aria-labelledby="error-title">
-    <div class="wrap py-16 md:py-20 grid12 gap-y-6 items-end">
-      <div class="col-span-12 md:col-span-8">
-        <h2 id="error-title" class="t-head down">榜单没有取回来</h2>
-        <p class="t-body mt-6 max-w-[34em]">可能是网络中断，或者服务暂时不可用。你选的筛选条件还在，重试一次就好。</p>
-      </div>
-      <div class="col-span-12 md:col-span-4 md:text-right">
-        <button type="button" class="btn" data-toast="正在重试…">重试<span class="arrow"></span></button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Feedback 3 · site generation changed (white field) ===== -->
-  <section data-state="generation" hidden role="alert" class="mt-20 field-light" aria-labelledby="gen-title">
-    <div class="wrap py-16 md:py-20 grid12 gap-y-6 items-end">
-      <div class="col-span-12 md:col-span-8">
-        <h2 id="gen-title" class="t-head">站点刚长出新的一圈</h2>
-        <p class="t-body mt-6 max-w-[34em]">榜单随新版本更新了。为了不把两个版本的数据混在一起，旧结果已经清掉，刷新一下就能看到最新的榜单。</p>
-      </div>
-      <div class="col-span-12 md:col-span-4 md:text-right">
-        <button type="button" class="btn" style="background:var(--bg);color:var(--ink)" onclick="location.href=location.pathname">刷新页面<span class="arrow"></span></button>
-      </div>
-    </div>
-  </section>
-
-  <div id="results" data-state="default noresult">
-    <!-- ===== Featured: a short list beside a photograph, outside the natural rank ===== -->
-    <section aria-labelledby="featured-title" class="wrap section" id="featured-wrap">
-      <div class="grid12 gap-y-10">
-        <div class="col-span-12 md:col-span-5">
-          <div class="photo aspect-[4/5]" data-zoom><img src="img/cathedral-grove-old-growth-forest-vancouver-island.jpg" width="1200" height="1500" alt="老林里高大的树干，地面长满蕨类" loading="lazy"></div>
-        </div>
-        <div class="col-span-12 md:col-start-7 md:col-span-6 self-center" data-rise>
-          <h2 id="featured-title" class="t-head">编辑精选</h2>
-          <p class="t-body mt-5 max-w-[30em]">这三个是我手挑的，单独放在这里，不占也不改变下面的自然排名。</p>
-          <ul id="featured" class="list-none p-0 mt-10 grid gap-8"></ul>
-        </div>
+    <!-- ===== Notice · no successful batch yet ===== -->
+    <section data-state="nobatch" hidden class="mt-10" aria-labelledby="nobatch-title">
+      <div class="rounded-[1.5rem] bg-[var(--mist)] p-8 md:p-12 max-w-3xl">
+        <span class="chip">暂无数据</span>
+        <h2 id="nobatch-title" class="t-h2 mt-4">暂无榜单数据</h2>
+        <p class="ink-2 mt-3">还没有完成过一次成功的采集批次。第一批成功并上线后，榜单会出现在这里。这不代表这些项目没有增长。</p>
+        <a href="home.html" class="btn btn-dark mt-6">回首页<span class="dot"><span class="arrow">↗</span></span></a>
       </div>
     </section>
 
-    <!-- ===== Natural ranking ===== -->
-    <section aria-labelledby="rank-title" class="wrap section">
-      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-        <h2 id="rank-title" class="t-head scroll-mt-24">自然榜单</h2>
-        <p id="rank-summary" class="t-body muted" aria-live="polite"></p>
-      </div>
-
-      <!-- Feedback 4 · no result for these filters (bare ground, large words) -->
-      <div id="empty" hidden class="mt-14 max-w-[36em]">
-        <p class="t-lead">没有符合条件的结果。换一个语言、Topic 或分类，或者把筛选全部清掉。</p>
-        <button type="button" id="empty-clear" class="btn mt-8">清除筛选<span class="arrow"></span></button>
-      </div>
-
-      <div id="rank-tile" class="mt-10">
-        <div class="hidden md:block overflow-x-auto">
-          <table class="data-table">
-            <caption class="sr-only">AI 开源项目自然榜单</caption>
-            <thead>
-              <tr>
-                <th scope="col" class="w-16">排名</th>
-                <th scope="col">仓库</th>
-                <th scope="col">语言</th>
-                <th scope="col" class="num" id="th-sg">近 7 天 Stars</th>
-                <th scope="col" class="num" id="th-fg">近 7 天 Forks</th>
-                <th scope="col" class="num">Stars 总数</th>
-                <th scope="col" class="num">最近更新</th>
-              </tr>
-            </thead>
-            <tbody id="rows"></tbody>
-          </table>
+    <!-- ===== Notice · request failed ===== -->
+    <section data-state="error" hidden role="alert" class="mt-10" aria-labelledby="error-title">
+      <div class="rounded-[1.5rem] bg-[rgba(178,58,43,.07)] ring-1 ring-[rgba(178,58,43,.18)] p-6 md:p-8 flex flex-wrap items-center justify-between gap-6">
+        <div class="max-w-2xl">
+          <h2 id="error-title" class="t-h3 down">榜单没有取回来</h2>
+          <p class="ink-2 mt-2">可能是网络中断，或者服务暂时不可用。你选的筛选条件还在，重试一次就好。</p>
         </div>
-        <ol id="cards" class="md:hidden list-none p-0 m-0 grid gap-3"></ol>
+        <button type="button" class="btn btn-dark" data-toast="正在重试…">重试</button>
       </div>
+    </section>
 
-      <nav id="pager" aria-label="榜单分页" class="mt-10 flex flex-wrap items-center justify-between gap-4"></nav>
+    <!-- ===== Notice · site generation changed ===== -->
+    <section data-state="generation" hidden role="alert" class="mt-10" aria-labelledby="gen-title">
+      <div class="rounded-[1.5rem] bg-[rgba(246,191,53,.18)] ring-1 ring-[rgba(246,191,53,.5)] p-6 md:p-8 flex flex-wrap items-center justify-between gap-6">
+        <div class="max-w-2xl">
+          <h2 id="gen-title" class="t-h3">站点刚发布了新版本</h2>
+          <p class="ink-2 mt-2">榜单随新版本更新了。为了不把两个版本的数据混在一起，旧结果已经清掉，刷新一下就能看到最新的榜单。</p>
+        </div>
+        <button type="button" class="btn btn-dark" onclick="location.href=location.pathname">刷新页面</button>
+      </div>
     </section>
   </div>
 
-  <!-- ===== How it is measured: two cross-sections, the rules beside them ===== -->
-  <section aria-labelledby="method-title" class="wrap section">
-    <div class="grid12 gap-y-10">
-      <div class="col-span-12 md:col-span-4 order-2 md:order-1">
-        <div class="photo aspect-[2/3]" data-zoom><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1000" height="1500" alt="1937 年拍摄的西黄松树桩切面，标注了 1255 到 1930 年的年轮与火痕" loading="lazy"></div>
-        <p class="t-small muted mt-3">1937 年的一段西黄松切面：好年份长得宽，坏年份长得窄，都留在木头里。</p>
+  <div id="results" data-state="default noresult">
+    <!-- ===== Featured: outside the natural rank ===== -->
+    <section aria-labelledby="featured-title" class="wrap pt-14" id="featured-wrap">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div><span class="eyebrow">编辑精选</span><h2 id="featured-title" class="t-h2 mt-3">这三个是我手挑的</h2></div>
+        <p class="t-small muted max-w-md">单独放在这里，不占也不改变下面的自然排名。</p>
       </div>
-      <div class="col-span-12 md:col-start-6 md:col-span-6 self-end order-1 md:order-2" data-rise>
-        <h2 id="method-title" class="t-head">增长怎么算</h2>
-        <div class="t-body mt-8 grid gap-5 max-w-[34em]">
-          <p>增长就是两次快照相减。近 7 天，是今天的快照减去七天前的那一次；近 30 天同理。</p>
-          <p>Stars 变少了，就照实写成负数，比如 <span class="down"><span class="sign">−</span>12</span>。年轮有窄的一圈，榜单也不替它遮掩。</p>
-          <p>缺了任意一天的快照，就写「数据不足」，并排在最后，不当成 0。</p>
-          <p>某一天只采集成功了一部分，那一批不会上线，榜单继续显示上一次完整的结果。</p>
+      <ul id="featured" class="list-none p-0 mt-8 grid gap-4 md:grid-cols-3"></ul>
+    </section>
+
+    <!-- ===== Natural ranking ===== -->
+    <section aria-labelledby="rank-title" class="wrap pt-16">
+      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <h2 id="rank-title" class="t-h2 scroll-mt-28">自然榜单</h2>
+        <p id="rank-summary" class="t-small muted" aria-live="polite"></p>
+      </div>
+
+      <!-- no result for these filters -->
+      <div id="empty" hidden class="mt-8 rounded-[1.5rem] bg-[var(--mist)] p-8 md:p-12 max-w-3xl">
+        <p class="t-lead">没有符合条件的结果。</p>
+        <p class="ink-2 mt-2">换一个语言、Topic 或分类，或者把筛选全部清掉。</p>
+        <button type="button" id="empty-clear" class="btn btn-dark mt-6">清除筛选</button>
+      </div>
+
+      <div id="rank-tile" class="mt-8 bezel">
+        <div class="face overflow-hidden">
+          <div class="hidden md:block overflow-x-auto">
+            <table class="data-table">
+              <caption class="sr-only">AI 开源项目自然榜单</caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="w-16 !pl-6">排名</th>
+                  <th scope="col">仓库</th>
+                  <th scope="col">语言</th>
+                  <th scope="col" class="num" id="th-sg">近 7 天 Stars</th>
+                  <th scope="col" class="num" id="th-fg">近 7 天 Forks</th>
+                  <th scope="col" class="num">Stars 总数</th>
+                  <th scope="col" class="num !pr-6">最近更新</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <ol id="cards" class="md:hidden list-none p-0 m-0 rows"></ol>
         </div>
-        <div class="photo aspect-[4/3] mt-14 md:w-[70%]"><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="1200" height="900" alt="松树树桩上一圈圈的年轮" loading="lazy"></div>
       </div>
+
+      <nav id="pager" aria-label="榜单分页" class="mt-6 flex flex-wrap items-center justify-between gap-4"></nav>
+    </section>
+  </div>
+
+  <!-- ===== How it is measured ===== -->
+  <section aria-labelledby="method-title" class="band band-mist mt-20">
+    <div class="wrap grid gap-10 lg:grid-cols-12">
+      <div class="lg:col-span-4" data-rise>
+        <span class="eyebrow">口径</span>
+        <h2 id="method-title" class="t-h1 mt-5">增长怎么算</h2>
+        <p class="ink-2 mt-4">榜单只做减法，不做估算。具体规则就这四条。</p>
+      </div>
+      <ol class="lg:col-span-8 list-none p-0 grid sm:grid-cols-2 gap-4" data-rise>
+        <li class="panel p-6"><p class="mono t-small text-[var(--accent)]">01</p><h3 class="t-h3 mt-2">两次快照相减</h3><p class="t-small ink-2 mt-2">近 7 天，是今天的快照减去七天前的那一次；近 30 天同理。</p></li>
+        <li class="panel p-6"><p class="mono t-small text-[var(--accent)]">02</p><h3 class="t-h3 mt-2">负增长照实写</h3><p class="t-small ink-2 mt-2">Stars 变少了，就写成负数，比如 <span class="down font-medium">−12</span>，不替它遮掩。</p></li>
+        <li class="panel p-6"><p class="mono t-small text-[var(--accent)]">03</p><h3 class="t-h3 mt-2">缺快照写「数据不足」</h3><p class="t-small ink-2 mt-2">缺了任意一天的快照，就写「数据不足」并排在最后，不当成 0。</p></li>
+        <li class="panel p-6"><p class="mono t-small text-[var(--accent)]">04</p><h3 class="t-h3 mt-2">只发布完整批次</h3><p class="t-small ink-2 mt-2">某天只采集成功了一部分，那一批不会上线，榜单继续显示上一次完整的结果。</p></li>
+      </ol>
     </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
@@ -206,7 +195,7 @@
       topic: TOPICS[(i * 5 + 1) % TOPICS.length],
       cat: CATS[(i * 2) % CATS.length],
       stars, g7, g30, f7, f30,
-      updated: `2026-11-${String(day).padStart(2, '0')}`, // taste-skill-ignore: a date, not an index
+      updated: `2026-11-${String(day).padStart(2, '0')}`,
       featured: [2, 9, 17].includes(i),
     };
   });
@@ -240,13 +229,13 @@
 
   /* ---------------- formatting ---------------- */
   const fmt = n => n.toLocaleString('en-US');
-  const L = l => l.replace('++', '<span class="sign">++</span>');
   function growth(n) {
     if (n === null || n === undefined) return '<span class="muted">数据不足</span>';
-    if (n < 0) return `<span class="down"><span class="sign">−</span>${fmt(-n)}</span>`;
+    if (n < 0) return `<span class="down font-medium">−${fmt(-n)}</span>`;
     if (n === 0) return '<span class="muted">0</span>';
-    return `<span class="up"><span class="sign">+</span>${fmt(n)}</span>`;
+    return `<span class="up font-medium">+${fmt(n)}</span>`;
   }
+  const rank = n => `<span class="inline-grid place-items-center w-8 h-8 rounded-full mono t-small ${n <= 3 ? 'bg-[var(--teal)] text-white' : 'bg-[rgba(16,37,35,.06)] muted'}">${n}</span>`;
 
   /* ---------------- render ---------------- */
   let state = readURL();
@@ -278,10 +267,13 @@
 
     // 精选：独立展示，不占自然排名
     document.getElementById('featured').innerHTML = DATA.filter(d => d.featured).map(d => `
-      <li><a href="ai-trending-detail.html" class="block no-underline group">
-        <span class="t-lead block break-all group-hover:underline underline-offset-4 decoration-1">${d.name}</span>
-        <span class="t-body muted block mt-1">${d.desc}</span>
-        <span class="t-body block mt-2">近 ${w} 天 Stars ${growth(d[sg])} <span class="muted">· ${L(d.lang)}</span></span>
+      <li><a href="ai-trending-detail.html" class="group block bezel h-full">
+        <div class="face lift h-full p-6 flex flex-col">
+          <div class="flex items-center justify-between gap-3"><span class="chip chip-sun">精选</span><span class="t-xs muted">${d.lang} · ${d.topic}</span></div>
+          <h3 class="font-semibold text-lg mt-4 break-all hover-accent">${d.name}</h3>
+          <p class="t-small ink-2 mt-2">${d.desc}</p>
+          <p class="t-small mt-auto pt-5 flex items-center justify-between gap-3"><span class="muted">近 ${w} 天 Stars</span><span class="mono">${growth(d[sg])}</span></p>
+        </div>
       </a></li>`).join('');
 
     const empty = list.length === 0;
@@ -290,32 +282,30 @@
     document.getElementById('pager').hidden = empty;
 
     const startRank = (page - 1) * PER;
-    const rank = n => `<span class="t-lead ${n <= 3 ? 'ink' : 'muted'}">${n}</span>`;
     document.getElementById('rows').innerHTML = slice.map((d, i) => `
       <tr>
-        <td>${rank(startRank + i + 1)}</td>
-        <td class="max-w-[420px]"><a href="ai-trending-detail.html" class="link break-all">${d.name}</a><div class="t-small muted mt-1">${d.desc} · ${d.topic}</div></td>
-        <td class="whitespace-nowrap">${L(d.lang)}</td>
-        <td class="num">${growth(d[sg])}</td>
-        <td class="num">${growth(d[fg])}</td>
-        <td class="num">${fmt(d.stars)}</td>
-        <td class="num muted"><time datetime="${d.updated}">${+d.updated.slice(5, 7)} 月 ${+d.updated.slice(8)} 日</time></td>
+        <td class="!pl-6">${rank(startRank + i + 1)}</td>
+        <td class="max-w-[420px]"><a href="ai-trending-detail.html" class="font-medium break-all hover-accent">${d.name}</a><div class="t-small muted mt-1">${d.desc} · <span class="hash">${d.topic}</span></div></td>
+        <td class="whitespace-nowrap"><span class="chip">${d.lang}</span></td>
+        <td class="num mono">${growth(d[sg])}</td>
+        <td class="num mono">${growth(d[fg])}</td>
+        <td class="num mono">${fmt(d.stars)}</td>
+        <td class="num muted !pr-6"><time datetime="${d.updated}">${d.updated.slice(5)}</time></td>
       </tr>`).join('');
 
     document.getElementById('cards').innerHTML = slice.map((d, i) => `
-      <li><a href="ai-trending-detail.html" class="grid grid-cols-[2.2rem_1fr] gap-3 py-4 no-underline">
+      <li><a href="ai-trending-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3 p-5">
         ${rank(startRank + i + 1)}
         <span class="min-w-0">
-          <span class="block t-body break-all">${d.name}</span>
+          <span class="block font-medium break-all hover-accent">${d.name}</span>
           <span class="block t-small muted mt-1">${d.desc}</span>
-          <span class="block t-body mt-2">${w} 天 ${growth(d[sg])} <span class="muted">· 共 ${fmt(d.stars)} · ${L(d.lang)}</span></span>
+          <span class="flex flex-wrap items-center gap-x-3 gap-y-1 t-small mt-2"><span class="mono">${w} 天 ${growth(d[sg])}</span><span class="muted">共 ${fmt(d.stars)} · ${d.lang}</span></span>
         </span></a></li>`).join('');
 
-    // pager — plain words
-    const b = (p, label, cur) => `<button type="button" data-page="${p}" class="min-w-[44px] min-h-[44px] px-2 bg-transparent border-0 cursor-pointer t-body ${cur ? 'link ink' : 'muted hover:text-[var(--ink)]'}" ${cur ? 'aria-current="page"' : ''}>${label}</button>`;
+    const b = (p, label, cur) => `<button type="button" data-page="${p}" class="min-w-[40px] h-10 px-3 rounded-full border-0 cursor-pointer t-small font-medium transition-colors ${cur ? 'bg-[var(--ink)] text-white' : 'bg-transparent text-[var(--ink-2)] hover:bg-[rgba(16,37,35,.06)]'}" ${cur ? 'aria-current="page"' : ''}>${label}</button>`;
     document.getElementById('pager').innerHTML = `
-      <span class="t-body muted">第 ${startRank + 1} 到 ${startRank + slice.length} 名</span>
-      <div class="flex items-center gap-1">
+      <span class="t-small muted">第 ${startRank + 1} 到 ${startRank + slice.length} 名</span>
+      <div class="flex flex-wrap items-center gap-1">
         ${page > 1 ? b(page - 1, '上一页') : ''}
         ${Array.from({ length: pages }, (_, i) => b(i + 1, i + 1, i + 1 === page)).join('')}
         ${page < pages ? b(page + 1, '下一页') : ''}

@@ -1,57 +1,50 @@
-# Silva 公开站点设计系统 v3：暗室
+# Silva 公开站点设计系统 v4：明亮门户
 
-本版由 `design-taste-frontend` 抽取方向生成。方向是 **dark-room**（暗室），种子 2067718303，完整的方向表保存在 `design-system/direction.json`。实现文件是 `assets/silva.css`（令牌和组件）、`assets/site.js`（页头、页脚、动效、拖拽长廊）和 `assets/credits.js`（图片署名）。
+参考站主之前的个人站 [clin.pro](https://clin.pro/)。Silva 是一个以博客为主体的个人门户，不是摄影作品集，所以不用图库照片。站点名的意思是像树一样一圈一圈地成长，不是字面上的森林，因此视觉上不出现森林、树木或年轮的图片。
 
-## 核心想法
+实现文件是 `assets/silva.css`（令牌和组件）和 `assets/site.js`（悬浮页头、四栏页脚、入场动效、图标）。
 
-> 在这个站点上，**周屿像树一样一圈一圈的成长（Silva）**，变成**暗室里被照亮的年轮**。
+## 页面结构
 
-Silva 不是「森林」的字面意思，而是像树一样走出舒适区，慢慢地、一圈一圈地往外长。站内每篇文章、每个项目都是新长出的一圈；旧的那圈不会被抹掉，这和后台「不可变修订」的设计一致。
-
-**可交互的部分**：首页的「两次快照 / 一个增长」计算器。访客修改两天的 Stars 快照，右侧按 AI 榜单的真实口径即时重算：负增长照实显示，缺一天就写「数据不足」。
+- **页头**：顶部悬浮的胶囊导航，白底 88% 透明度加毛玻璃。左边是字标，中间放栏目，右边是 RSS 按钮。手机上改为下拉面板。
+- **首页**依次是：青色主视觉（姓名、标语、行动按钮，加一张显示站点实时数据的卡片）→ 最近更新（一篇头条文章配三篇列表）→ 正在发生（深色区，包括精选项目、AI 开源趋势和正在输入）→ 关于（浅灰绿区，左边是介绍，右边是工作方法）→ 保持联系（黄色区）→ 页脚。
+- **About**：上方左边是标题、右边是自我介绍和四个关注方向。下方左栏是个人档案卡片（头像字、所在地、工作经验、邮箱和 GitHub 语言概览），可以吸顶；右栏依次是个人简介、工作经历、技术能力。再往下是「一些自叙」四张彩色卡片和结尾的行动按钮。
+- **其他页面**统一用 About 页头的写法（小标签、大标题、引导语），列表用双层卡片或分隔行。
 
 ## 令牌
 
-| 角色 | 值 | 说明 |
+| 角色 | 值 | 用途 |
 | ---- | -- | ---- |
-| `--bg` | `#0f1f10` | 整页唯一的底色，不分色带 |
-| `--surface` / `--surface-2` | `#162a17` / `#1d351e` | 靠色阶区分层次，不用描边和阴影 |
-| `--ink` | `#f1f4ee` | 正文，偏暖的浅色，不用纯白 |
-| `--muted` | `#b3bdb1` | 次要文字，在底色上的对比度约 9:1 |
-| `--accent` | `#c6f19d` | 浅青柠。只用在页面唯一的主操作、小方块按钮和页脚字标上 |
-| `--field-1` / `--field-2` | `#000` / `#fff` | 整块的黑场和白场，例如快照计算器 |
-| 字体 | Boska + Noto Serif SC | 只用常规体和 500，不用粗体 |
-| 字号 | 14 / 19 / 26 / 64 px，以及页脚字标 | 小字 / 正文 / 引导 / 标题 / 字标，一页不超过 5 级 |
-| 圆角 | 0 | 所有元素都是方角 |
+| `--bg` | `#F4F8F7` | 页面底色 |
+| `--paper` | `#FFFFFF` | 卡片表面、页脚 |
+| `--mist` | `#EDF2F0` | 交替色带 |
+| `--ink` / `--ink-2` / `--muted` | `#102523` / `#33484A` / `#5B6F6C` | 正文、次要文字、辅助文字 |
+| `--teal` / `--accent` | `#087F89` / `#0B8992` | 主视觉色带；链接、悬停、焦点 |
+| `--deep` | `#071A18` | 深色区（正在发生） |
+| `--sun` | `#F6BF35` | 联系区、强调标签 |
+| 字体 | Geist、Geist Mono，中文用系统黑体 | 标题 600，正文 400 |
+| 圆角 | 胶囊按钮和标签用 999px，卡片外层 2rem、内层 2rem − 6px，面板 1.25rem | |
 
-## 规则
+## 组件
 
-这些规则用 `scripts/inspect.mjs` 实测：
-
-- 标题在 1440、768、390 三个宽度下都不超过两行。
-- 不用眉标、编号（01 / 02）、细分隔线、渐变、静止状态下的阴影、毛玻璃、图标卡片，也不用一排排同样的卡片。
-- 等宽字体只用于真实代码和原样数据。需要豁免时，在同一行加 `taste-skill-ignore` 注释。
-- 正文至少 16px；对比度至少 4.5:1。
-- 每页至少 4 张真实图片，全部来自 `site/img/`（开放图库），并在页脚署名。代码绘制的 SVG 不计入。
-- 相邻区块不用同一种布局，每一屏只有一个主体。
-- 动效：区块内各部分依次入场（`data-rise`），图片缓缓归位（`data-zoom`），所有控件有按下、悬停和焦点反馈；首页有拖拽长廊，页脚是循环视频。开启「减少动态效果」时只保留内容，不做位移。
+- `.band` 加 `.band-teal`、`.band-mist`、`.band-deep`、`.band-sun`、`.band-paper`：整块色带区。
+- `.eyebrow`：带圆点的小胶囊标签，用来命名区块。`.kicker`：英文小标题，如 Build log。
+- `.soft`：双色标题的第二行，用浅一些的颜色。
+- `.bezel > .face`：双层卡片，外层是淡色壳，内层是白色面；放在深色区时自动换成深色。
+- `.panel`：单层白卡片。`.chip`（以及 `-teal`、`-sun`、`-coral`、`.hash`）：标签和状态。
+- `.btn` 加 `-dark`、`-light`、`-ghost`、`-sm`：胶囊按钮，可以内嵌 `.dot` 箭头。
+- `.cover` 加 `c-teal`、`c-deep`、`c-sun`、`c-coral`、`c-ink`、`c-mist`：文章封面不用照片，而是一块纯色色板，加点阵纹理和等宽字标记（如 `rev:v2`、`pg`、`fn`）。
+- `.choice`：分段胶囊选择器。`.input`、`select.select`：输入框和下拉框。`.data-table`、`.bar`、`.prose`：表格、进度条、长文排版。
+- 动效：`data-rise` 让区块内的子元素依次淡入、上移、去模糊；首页主视觉用 `.hero-reveal`。开启「减少动态效果」时全部关闭。
 
 ## 页面骨架
 
 ```html
 <head> … <script>document.documentElement.classList.add('js')</script>
-  Boska（fontshare）、Noto Serif SC（Google Fonts）、Tailwind CDN 3.4.17、../assets/tw-config.js、../assets/silva.css
+  Geist / Geist Mono（Google Fonts）、Tailwind CDN 3.4.17、../assets/tw-config.js、../assets/silva.css
 <body class="silva" data-nav="…" data-proto-states="…">
   <div id="site-header"></div> <main id="main">…</main> <div id="site-footer"></div>
-  <script src="../assets/credits.js"></script><script src="../assets/site.js"></script><script src="../assets/proto.js"></script>
+  <script src="../assets/site.js"></script><script src="../assets/proto.js"></script>
 ```
 
-## 检查方法
-
-```bash
-python3 -m http.server 8765 --directory prototype-design &
-CHROME_PATH=<带 --no-sandbox 的 chrome 包装脚本> node ~/.claude/skills/design-taste-frontend/scripts/inspect.mjs \
-  "http://localhost:8765/site/<页面>.html?bar=0" --out .taste-skill/inspect-<页面>
-```
-
-`?bar=0` 会隐藏原型工具条，避免被测成遮挡正文的元素。
+页头是悬浮的，所以 `main` 默认留出 96px 的上边距。首页主视觉要延伸到页头下面，给 `main` 加 `class="flush"`。

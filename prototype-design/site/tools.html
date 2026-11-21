@@ -6,120 +6,106 @@
   <title>工具 · Silva</title>
   <meta name="description" content="周屿日常写代码、排查问题和写作时真正在用的工具。">
   <script>document.documentElement.classList.add('js')</script>
-  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
-  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
   <style>
-    .anchor-line a { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--muted); text-decoration: none; transition: color .2s; }
-    .anchor-line a::before { content: ""; width: 8px; height: 8px; background: transparent; transition: background-color .2s; }
-    .anchor-line a:hover { color: var(--ink); }
-    .anchor-line a[aria-current] { color: var(--ink); }
-    .anchor-line a[aria-current]::before { background: var(--accent); }
-    .tool-group { scroll-margin-top: 80px; }
+    .tool-group { scroll-margin-top: 170px; }
+    .fav { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; font-weight: 600; font-size: .9375rem; flex: none; }
   </style>
 </head>
 <body class="silva" data-nav="tools" data-proto-states="default:有精选;nofeatured:无精选">
 <div id="site-header"></div>
 
 <main id="main">
-  <!-- ===== Title ===== -->
-  <section aria-labelledby="page-title" class="wrap pt-10 md:pt-16">
-    <div class="grid12 gap-y-10 items-end">
-      <div class="col-span-12 md:col-span-5" data-rise>
-        <h1 id="page-title" class="t-head">每天会打开的工具</h1>
-        <p class="t-lead mt-8 max-w-[20em]">写代码、查问题和写文章时真的在用的东西。点名字会在新标签页打开它的官网。</p>
+  <div class="wrap">
+    <!-- ===== Header ===== -->
+    <header class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
+      <div>
+        <span class="eyebrow">工具导航</span>
+        <h1 id="page-title" class="t-h1 mt-4">每天会打开的工具</h1>
       </div>
-      <div class="col-span-10 md:col-start-6 md:col-span-7" data-zoom>
-        <div class="photo lit aspect-[5/6] md:aspect-auto md:h-[68vh]"><img src="img/cathedral-grove-old-growth-forest-vancouver-island.jpg" width="1200" height="1440" alt="老林里高大的树干，地面长满蕨类" class="object-[50%_35%]"></div>
+      <div>
+        <p class="t-lead">写代码、查问题和写文章时真的在用的东西。点名字会在新标签页打开它的官网。</p>
+        <!-- featured -->
+        <section data-state="default" aria-labelledby="featured-title" class="mt-8">
+          <h2 id="featured-title" class="t-small font-medium muted">最常打开的三个</h2>
+          <ul class="mt-3 grid gap-3 sm:grid-cols-3 list-none p-0">
+            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://neovim.io/" target="_blank" rel="noopener"><span class="fav c-teal">N</span><span class="min-w-0"><span class="block font-medium hover-accent">Neovim <span class="arrow">↗</span></span><span class="block t-xs muted">写所有东西</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
+            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://pgcli.com/" target="_blank" rel="noopener"><span class="fav c-ink">pg</span><span class="min-w-0"><span class="block font-medium hover-accent">pgcli <span class="arrow">↗</span></span><span class="block t-xs muted">查数据库</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
+            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://github.com/sharkdp/hyperfine" target="_blank" rel="noopener"><span class="fav c-sun">h</span><span class="min-w-0"><span class="block font-medium hover-accent">hyperfine <span class="arrow">↗</span></span><span class="block t-xs muted">比较两个实现谁更快</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
+          </ul>
+        </section>
       </div>
-    </div>
-  </section>
+    </header>
+  </div>
 
-  <!-- ===== Featured, said in words ===== -->
-  <section data-state="default" aria-labelledby="featured-title" class="wrap mt-20 md:mt-28">
-    <div class="grid12 gap-y-6" data-rise>
-      <h2 id="featured-title" class="col-span-12 md:col-span-3 t-lead">最常打开的三个</h2>
-      <div class="col-span-12 md:col-start-5 md:col-span-8">
-        <ul class="list-none p-0 m-0 grid gap-5 t-lead">
-          <li><a class="link" href="https://neovim.io/" target="_blank" rel="noopener" aria-label="Neovim（外部链接，新标签页打开）">Neovim ↗</a><span class="muted">，写所有东西</span></li>
-          <li><a class="link" href="https://pgcli.com/" target="_blank" rel="noopener" aria-label="pgcli（外部链接，新标签页打开）">pgcli ↗</a><span class="muted">，查数据库</span></li>
-          <li><a class="link" href="https://github.com/sharkdp/hyperfine" target="_blank" rel="noopener" aria-label="hyperfine（外部链接，新标签页打开）">hyperfine ↗</a><span class="muted">，比较两个实现谁更快</span></li>
-        </ul>
-        <p class="muted mt-6">这三个在下面各自的分组里也有。</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Category anchors (sticky, plain text) ===== -->
-  <nav aria-label="工具分类" class="sticky top-0 z-30 bg-[var(--bg)] mt-20 md:mt-28">
-    <div id="anchors" class="wrap anchor-line flex flex-wrap gap-x-5 md:gap-x-8 gap-y-0 py-1 md:py-2"></div>
+  <!-- ===== Category filter (sticky pills) ===== -->
+  <nav aria-label="工具分类" class="sticky top-[84px] z-30 mt-8">
+    <div class="wrap"><div id="anchors" class="choice max-w-full overflow-x-auto !flex-nowrap bg-white/80 backdrop-blur shadow-[inset_0_0_0_1px_var(--line-soft)]"></div></div>
   </nav>
 
-  <div id="groups"></div>
+  <div id="groups" class="wrap pb-20"></div>
 </main>
 
 <div id="site-footer"></div>
-<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script>
   const GROUPS = [
-    { id: 'dev', name: '开发与调试', img: 'img/a-true-bamboo-forest-36443777482.jpg', alt: '竹林里笔直的竹竿', items: [
+    { id: 'dev', name: '开发与调试', items: [
       { n: 'Neovim', d: '主力编辑器，配置放在 dotfiles 里。', u: 'neovim.io', f: true },
       { n: 'Bruno', d: '本地优先的 API 调试客户端，请求集合可以提交到 Git。', u: 'usebruno.com' },
       { n: 'just', d: '比 Makefile 更顺手的命令运行器。', u: 'just.systems' },
       { n: 'WezTerm', d: '用 Lua 配置的终端。', u: 'wezfurlong.org' },
     ] },
-    { id: 'db', name: '数据库', img: 'img/cross-section-of-a-sequoia-sempervirens-showing.jpg', alt: '红杉树干横截面', items: [
+    { id: 'db', name: '数据库', items: [
       { n: 'pgcli', d: '带补全和高亮的 PostgreSQL 命令行。', u: 'pgcli.com', f: true },
       { n: 'explain.dalibo.com', d: '把 EXPLAIN ANALYZE 的结果画成一棵树。', u: 'explain.dalibo.com' },
     ] },
-    { id: 'ops', name: '可观测与运维', img: 'img/mount-lushan-fog.jpg', alt: '庐山的云雾与山崖', items: [
+    { id: 'ops', name: '可观测与运维', items: [
       { n: 'Grafana', d: '看指标和日志的面板。', u: 'grafana.com' },
       { n: 'hyperfine', d: '命令行基准测试，比较两个实现的耗时。', u: 'github.com/sharkdp/hyperfine', f: true },
     ] },
-    { id: 'write', name: '写作与图表', img: 'img/longjing-tea-field-dragon-well-area-meijiawu.jpg', alt: '杭州梅家坞一垄一垄的茶树', items: [
+    { id: 'write', name: '写作与图表', items: [
       { n: 'Excalidraw', d: '手绘风格的架构草图。', u: 'excalidraw.com' },
       { n: 'Mermaid Live', d: '用文本写时序图和流程图。', u: 'mermaid.live' },
     ] },
-    { id: 'other', name: '其他', img: 'img/store-mosse-forest.jpg', alt: '秋天的林地，阳光照进树干之间', items: [
+    { id: 'other', name: '其他', items: [
       { n: 'regex101', d: '调试正则表达式，带逐步解释。', u: 'regex101.com' },
     ] },
   ];
-  document.getElementById('anchors').innerHTML = GROUPS.map(g => `<a href="#${g.id}" data-anchor="${g.id}">${g.name}</a>`).join('');
-  document.getElementById('groups').innerHTML = GROUPS.map((g, gi) => {
-    const right = gi % 2 === 1;
-    const photo = `<div class="col-span-12 md:col-span-4 ${right ? 'md:col-start-9 md:order-2' : ''}" data-zoom>
-        <div class="photo aspect-[4/5] w-[72%] md:w-auto ${right ? 'ml-auto' : ''}"><img src="${g.img}" width="1200" height="1500" alt="${g.alt}" loading="lazy"></div></div>`;
-    const list = `<div class="col-span-12 md:col-span-7 ${right ? 'md:col-start-1 md:order-1' : 'md:col-start-6'}" data-rise>
-        <h2 id="${g.id}-t" class="t-head">${g.name}</h2>
-        <p class="muted mt-3">${g.items.length} 个</p>
-        <ul class="list-none p-0 m-0 mt-10 grid sm:grid-cols-2 gap-x-10 gap-y-9 [&>li]:min-w-0">
-          ${g.items.map(t => `<li>
-            <a href="https://${t.u}/" target="_blank" rel="noopener" class="relative block no-underline group">
-              <span class="t-lead underline decoration-1 underline-offset-[.22em] decoration-[color-mix(in_srgb,currentColor_40%,transparent)] group-hover:decoration-current">${t.n}</span>
-              ${t.f ? '<span class="featured-word muted">，最常用</span>' : ''}
-              <span class="block mt-2">${t.d}</span>
-              <span class="block mt-1 muted break-all">${t.u} ↗</span>
-              <span class="sr-only">（外部链接，新标签页打开）</span>
-            </a></li>`).join('')}
-        </ul></div>`;
-    return `<section id="${g.id}" class="tool-group wrap mt-[clamp(96px,10vw,160px)]" aria-labelledby="${g.id}-t">
-      <div class="grid12 gap-y-10 items-start">${photo}${list}</div></section>`;
-  }).join('');
+  const TINTS = ['c-teal', 'c-coral', 'c-sun', 'c-ink', 'c-mist', 'c-deep'];
+  document.getElementById('anchors').innerHTML = GROUPS.map(g => `<a href="#${g.id}" data-anchor="${g.id}" class="shrink-0">${g.name}<span class="ml-1.5 t-xs muted num">${g.items.length}</span></a>`).join('');
+  document.getElementById('groups').innerHTML = GROUPS.map((g, gi) => `
+    <section id="${g.id}" class="tool-group pt-12" aria-labelledby="${g.id}-t">
+      <header class="flex items-baseline justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <h2 id="${g.id}-t" class="t-h2">${g.name}</h2><p class="t-small muted num">${g.items.length} 个</p>
+      </header>
+      <ul class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 list-none p-0" data-rise>
+        ${g.items.map((t, i) => `<li class="min-w-0">
+          <a href="https://${t.u}/" target="_blank" rel="noopener" class="group panel h-full p-5 flex gap-4 lift">
+            <span class="fav ${TINTS[(gi + i) % TINTS.length]}" aria-hidden="true">${t.n[0].toUpperCase()}</span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2 flex-wrap"><span class="font-semibold hover-accent">${t.n}</span>${t.f ? '<span class="featured-word chip chip-teal">最常用</span>' : ''}</span>
+              <span class="block t-small ink-2 mt-1">${t.d}</span>
+              <span class="block t-xs muted mt-2 break-all">${t.u} <span class="arrow">↗</span></span>
+            </span>
+            <span class="sr-only">（外部链接，新标签页打开）</span>
+          </a></li>`).join('')}
+      </ul>
+    </section>`).join('');
   observeRise(document.getElementById('groups'));
 
-  // 当前锚点高亮
+  // 当前分类高亮
   const anchors = document.querySelectorAll('[data-anchor]');
   const setActive = id => anchors.forEach(a => a.dataset.anchor === id ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current'));
   setActive(GROUPS[0].id);
-  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) setActive(e.target.id); }), { rootMargin: '-120px 0px -60% 0px' });
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) setActive(e.target.id); }), { rootMargin: '-180px 0px -60% 0px' });
   document.querySelectorAll('.tool-group').forEach(s => io.observe(s));
 
-  // 无精选状态：去掉「最常用」字样
+  // 无精选状态：去掉「最常用」标记
   document.addEventListener('proto:state', e => document.querySelectorAll('.featured-word').forEach(w => { w.hidden = e.detail === 'nofeatured'; }));
 </script>
 <script src="../assets/proto.js"></script>
