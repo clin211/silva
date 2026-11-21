@@ -41,8 +41,6 @@ backend/
 │   │   │   ├── content/
 │   │   │   ├── taxonomy/
 │   │   │   ├── media/
-│   │   │   ├── projects/
-│   │   │   ├── tools/
 │   │   │   ├── profile/
 │   │   │   └── ai_trending/
 │   ├── application/
@@ -404,102 +402,11 @@ COMMENT ON COLUMN post_revision_media.revision_id IS '使用该媒体的文章�
 COMMENT ON COLUMN post_revision_media.media_id IS '该修订正文引用的已校验媒体 ID';
 ```
 
-一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。预签名只允许上传到短时有效的私有临时 key。确认时检查归属、有效期、实际字节大小与图像解码结果；校验的字节写入独立且不可覆盖的私有正式 key 后，才能标记 `ready`，重复确认返回同一结果。仅 `ready` 且调用者有权引用的资源可用于封面、图标、头像或正文；正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许当前 manifest 包含的媒体 ID。清理弃置的临时对象；删除正式对象前须确认当前/历史修订、结构化记录以及当前线上或待切换产物均无引用。
+一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。预签名只允许上传到短时有效的私有临时 key。确认时检查归属、有效期、实际字节大小与图像解码结果；校验的字节写入独立且不可覆盖的私有正式 key 后，才能标记 `ready`，重复确认返回同一结果。仅 `ready` 且调用者有权引用的媒体可用于文章封面、正文或个人头像。正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许当前 manifest 包含的媒体 ID。清理弃置的临时对象；删除正式对象前须确认当前及历史文章修订、个人资料、当前线上或待切换产物均无引用。
 
-### 4.4 Projects / Tools / Profile
+### 4.4 个人资料
 
 ```sql
-CREATE TABLE projects (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  slug text NOT NULL UNIQUE,
-  name text NOT NULL,
-  summary text NOT NULL,
-  description_md text,
-  cover_media_id uuid REFERENCES media_assets(id),
-  repository_url text,
-  demo_url text,
-  homepage_url text,
-  status text NOT NULL DEFAULT 'active',
-  featured boolean NOT NULL DEFAULT false,
-  sort_order integer NOT NULL DEFAULT 0,
-  started_at date,
-  completed_at date,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE projects IS '公开站点的项目展览条目，每条记录对应一个项目。';
-COMMENT ON COLUMN projects.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN projects.slug IS '用于公开页面路由的唯一标识。';
-COMMENT ON COLUMN projects.name IS '项目展示名称';
-COMMENT ON COLUMN projects.summary IS '项目列表使用的简介';
-COMMENT ON COLUMN projects.description_md IS '项目详情的 Markdown 说明，未填写时为 NULL';
-COMMENT ON COLUMN projects.cover_media_id IS '已校验的封面媒体 ID，未设置时为 NULL';
-COMMENT ON COLUMN projects.repository_url IS '源代码仓库地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.demo_url IS '演示地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.homepage_url IS '项目主页地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.status IS '项目自身状态，默认 active，不是站点发布状态';
-COMMENT ON COLUMN projects.featured IS '是否作为精选项目展示';
-COMMENT ON COLUMN projects.sort_order IS '人工设置的项目展示排序值';
-COMMENT ON COLUMN projects.started_at IS '项目开始日期，未知时为 NULL';
-COMMENT ON COLUMN projects.completed_at IS '项目完成日期，未完成或未知时为 NULL';
-COMMENT ON COLUMN projects.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN projects.updated_at IS '该记录在本系统最近一次更新的时间。';
-
-CREATE TABLE project_technologies (
-  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  technology text NOT NULL,
-  position integer NOT NULL DEFAULT 0,
-  PRIMARY KEY (project_id, technology)
-);
-
-COMMENT ON TABLE project_technologies IS '项目使用的技术条目，同一项目不能重复录入同名技术。';
-COMMENT ON COLUMN project_technologies.project_id IS '该技术条目所属的项目 ID';
-COMMENT ON COLUMN project_technologies.technology IS '前台展示的技术名称';
-COMMENT ON COLUMN project_technologies.position IS '技术在项目技术列表中的排序值';
-
-CREATE TABLE project_links (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  label text NOT NULL,
-  url text NOT NULL,
-  position integer NOT NULL DEFAULT 0
-);
-
-COMMENT ON TABLE project_links IS '项目详情展示的附加链接，每条记录对应一个链接。';
-COMMENT ON COLUMN project_links.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN project_links.project_id IS '附加链接所属的项目 ID';
-COMMENT ON COLUMN project_links.label IS '链接展示文案';
-COMMENT ON COLUMN project_links.url IS '链接目标地址';
-COMMENT ON COLUMN project_links.position IS '链接在项目详情中的排序值';
-
-CREATE TABLE tools (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  slug text NOT NULL UNIQUE,
-  name text NOT NULL,
-  description text NOT NULL,
-  url text NOT NULL,
-  icon_media_id uuid REFERENCES media_assets(id),
-  category text,
-  featured boolean NOT NULL DEFAULT false,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE tools IS '开发工具与资源导航，每条记录对应一个工具或资源。';
-COMMENT ON COLUMN tools.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN tools.slug IS '用于公开页面路由的唯一标识。';
-COMMENT ON COLUMN tools.name IS '工具或资源的展示名称';
-COMMENT ON COLUMN tools.description IS '工具或资源的用途说明';
-COMMENT ON COLUMN tools.url IS '工具或资源的访问地址';
-COMMENT ON COLUMN tools.icon_media_id IS '已校验的图标媒体 ID，未设置时为 NULL';
-COMMENT ON COLUMN tools.category IS '导航中的分类名称，未分类时为 NULL';
-COMMENT ON COLUMN tools.featured IS '是否标记为精选工具';
-COMMENT ON COLUMN tools.sort_order IS '人工设置的工具展示排序值';
-COMMENT ON COLUMN tools.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN tools.updated_at IS '该记录在本系统最近一次更新的时间。';
-
 CREATE TABLE profiles (
   id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
   display_name text NOT NULL,
@@ -868,22 +775,18 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 只读取当前 `active_generation` 的不可变公开投影（见 §7.2），不读草稿或期望发布数据。每个请求固定本次读取的 generation，并在响应返回 `X-Site-Generation`。客户端可传 `X-Expected-Generation`；若不一致返回 `409 site_generation_changed`，不提供访问旧 generation 的公开入口。尚无任何上线版本时返回 `503 site_not_ready`，不能假装数据为空。
 
-| Method                                       | Endpoint                            | 说明                                             |
-| -------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
-| GET                                          | `/api/v1/public/site`               | 首页所需站点配置                                 |
-| GET                                          | `/api/v1/public/posts`              | 线上文章列表，可按 `category` 或 `tag` slug 筛选 |
-| GET                                          | `/api/v1/public/posts/{slug}`       | 线上文章详情，不可见时 404                       |
-| GET                                          | `/api/v1/public/categories`         | 分类列表                                         |
-| GET                                          | `/api/v1/public/tags`               | 标签列表                                         |
-| GET                                          | `/api/v1/public/projects`           | 项目列表                                         |
-| GET                                          | `/api/v1/public/projects/{slug}`    | 项目详情                                         |
-| GET                                          | `/api/v1/public/tools`              | 工具列表                                         |
-| GET                                          | `/api/v1/public/profile`            | 个人资料                                         |
-| GET                                          | `/api/v1/public/ai-trending`        | AI 趋势榜单                                      |
-| GET                                          | `/api/v1/public/ai-trending/{slug}` | AI 项目详情                                      |
-| GET                                          |                                     | `/api/v1/public/ai-trending/{slug}/snapshots`    | 项目历史快照 |
-| 404 返回 ID其他，内容媒体的引用影投公开 当前 | }`id/{/media/public1/vapi `/        | GET                                              |
-|                                              | 本样成功 天90 的见可当前1/vapi`/    |
+| Method | Endpoint | 说明 |
+| ------ | -------- | ---- |
+| GET | `/api/v1/public/site` | 首页所需站点配置 |
+| GET | `/api/v1/public/posts` | 线上文章列表，可按 `category` 或 `tag` slug 筛选 |
+| GET | `/api/v1/public/posts/{slug}` | 线上文章详情，不可见时返回 404 |
+| GET | `/api/v1/public/categories` | 分类列表 |
+| GET | `/api/v1/public/tags` | 标签列表 |
+| GET | `/api/v1/public/profile` | 个人资料 |
+| GET | `/api/v1/public/ai-trending` | AI 趋势榜单 |
+| GET | `/api/v1/public/ai-trending/{slug}` | AI 仓库详情 |
+| GET | `/api/v1/public/ai-trending/{slug}/snapshots` | 当前可见仓库最近 90 天的成功快照 |
+| GET | `/api/v1/public/media/{id}` | 读取当前公开投影引用的媒体内容，其他 ID 返回 404 |
 
 ### 5.4 Admin API
 
@@ -905,9 +808,8 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | POST        | `/media/presign`、`/media/{id}/complete`                                                                  | 申请和确认上传，见 §6.4                        |
 | GET, DELETE | `/media/{id}`                                                                                             | 媒体元数据和授权删除；列表使用 `GET /media`    |
 | GET         | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存               |
-| CRUD        | `/projects`、`/tools`                                                                                     | 资源管理；删除随生成版本生效                   |
 | GET, PUT    | `/profile`                                                                                                | 读取和整体保存单例个人资料                     |
-| GET         | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 项目与成功批次快照                             |
+| GET         | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                             |
 | PATCH       | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                      |
 | GET         | `/ai-trending/runs`                                                                                       | 采集批次、错误与限流信息                       |
 | POST        | `/ai-trending/ingestion-runs`                                                                             | Admin 请求当日批次；运行中或已成功返回现有记录 |
@@ -917,7 +819,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | PATCH       | `/users/{id}`                                                                                             | Admin 停用、启用及分配内置角色                 |
 | GET         | `/roles`、`/audit-logs`、`/system/health`                                                                 | Admin 读取内置角色、审计及系统健康             |
 
-默认 Editor/Admin 维护结构化资源及分类标签；Author 仅操作自己名下的文章与媒体，读取自己的任务不等同于获得全站发布或重试权限。结构化资源及公开 taxonomy 的变更保留管理侧保存成功，响应同时包含 `publish_job_id`、`desired_generation`，以便后台单独显示上线状态。
+默认由 Editor/Admin 维护个人资料和分类标签。Author 仅可操作自己名下的文章与媒体，以及读取自己有权访问的任务。个人资料、公开分类标签和 AI 榜单展示设置保存成功后，响应包含 `publish_job_id` 和 `desired_generation`，供后台单独显示上线状态。
 
 ### 5.5 Internal API
 
@@ -968,7 +870,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 6.4 媒体上传
 
-`presign` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `complete`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或资源时，不可引用未通过校验的媒体（`422 media_not_ready`），删除被引用的媒体返回 `409 media_in_use`。
+`presign` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `complete`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或个人资料时，引用未通过校验的媒体返回 `422 media_not_ready`。删除被引用的媒体返回 `409 media_in_use`。
 
 ## 7. 核心业务流程
 
@@ -983,8 +885,8 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 7.2 站点发布流程
 
-1. **登记站点目标。** API/Worker 对所有影响公开结果的事务统一调用 `enqueue_site_publish`：文章发布/取消发布、公开 taxonomy 修改、Projects/Tools/Profile 的保存或删除、AI 展示调整与采集成功。锁定 `site_state` 单例后递增 `desired_generation`（首次为 1），并在同一事务内保存业务变更、创建 `queued` 的 `publish_jobs` 与业务键为 generation 的 Outbox 事件。保存草稿、上传和审核不重建。初次部署以 `bootstrap` 触发，未上线前站点返回 503。
-2. **领取与导出。** Worker 短事务领取任务，写入租约后提交。导出使用同一 `REPEATABLE READ` 视图，首先确认请求 generation 为该视图的 `desired_generation`，再一次性导出期望公开的 revision、taxonomy、资源、最新成功 AI 批次、媒体 ID 与页面索引。输出带 `generation`、`schema_version` 和完整性摘要的不可变快照：仅含公开投影（不含账户、草稿、原始外部 payload 或内部 key），站点构建及 Public API 使用同一数据；文章 ID 与公开 revision 的映射也写入快照，供后台查询线上状态。
+1. **登记站点目标。** 文章发布或取消发布、公开分类标签修改、个人资料保存、AI 榜单展示调整和成功采集均调用 `enqueue_site_publish`。锁定 `site_state` 单例后递增 `desired_generation`（首次为 1），并在同一事务内保存业务变更、创建 `queued` 的 `publish_jobs` 与业务键为 generation 的 Outbox 事件。保存草稿、上传和审核不重建。初次部署以 `bootstrap` 触发，未上线前站点返回 503。
+2. **领取与导出。** Worker 短事务领取任务，写入租约后提交。导出使用同一 `REPEATABLE READ` 视图，首先确认请求 generation 为该视图的 `desired_generation`，再一次性导出期望公开的 revision、分类标签、个人资料、最新成功 AI 批次、媒体 ID 与页面索引。输出带 `generation`、`schema_version` 和完整性摘要的不可变快照：仅含公开投影（不含账户、草稿、原始外部 payload 或内部 key），站点构建及 Public API 使用同一数据；文章 ID 与公开 revision 的映射也写入快照，供后台查询线上状态。
 3. **构建候选产物。** Worker 将快照以只读文件交给 Astro，并将 HTML、sitemap、RSS 等输出上传至按 generation 和尝试隔离的私有产物位置。验证上传完成及产物清单后才能尝试上线。构建、上传均不修改生产路由；过期租约不能覆盖后续尝试的产物。
 4. **原子切换。** 生产站点入口和 Public API 均以数据库 `site_state.active_generation` 为唯一线上指针。成功候选在短事务内锁定同一单例行，验证 `generation == desired_generation`、租约仍有效且产物已就绪，然后一次性写入对应快照与产物位置、推进 `active_generation`、标记当前任务为 `active` 与上一线上任务为 `retired`。若 `desired_generation` 已变，旧候选标记 `superseded`，不切流量；同一已激活任务重复确认是空操作。
 5. **处理失败与重试。** 构建或校验失败保持上一指针，记录错误并把仍为最新目标的任务标为 `failed`；落后的未上线任务可直接合并为 `superseded`。Admin 只可把仍为最新目标的失败 generation 重新排队（否则 `409 publish_job_not_retryable`），不能激活旧站点产物。后续站点变更生成新 generation，并包含此前尚未上线的期望变更。
@@ -1030,6 +932,6 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 1. Workspace、配置、迁移、健康检查、认证和 RBAC。
 2. 媒体直传与确认、Markdown 修订、分类标签、审核、发布和取消发布。
 3. Outbox、generation 快照、Astro 构建与生产指针切换；Public API 和 Admin 任务页面。
-4. Projects、Tools、Profile。
+4. 个人资料维护与公开投影。
 5. GitHub 采集、快照、趋势计算和后台运行记录。
 6. 审计、监控、备份恢复和端到端测试。优先覆盖过期租约、旧构建晚完成、新草稿不影响线上、部分采集失败、取消发布后的 404 和媒体引用权限。

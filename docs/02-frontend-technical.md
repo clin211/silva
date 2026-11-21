@@ -59,7 +59,7 @@ frontend/
 
 公开站点采用 Static-first：
 
-- 首页、文章、分类、标签、项目、About、AI Trending 初始榜单等使用 SSG；筛选、分页和趋势图按需调用 Public API。
+- 首页、文章、分类、标签、About 和 AI Trending 初始榜单使用 SSG。筛选、分页和趋势图按需调用 Public API。
 - 一期不实现站内搜索、收藏或访客登录，不因少量动态区块引入 SSR。
 
 ### 2.2 Admin
@@ -86,8 +86,6 @@ src/
 │   ├── categories/
 │   ├── tags/
 │   ├── ai-trending/
-│   ├── projects/
-│   ├── tools/
 │   └── about.astro
 ├── components/
 │   ├── layout/
@@ -115,7 +113,7 @@ src/
 ### 3.2 SEO
 
 每个详情页提供 title、description、canonical、Open Graph、Twitter metadata。
-文章使用 Article/BlogPosting JSON-LD；个人资料可使用 Person；项目和目录条目根据内容类型输出适当结构化数据。
+文章使用 Article/BlogPosting JSON-LD。个人资料可使用 Person。
 生成 sitemap、RSS、robots.txt。生产入口对快照不存在的详情路由返回真实 HTTP 404，不回落到旧产物；文章 slug 首发接受后锁定，改名及旧 slug 重定向不在一期。
 
 ## 4. Admin 模块设计
@@ -131,8 +129,6 @@ src/features/
 │   └── reviews/
 ├── taxonomy/
 ├── media/
-├── projects/
-├── tools/
 ├── profile/
 ├── ai-trending/
 │   ├── repositories/
@@ -167,12 +163,12 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - 数据源/采集任务运行状态。
 - 最近一次成功采集时间、错误和限流信息。
 - 快照历史和增长曲线。
-- 隐藏/恢复项目、修正分类、精选标记；保存后与内容走同一上线流程。
+- 支持隐藏或恢复仓库、修正分类和标记精选。保存后与其他内容走同一上线流程。
 - Admin 可请求当日未成功批次；已运行或已完成时显示现有批次与状态，不创建重复批次。
 
 ### 4.3 站点发布任务
 
-发布、取消发布和目录修改先显示「待上线」。根据返回的 job 或 generation 查询任务：`queued` / `building` 显示进度，`active` 表示已上线，`failed` 显示失败原因，`superseded` 表示被新的目标取代，`retired` 表示曾上线但已被替换。任务被取代不代表变更被撤销，应重新读取当前目标与线上状态。超过 5 分钟仍待上线时提示延迟；Admin 可重试仍为最新目标的失败 generation。发生构建失败时不要把编辑或保存状态标成失败。
+提交文章发布或取消发布、保存公开分类标签、个人资料或 AI 榜单展示设置后，先显示「待上线」。根据返回的 job 或 generation 查询任务：`queued` / `building` 显示进度，`active` 表示已上线，`failed` 显示失败原因，`superseded` 表示被新的目标取代，`retired` 表示曾上线但已被替换。任务被取代不代表变更被撤销，应重新读取当前目标与线上状态。超过 5 分钟仍待上线时提示延迟；Admin 可重试仍为最新目标的失败 generation。发生构建失败时不要把编辑或保存状态标成失败。
 
 ## 5. API Client 与请求约定
 
@@ -207,7 +203,7 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 
 - Vitest：单元测试。
 - Testing Library：组件测试。
-- Playwright：登录和越权拒绝、自动保存冲突保留输入、已上线旧版不受新草稿影响、发布/取消发布状态与 404、上传未确认不能插入、目录管理、榜单空态与缺样。
+- Playwright：登录和越权拒绝、自动保存冲突保留输入、已上线旧版不受新草稿影响、发布/取消发布状态与 404、上传未确认不能插入、个人资料保存与上线、榜单空态与缺样。
 - ESLint + Prettier + TypeScript strict。
 - 对 API Client 做生成检查，确保 OpenAPI 变化后类型同步。
 
@@ -217,6 +213,6 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 2. Admin 登录、布局、权限路由。
 3. Posts 列表、编辑器、媒体确认、Revision、审核与发布任务。
 4. Website 首页、Blog、SEO。
-5. Projects、Tools、Profile 管理与展示。
+5. 个人资料管理与 About 页面展示。
 6. AI Trending 仪表盘、趋势页面和交互筛选。
 7. E2E、性能和可访问性优化。
