@@ -4,170 +4,213 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>周屿 · Silva</title>
-  <meta name="description" content="W01 首页原型：个人首屏、文章精选与最近更新、精选项目、AI Trending 摘要、关于与联络。">
+  <meta name="description" content="W01 首页原型 v2：Bento 个人首屏、最近更新、精选项目与 AI 趋势、关于与联络。">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/base.css">
+  <link rel="stylesheet" href="../assets/site.css">
 </head>
-<body class="bg-paper text-ink font-sans antialiased" data-nav="home" data-footer-flush
+<body class="site antialiased" data-nav="home"
       data-proto-states="default:完整资料;noprofile:未配置个人档案;sparse:无精选与无榜单">
 <div id="site-header"></div>
 
-<main id="main">
-  <!-- ============ 1. 个人首屏：刊物封面（桌面 8/4） ============ -->
-  <section aria-labelledby="hero-title" class="relative border-b border-rule overflow-hidden">
-    <div class="max-w-site mx-auto px-4 md:px-8 grid md:grid-cols-12 gap-x-8 md:min-h-[clamp(480px,65svh,640px)]">
-      <div class="md:col-span-8 lg:col-span-7 pt-12 md:pt-20 pb-8 md:pb-16 flex flex-col justify-center relative z-10">
-        <!-- 已配置个人档案 -->
-        <div data-state="default sparse">
-          <p class="text-[14px] text-ink-soft">后端工程师，现居杭州</p>
-          <h1 id="hero-title" class="mt-4 font-serif font-black text-ink leading-[0.95] tracking-[-0.02em] text-[clamp(44px,9vw,96px)]">周屿</h1>
-          <p class="mt-6 font-serif text-[clamp(22px,2.6vw,30px)] leading-snug text-ink max-w-[22em]">用 Rust 写服务端，<br class="hidden sm:inline">也记录把系统做稳的每一步。</p>
-          <p class="mt-5 text-[16px] leading-8 text-ink-2 max-w-[34em]">这里放我的技术文章、做过的项目和常用工具，也持续整理 GitHub 上 AI 开源项目的增长与 MCP Server 目录。</p>
+<main id="main" class="max-w-site mx-auto px-4 md:px-6">
+  <!-- ============ 1. 个人首屏：Bento ============ -->
+  <section aria-labelledby="hero-title" class="pt-6 md:pt-10">
+    <div class="reveal grid gap-3 md:gap-4 [&>*]:min-w-0 md:grid-cols-4 md:auto-rows-[minmax(180px,auto)]">
+
+      <!-- A. 介绍（2×2） -->
+      <div style="--i:0" class="tile relative overflow-hidden md:col-span-4 lg:col-span-2 lg:row-span-2 p-6 md:p-10 flex flex-col">
+        <div class="absolute inset-0 line-grid [mask-image:linear-gradient(to_bottom_left,black,transparent_60%)] pointer-events-none" aria-hidden="true"></div>
+        <div class="relative">
+          <!-- 已配置个人档案 -->
+          <div data-state="default sparse" class="flex items-center gap-3">
+            <span class="grid place-items-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 text-white font-display font-bold text-[20px]" aria-hidden="true">周</span>
+            <div class="leading-tight">
+              <p class="font-medium text-zinc-900">周屿</p>
+              <p class="text-[13px] text-zinc-500 flex items-center gap-1"><i data-icon="map-pin" class="w-3.5 h-3.5"></i>浙江杭州 · 后端工程师</p>
+            </div>
+          </div>
+          <h1 id="hero-title" data-state="default sparse" class="mt-8 md:mt-12 font-display font-bold text-zinc-900 tracking-[-0.03em] leading-[1.08] text-[clamp(34px,5vw,56px)]">写 Rust 服务端，<br>也做让开发更顺手的工具。</h1>
+          <p data-state="default sparse" class="mt-5 text-[16px] md:text-[17px] leading-8 text-zinc-600 max-w-[34em]">我是周屿。这里有我的技术文章和做过的项目，也持续整理 GitHub 上 AI 开源项目的增长与 MCP Server 目录。</p>
+
+          <!-- 未配置个人档案：站点名与站点简介 -->
+          <div data-state="noprofile" hidden>
+            <span class="tag tag-accent">个人技术主页</span>
+            <h1 class="mt-8 md:mt-12 font-display font-bold text-zinc-900 tracking-[-0.03em] leading-[1.08] text-[clamp(34px,5vw,56px)]">Silva</h1>
+            <p class="mt-5 text-[16px] md:text-[17px] leading-8 text-zinc-600 max-w-[34em]">技术文章、项目展览、工具导航，以及 AI 开源项目趋势与 MCP Server 目录。</p>
+          </div>
         </div>
-        <!-- 未配置个人档案：改用站点名与站点简介，不出现空名片 -->
-        <div data-state="noprofile" hidden>
-          <h1 class="font-serif font-black text-ink leading-[0.95] tracking-[-0.02em] text-[clamp(44px,9vw,96px)]">Silva</h1>
-          <p class="mt-6 font-serif text-[clamp(22px,2.6vw,30px)] leading-snug text-ink max-w-[22em]">一个持续更新的个人技术主页。</p>
-          <p class="mt-5 text-[16px] leading-8 text-ink-2 max-w-[34em]">技术文章、项目展览、工具导航，以及 AI 开源项目趋势与 MCP Server 目录。</p>
-        </div>
-        <div class="mt-9 flex flex-wrap gap-3">
-          <a href="blog.html" class="inline-flex items-center h-12 px-6 rounded-full bg-ink text-paper text-[15px] font-medium hover:bg-accent transition-colors">浏览文章</a>
-          <a href="about.html" class="inline-flex items-center h-12 px-6 rounded-full border border-ink/25 text-ink text-[15px] hover:border-ink">关于我</a>
+        <div class="relative mt-8 md:mt-auto md:pt-10 flex flex-wrap gap-3">
+          <a href="blog.html" class="btn btn-primary">浏览文章<i data-icon="arrow-right"></i></a>
+          <a href="about.html" class="btn btn-ghost">关于我</a>
         </div>
       </div>
 
-      <!-- 视觉区：等高线图形（装饰，aria-hidden）＋小型角标 -->
-      <div class="md:col-span-4 lg:col-span-5 relative h-[180px] md:h-auto -mx-4 md:mx-0" aria-hidden="true">
-        <svg id="hero-contour" class="absolute inset-0 w-full h-full md:-right-[18%] md:w-[140%] md:left-auto" preserveAspectRatio="xMidYMid slice"></svg>
-        <div data-state="default sparse" class="absolute right-4 md:right-0 bottom-4 md:bottom-12 flex items-center gap-3 bg-paper/95 border border-rule rounded-full pl-1.5 pr-4 py-1.5">
-          <span class="grid place-items-center w-9 h-9 rounded-full bg-accent text-white font-serif font-bold">屿</span>
-          <span class="text-[13px] leading-tight"><span class="block text-ink">杭州</span><span class="block text-ink-soft">UTC+8</span></span>
+      <!-- B. 档案卡（代码风格，展示 Profile 已配置字段） -->
+      <div style="--i:1" data-state="default sparse" class="tile !border-zinc-800 !bg-[#0B0F19] text-zinc-300 md:col-span-4 lg:col-span-2 overflow-hidden">
+        <div class="flex items-center gap-2 px-5 h-11 border-b border-white/10">
+          <span class="w-2.5 h-2.5 rounded-full bg-zinc-600"></span><span class="w-2.5 h-2.5 rounded-full bg-zinc-600"></span><span class="w-2.5 h-2.5 rounded-full bg-zinc-600"></span>
+          <span class="ml-2 font-mono text-[12px] text-zinc-500">profile.toml</span>
+        </div>
+        <pre class="px-5 py-4 font-mono text-[13px] md:text-[14px] leading-7 overflow-x-auto" aria-label="个人档案摘要"><span class="text-zinc-500"># 公开资料，来自后台个人档案</span>
+<span class="text-sky-300">name</span>     = <span class="text-emerald-300">"周屿"</span>
+<span class="text-sky-300">role</span>     = <span class="text-emerald-300">"后端工程师"</span>
+<span class="text-sky-300">location</span> = <span class="text-emerald-300">"浙江杭州"</span>
+<span class="text-sky-300">stack</span>    = [<span class="text-emerald-300">"Rust"</span>, <span class="text-emerald-300">"Go"</span>, <span class="text-emerald-300">"PostgreSQL"</span>, <span class="text-emerald-300">"Astro"</span>]</pre>
+      </div>
+      <div style="--i:1" data-state="noprofile" hidden class="tile md:col-span-4 lg:col-span-2 p-6 flex flex-col justify-between dot-grid">
+        <p class="text-[14px] text-zinc-500">站点栏目</p>
+        <div class="mt-6 grid grid-cols-3 gap-2 text-[14px]">
+          <a href="blog.html" class="tile tile-link !rounded-xl px-3 py-3 flex items-center gap-2"><i data-icon="book-open" class="w-4 h-4 text-blue-600"></i>文章</a>
+          <a href="projects.html" class="tile tile-link !rounded-xl px-3 py-3 flex items-center gap-2"><i data-icon="briefcase" class="w-4 h-4 text-blue-600"></i>项目</a>
+          <a href="tools.html" class="tile tile-link !rounded-xl px-3 py-3 flex items-center gap-2"><i data-icon="wrench" class="w-4 h-4 text-blue-600"></i>工具</a>
         </div>
       </div>
+
+      <!-- C. 最新一篇 -->
+      <a style="--i:2" href="blog-detail.html" class="tile tile-link p-6 flex flex-col">
+        <span class="flex items-center gap-2 text-[13px] text-zinc-500"><i data-icon="book-open" class="w-4 h-4 text-blue-600"></i>最新文章</span>
+        <span class="mt-4 font-display font-semibold text-[18px] leading-snug text-zinc-900">用不可变 revision 重写 CMS 的发布流程</span>
+        <span class="mt-auto pt-4 text-[13px] text-zinc-500 font-mono">2026-11-18</span>
+      </a>
+
+      <!-- D. AI 趋势第一名 -->
+      <a style="--i:3" href="ai-trending.html" class="tile tile-link p-6 flex flex-col">
+        <span class="flex items-center gap-2 text-[13px] text-zinc-500"><i data-icon="trending-up" class="w-4 h-4 text-blue-600"></i>本周增长最快</span>
+        <span data-state="default noprofile" class="mt-4 font-mono font-medium text-[15px] text-zinc-900 break-all">openmind-labs/agentkit</span>
+        <span data-state="default noprofile" class="mt-auto pt-4 flex items-baseline gap-1.5"><span class="font-display font-bold text-[26px] up tnum">+4,812</span><span class="text-[13px] text-zinc-500">Stars / 7 天</span></span>
+        <span data-state="sparse" hidden class="mt-4 text-[15px] text-zinc-600">暂无榜单数据</span>
+      </a>
     </div>
   </section>
 
-  <!-- ============ 2. 文章精选与最近更新（左 8 / 右 4） ============ -->
-  <section aria-labelledby="recent-title" class="max-w-site mx-auto px-4 md:px-8 pt-16 md:pt-24">
-    <div class="flex items-end justify-between gap-4 border-b border-ink pb-4">
-      <h2 id="recent-title" class="font-serif text-[28px] md:text-[34px] font-bold">最近更新</h2>
-      <a href="blog.html" class="text-[15px] text-accent hover:underline underline-offset-4 shrink-0">全部文章</a>
+  <!-- ============ 2. 文章精选与最近更新 ============ -->
+  <section aria-labelledby="recent-title" class="mt-20 md:mt-28">
+    <div class="flex items-end justify-between gap-4">
+      <div>
+        <h2 id="recent-title" class="section-title text-[28px] md:text-[34px]">最近更新</h2>
+        <p class="mt-1 text-[15px] text-zinc-500">后端、工程实践与前端构建的笔记。</p>
+      </div>
+      <a href="blog.html" class="link-arrow text-[15px] shrink-0">全部文章<i data-icon="arrow-right"></i></a>
     </div>
 
-    <div class="grid md:grid-cols-12 gap-8 md:gap-10 pt-8">
-      <!-- 主文章 -->
-      <article class="md:col-span-8 group">
-        <a href="blog-detail.html" class="block">
-          <div class="aspect-[16/9] rounded-md overflow-hidden bg-paper-3 relative">
-            <svg class="absolute inset-0 w-full h-full" id="cover-contour" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
-            <span data-state="default noprofile" class="absolute left-4 top-4 bg-accent text-white text-[12px] px-2.5 py-1 rounded-full">精选</span>
+    <div class="mt-8 grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
+      <!-- 主文章（左 2 栏） -->
+      <a href="blog-detail.html" class="tile tile-link overflow-hidden lg:col-span-2 flex flex-col">
+        <div class="cover aspect-[16/7] p-5 flex flex-col justify-between">
+          <span data-state="default noprofile" class="tag !bg-zinc-900 !text-white self-start"><i data-icon="star" class="w-3 h-3"></i>精选</span>
+          <span class="font-mono text-[13px] text-blue-700/80 hidden sm:block" aria-hidden="true">draft r14 → approved r12 → live r9</span>
+        </div>
+        <div class="p-6 md:p-8">
+          <div class="flex flex-wrap items-center gap-2 text-[13px] text-zinc-500">
+            <span class="tag tag-accent">后端工程</span><time datetime="2026-11-18" class="font-mono">2026-11-18</time><span aria-hidden="true">·</span><span>12 分钟阅读</span>
           </div>
-          <div class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-soft">
-            <span class="text-accent">后端工程</span><time datetime="2026-11-18" class="tnum">2026 年 11 月 18 日</time>
-          </div>
-          <h3 class="mt-2 font-serif text-[26px] md:text-[32px] leading-tight font-bold group-hover:text-accent">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</h3>
-          <p class="mt-3 text-[16px] leading-8 text-ink-2 max-w-[40em]">把「保存」「批准」「上线」拆成三个独立状态之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。</p>
+          <h3 class="mt-3 font-display font-bold text-[24px] md:text-[30px] leading-tight tracking-[-0.02em] text-zinc-900">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</h3>
+          <p class="mt-3 text-[16px] leading-8 text-zinc-600 max-w-[42em]">把「保存」「批准」「上线」拆成三个独立状态之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。</p>
+        </div>
+      </a>
+      <!-- 右侧两篇 -->
+      <div class="grid gap-4">
+        <a href="blog-detail.html" class="tile tile-link p-6 flex flex-col">
+          <div class="flex items-center gap-2 text-[13px] text-zinc-500"><span class="tag">Rust</span><time class="font-mono" datetime="2026-11-12">2026-11-12</time></div>
+          <h3 class="mt-3 font-display font-semibold text-[19px] leading-snug text-zinc-900">Axum 中间件的执行顺序，一张图讲清楚</h3>
+          <p class="mt-2 text-[14px] leading-7 text-zinc-600">从 Layer 的包裹方向说起，顺便整理 request ID 与 tracing 的放置位置。</p>
         </a>
-      </article>
-      <!-- 右侧两篇最新 -->
-      <div class="md:col-span-4 md:border-l md:border-rule md:pl-10 divide-y divide-rule">
-        <article class="pb-7">
-          <a href="blog-detail.html" class="block group">
-            <div class="flex items-center gap-3 text-[13px] text-ink-soft"><span class="text-accent">Rust</span><time class="tnum" datetime="2026-11-12">11 月 12 日</time></div>
-            <h3 class="mt-2 font-serif text-[20px] leading-snug font-bold group-hover:text-accent">Axum 中间件的执行顺序，一张图讲清楚</h3>
-            <p class="mt-2 text-[14px] leading-7 text-ink-soft">从 Layer 的包裹方向说起，顺便整理 request ID 与 tracing 的放置位置。</p>
-          </a>
-        </article>
-        <article class="pt-7">
-          <a href="blog-detail.html" class="block group">
-            <div class="flex items-center gap-3 text-[13px] text-ink-soft"><span class="text-accent">前端</span><time class="tnum" datetime="2026-11-03">11 月 3 日</time></div>
-            <h3 class="mt-2 font-serif text-[20px] leading-snug font-bold group-hover:text-accent">静态优先的 Astro 站点，什么时候才需要 Island</h3>
-            <p class="mt-2 text-[14px] leading-7 text-ink-soft">筛选、分页和图表之外，几乎所有页面都可以在构建时完成。</p>
-          </a>
-        </article>
+        <a href="blog-detail.html" class="tile tile-link p-6 flex flex-col">
+          <div class="flex items-center gap-2 text-[13px] text-zinc-500"><span class="tag">前端</span><time class="font-mono" datetime="2026-11-03">2026-11-03</time></div>
+          <h3 class="mt-3 font-display font-semibold text-[19px] leading-snug text-zinc-900">静态优先的 Astro 站点，什么时候才需要 Island</h3>
+          <p class="mt-2 text-[14px] leading-7 text-zinc-600">筛选、分页和图表之外，几乎所有页面都可以在构建时完成。</p>
+        </a>
       </div>
     </div>
   </section>
 
-  <!-- ============ 3. 正在发生：精选项目 ＋ AI Trending 摘要 ============ -->
-  <section aria-labelledby="now-title" class="max-w-site mx-auto px-4 md:px-8 pt-20 md:pt-28">
-    <div class="border-b border-ink pb-4">
-      <h2 id="now-title" class="font-serif text-[28px] md:text-[34px] font-bold">正在发生</h2>
-    </div>
-    <div class="grid md:grid-cols-2 gap-12 md:gap-16 pt-8">
+  <!-- ============ 3. 正在发生：精选项目 ＋ AI 趋势 ============ -->
+  <section aria-labelledby="now-title" class="mt-20 md:mt-28">
+    <h2 id="now-title" class="section-title text-[28px] md:text-[34px]">正在发生</h2>
+    <p class="mt-1 text-[15px] text-zinc-500">手上的项目，和 AI 开源圈本周的动静。</p>
+
+    <div class="mt-8 grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
       <!-- 精选项目 -->
-      <div>
-        <div class="flex items-baseline justify-between">
-          <h3 class="text-[18px] font-medium">精选项目</h3>
-          <a href="projects.html" class="text-[14px] text-accent hover:underline underline-offset-4">浏览项目</a>
+      <div class="tile p-2">
+        <div class="flex items-center justify-between px-4 pt-4 pb-3">
+          <h3 class="flex items-center gap-2 font-medium text-zinc-900"><i data-icon="briefcase" class="w-4 h-4 text-blue-600"></i>精选项目</h3>
+          <a href="projects.html" class="link-arrow text-[14px]">浏览项目<i data-icon="arrow-right"></i></a>
         </div>
-        <ol data-state="default noprofile" class="mt-4 divide-y divide-rule border-y border-rule">
-          <li><a href="project-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">1</span>
-            <span><span class="block font-serif text-[19px] font-bold group-hover:text-accent">Silva Hub</span><span class="block mt-1 text-[14px] text-ink-soft">本站：Astro 前台、React 后台与 Axum API</span></span>
-            <span class="chip chip-ok">维护中</span></a></li>
-          <li><a href="project-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">2</span>
-            <span><span class="block font-serif text-[19px] font-bold group-hover:text-accent">tidewatch</span><span class="block mt-1 text-[14px] text-ink-soft">GitHub 仓库指标采集与快照对比的小工具</span></span>
-            <span class="chip chip-info">开发中</span></a></li>
-          <li><a href="project-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">3</span>
-            <span><span class="block font-serif text-[19px] font-bold group-hover:text-accent">pgmigrate-lint</span><span class="block mt-1 text-[14px] text-ink-soft">在 CI 中检查 PostgreSQL 迁移是否会锁表</span></span>
-            <span class="chip chip-mute">已归档</span></a></li>
-        </ol>
-        <p data-state="sparse" hidden class="mt-4 py-6 border-y border-rule text-[15px] text-ink-soft">还没有设为精选的项目。<a href="projects.html" class="text-accent underline underline-offset-4">浏览全部项目</a></p>
+        <ul data-state="default noprofile" class="grid grid-cols-1 gap-1">
+          <li><a href="project-detail.html" class="flex items-start gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-blue-50 text-blue-700 shrink-0"><i data-icon="layers" class="w-5 h-5"></i></span>
+            <span class="min-w-0 flex-1"><span class="flex items-center gap-2 flex-wrap"><span class="font-display font-semibold text-[17px] text-zinc-900">Silva Hub</span><span class="chip chip-ok">维护中</span></span>
+              <span class="block mt-1 text-[14px] text-zinc-600">本站：Astro 前台、React 后台与 Axum API</span>
+              <span class="mt-2 flex flex-wrap gap-1.5"><span class="tag">Rust</span><span class="tag">Astro</span><span class="tag">PostgreSQL</span></span></span></a></li>
+          <li><a href="project-detail.html" class="flex items-start gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-emerald-50 text-emerald-700 shrink-0"><i data-icon="trending-up" class="w-5 h-5"></i></span>
+            <span class="min-w-0 flex-1"><span class="flex items-center gap-2 flex-wrap"><span class="font-display font-semibold text-[17px] text-zinc-900">tidewatch</span><span class="chip chip-info">开发中</span></span>
+              <span class="block mt-1 text-[14px] text-zinc-600">GitHub 仓库指标采集与快照对比</span>
+              <span class="mt-2 flex flex-wrap gap-1.5"><span class="tag">Go</span><span class="tag">SQLite</span></span></span></a></li>
+          <li><a href="project-detail.html" class="flex items-start gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-zinc-100 text-zinc-700 shrink-0"><i data-icon="terminal" class="w-5 h-5"></i></span>
+            <span class="min-w-0 flex-1"><span class="flex items-center gap-2 flex-wrap"><span class="font-display font-semibold text-[17px] text-zinc-900">pgmigrate-lint</span><span class="chip chip-mute">已归档</span></span>
+              <span class="block mt-1 text-[14px] text-zinc-600">在 CI 中检查 PostgreSQL 迁移是否会锁表</span>
+              <span class="mt-2 flex flex-wrap gap-1.5"><span class="tag">Rust</span><span class="tag">CLI</span></span></span></a></li>
+        </ul>
+        <div data-state="sparse" hidden class="m-2 p-8 rounded-2xl border border-dashed border-zinc-300 text-center">
+          <p class="text-[15px] text-zinc-600">还没有设为精选的项目。</p>
+          <a href="projects.html" class="btn btn-ghost mt-4">浏览全部项目</a>
+        </div>
       </div>
 
-      <!-- AI Trending 摘要 -->
-      <div>
-        <div class="flex items-baseline justify-between">
-          <h3 class="text-[18px] font-medium">AI 开源项目，近 7 天 Stars 增长</h3>
-          <a href="ai-trending.html" class="text-[14px] text-accent hover:underline underline-offset-4 shrink-0 ml-3">完整榜单</a>
+      <!-- AI 趋势摘要 -->
+      <div class="tile p-2 flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-3">
+          <h3 class="flex items-center gap-2 font-medium text-zinc-900"><i data-icon="trending-up" class="w-4 h-4 text-blue-600"></i>AI 开源项目 · 近 7 天 Stars</h3>
+          <a href="ai-trending.html" class="link-arrow text-[14px] shrink-0">完整榜单<i data-icon="arrow-right"></i></a>
         </div>
-        <ol data-state="default noprofile" class="mt-4 divide-y divide-rule border-y border-rule">
-          <li><a href="ai-trending-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">1</span>
-            <span class="min-w-0"><span class="block font-medium text-[16px] truncate group-hover:text-accent">openmind-labs/agentkit</span><span class="block mt-1 text-[13px] text-ink-soft">Python · agents</span></span>
-            <span class="tnum text-[15px] text-ok font-medium">+4,812</span></a></li>
-          <li><a href="ai-trending-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">2</span>
-            <span class="min-w-0"><span class="block font-medium text-[16px] truncate group-hover:text-accent">vecstore/lancet</span><span class="block mt-1 text-[13px] text-ink-soft">Rust · vector-database</span></span>
-            <span class="tnum text-[15px] text-ok font-medium">+3,207</span></a></li>
-          <li><a href="ai-trending-detail.html" class="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-5 group">
-            <span class="font-serif text-[20px] text-ink-soft tnum">3</span>
-            <span class="min-w-0"><span class="block font-medium text-[16px] truncate group-hover:text-accent">tinyllm/infer-rs</span><span class="block mt-1 text-[13px] text-ink-soft">Rust · llm-inference</span></span>
-            <span class="tnum text-[15px] text-ok font-medium">+2,960</span></a></li>
+        <ol data-state="default noprofile" class="grid grid-cols-1 gap-1">
+          <li><a href="ai-trending-detail.html" class="flex items-center gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-9 h-9 rounded-lg bg-zinc-900 text-white font-display font-bold tnum shrink-0">1</span>
+            <span class="min-w-0 flex-1"><span class="block font-mono font-medium text-[15px] text-zinc-900 truncate">openmind-labs/agentkit</span><span class="block mt-0.5 text-[13px] text-zinc-500">Python · agents</span></span>
+            <span class="text-right"><span class="block font-display font-bold text-[18px] up tnum">+4,812</span><span class="block text-[12px] text-zinc-500 tnum">共 38.2k</span></span></a></li>
+          <li><a href="ai-trending-detail.html" class="flex items-center gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-9 h-9 rounded-lg bg-zinc-200 text-zinc-800 font-display font-bold tnum shrink-0">2</span>
+            <span class="min-w-0 flex-1"><span class="block font-mono font-medium text-[15px] text-zinc-900 truncate">vecstore/lancet</span><span class="block mt-0.5 text-[13px] text-zinc-500">Rust · vector-database</span></span>
+            <span class="text-right"><span class="block font-display font-bold text-[18px] up tnum">+3,207</span><span class="block text-[12px] text-zinc-500 tnum">共 21.9k</span></span></a></li>
+          <li><a href="ai-trending-detail.html" class="flex items-center gap-4 p-4 rounded-2xl hover:bg-zinc-50 transition-colors">
+            <span class="grid place-items-center w-9 h-9 rounded-lg bg-zinc-100 text-zinc-700 font-display font-bold tnum shrink-0">3</span>
+            <span class="min-w-0 flex-1"><span class="block font-mono font-medium text-[15px] text-zinc-900 truncate">tinyllm/infer-rs</span><span class="block mt-0.5 text-[13px] text-zinc-500">Rust · llm-inference</span></span>
+            <span class="text-right"><span class="block font-display font-bold text-[18px] up tnum">+2,960</span><span class="block text-[12px] text-zinc-500 tnum">共 15.4k</span></span></a></li>
         </ol>
-        <p data-state="default noprofile" class="mt-3 text-[13px] text-ink-soft">榜单数据日期 <time class="tnum" datetime="2026-11-20">2026-11-20</time>（UTC），仅统计收录范围内的仓库。</p>
-        <p data-state="sparse" hidden class="mt-4 py-6 border-y border-rule text-[15px] text-ink-soft">暂无榜单数据。首个采集批次成功后会在这里显示。</p>
+        <p data-state="default noprofile" class="mt-auto px-4 py-3 text-[12px] leading-5 text-zinc-500"><i data-icon="info" class="w-3.5 h-3.5 inline -mt-0.5 mr-1"></i>榜单数据日期 <time class="font-mono" datetime="2026-11-20">2026-11-20</time> UTC，仅统计收录范围内的仓库</p>
+        <div data-state="sparse" hidden class="m-2 p-8 rounded-2xl border border-dashed border-zinc-300 text-center">
+          <p class="text-[15px] text-zinc-600">暂无榜单数据</p>
+          <p class="mt-1 text-[13px] text-zinc-500">首个采集批次成功后会在这里显示。</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ 4. 关于与联络：宽幅收尾 ============ -->
-  <section aria-labelledby="contact-title" class="mt-24 md:mt-32 bg-ink text-paper">
-    <div class="max-w-site mx-auto px-4 md:px-8 py-16 md:py-20 grid md:grid-cols-12 gap-10">
-      <div class="md:col-span-7">
-        <h2 id="contact-title" class="font-serif text-[30px] md:text-[40px] font-bold leading-tight">关于我</h2>
-        <p data-state="default sparse" class="mt-5 text-[16px] leading-8 text-paper/80 max-w-[34em]">做了六年后端，大部分时间在和数据一致性、发布流程打交道。现在专注 Rust 服务端与开发者工具，也在整理 AI 开源生态里值得关注的项目。</p>
-        <p data-state="noprofile" hidden class="mt-5 text-[16px] leading-8 text-paper/80 max-w-[34em]">关于站点作者与这个站点的更多介绍。</p>
+  <!-- ============ 4. 关于与联络 ============ -->
+  <section aria-labelledby="contact-title" class="mt-20 md:mt-28">
+    <div class="relative overflow-hidden rounded-[28px] bg-zinc-950 text-white p-8 md:p-12 grid gap-10 lg:grid-cols-12">
+      <div class="absolute -right-24 -top-24 w-80 h-80 rounded-full bg-blue-600/30 blur-3xl pointer-events-none" aria-hidden="true"></div>
+      <div class="relative lg:col-span-7">
+        <h2 id="contact-title" class="section-title text-[30px] md:text-[40px] leading-tight">关于我</h2>
+        <p data-state="default sparse" class="mt-4 text-[16px] leading-8 text-zinc-300 max-w-[34em]">做了六年后端，大部分时间在和数据一致性、发布流程打交道。现在专注 Rust 服务端与开发者工具，也在整理 AI 开源生态里值得关注的项目。</p>
+        <p data-state="noprofile" hidden class="mt-4 text-[16px] leading-8 text-zinc-300 max-w-[34em]">关于站点作者与这个站点的更多介绍。</p>
         <div class="mt-8 flex flex-wrap gap-3">
-          <a href="about.html" class="inline-flex items-center h-11 px-5 rounded-full bg-paper text-ink text-[15px] font-medium hover:bg-white">完整介绍</a>
-          <a href="tools.html" class="inline-flex items-center h-11 px-5 rounded-full border border-paper/30 text-paper text-[15px] hover:border-paper">我常用的工具</a>
+          <a href="about.html" class="btn bg-white text-zinc-900 hover:bg-zinc-200">完整介绍<i data-icon="arrow-right"></i></a>
+          <a href="tools.html" class="btn border border-white/20 text-white hover:bg-white/10"><i data-icon="wrench"></i>我常用的工具</a>
         </div>
       </div>
-      <!-- 只展示已配置的公开社交链接；无联络资料时整块不显示 -->
-      <div data-state="default sparse" class="md:col-span-5 md:border-l md:border-paper/15 md:pl-10">
-        <h3 class="text-[14px] text-paper/60">联络</h3>
-        <ul class="mt-4 divide-y divide-paper/15 text-[16px]">
-          <li><a class="flex justify-between py-3.5 hover:text-white" href="https://github.com/" target="_blank" rel="noopener"><span>GitHub</span><span class="text-paper/60">@zhouyu ↗</span></a></li>
-          <li><a class="flex justify-between py-3.5 hover:text-white" href="mailto:hello@example.com"><span>邮箱</span><span class="text-paper/60">hello@example.com</span></a></li>
-          <li><a class="flex justify-between py-3.5 hover:text-white" href="#rss"><span>RSS</span><span class="text-paper/60">订阅更新</span></a></li>
-        </ul>
-      </div>
+      <!-- 只展示已配置的公开社交链接 -->
+      <ul data-state="default sparse" class="relative lg:col-span-5 grid gap-2 self-end" aria-label="联络方式">
+        <li><a href="https://github.com/" target="_blank" rel="noopener" class="flex items-center gap-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 px-4 h-14 transition-colors"><i data-icon="github" class="w-5 h-5"></i><span class="flex-1">GitHub</span><span class="text-zinc-400 text-[14px] font-mono">@zhouyu</span><i data-icon="arrow-up-right" class="w-4 h-4 text-zinc-400"></i><span class="sr-only">（新窗口打开）</span></a></li>
+        <li><a href="mailto:hello@example.com" class="flex items-center gap-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 px-4 h-14 transition-colors"><i data-icon="mail" class="w-5 h-5"></i><span class="flex-1">邮箱</span><span class="text-zinc-400 text-[14px] font-mono truncate">hello@example.com</span></a></li>
+        <li><a href="#rss" class="flex items-center gap-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 px-4 h-14 transition-colors"><i data-icon="rss" class="w-5 h-5"></i><span class="flex-1">RSS</span><span class="text-zinc-400 text-[14px]">订阅更新</span></a></li>
+      </ul>
     </div>
   </section>
 </main>
@@ -175,10 +218,5 @@
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
-<script>
-  drawContours(document.getElementById('hero-contour'), { cx: 300, cy: 320, rings: 24, step: 15, seed: 7 });
-  drawContours(document.getElementById('cover-contour'), { cx: 420, cy: 260, rings: 26, step: 22, seed: 3, highlight: 12, animate: false });
-  // 精选标记：sparse 状态下没有精选 → 主文章即最新文章，移除「精选」
-</script>
 </body>
 </html>

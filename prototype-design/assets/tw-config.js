@@ -17,6 +17,10 @@ tailwind.config = {
         serif: ['"Noto Serif SC"', 'Georgia', 'serif'],
         sans: ['"Noto Sans SC"', 'system-ui', '-apple-system', 'sans-serif'],
         code: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        // public site (v2, ui-ux-pro-max: Bento + monochrome/blue)
+        display: ['"Space Grotesk"', '"Noto Sans SC"', 'system-ui', 'sans-serif'],
+        body: ['Inter', '"Noto Sans SC"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       maxWidth: { site: '1200px', prose: '720px' },
     },

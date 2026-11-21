@@ -1,0 +1,79 @@
+/*
+ * site.css — public website v2 (design system: prototype-design/design-system/site.md)
+ * Bento Box Grid · Monochrome + blue accent · Space Grotesk / Inter / JetBrains Mono
+ */
+:root {
+  --bg: #FAFAFA; --card: #FFFFFF; --fg: #09090B; --fg-2: #3F3F46; --muted: #52525B;
+  --border: #E4E4E7; --border-strong: #D4D4D8; --soft: #F4F4F5;
+  --accent: #2563EB; --accent-ink: #1D4ED8; --accent-soft: #EFF6FF;
+  --up: #15803D; --down: #DC2626;
+  --radius: 20px;
+}
+body.site { background: var(--bg); color: var(--fg); font-family: Inter, "Noto Sans SC", system-ui, sans-serif; }
+.site :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.site ::selection { background: #BFDBFE; color: var(--fg); }
+
+/* ---- Bento tile ---- */
+.tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 1px 2px rgba(9,9,11,.04); }
+.tile-link { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; cursor: pointer; }
+.tile-link:hover { border-color: var(--border-strong); box-shadow: 0 8px 24px -12px rgba(9,9,11,.18); transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .tile-link:hover { transform: none; } }
+
+/* ---- One orchestrated load moment: bento tiles rise in sequence ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal > * { animation: rise .45s cubic-bezier(.2,.7,.2,1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---- Decorative backgrounds ---- */
+.dot-grid { background-image: radial-gradient(#D4D4D8 1px, transparent 1px); background-size: 16px 16px; }
+.line-grid { background-image: linear-gradient(#F4F4F5 1px, transparent 1px), linear-gradient(90deg, #F4F4F5 1px, transparent 1px); background-size: 32px 32px; }
+
+/* ---- Small pieces ---- */
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 1; padding: 5px 8px; border-radius: 6px; background: var(--soft); color: var(--fg-2); white-space: nowrap; }
+.tag-accent { background: var(--accent-soft); color: var(--accent-ink); }
+.kbd { font-family: "JetBrains Mono", monospace; font-size: 12px; padding: 2px 6px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; background: #fff; color: var(--fg-2); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font-size: 15px; font-weight: 500; transition: background-color .15s ease, border-color .15s ease, color .15s ease; cursor: pointer; white-space: nowrap; }
+.btn-primary { background: var(--fg); color: #fff; }
+.btn-primary:hover { background: #27272A; }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover { background: var(--accent-ink); }
+.btn-ghost { background: #fff; border: 1px solid var(--border); color: var(--fg); }
+.btn-ghost:hover { border-color: var(--border-strong); background: var(--soft); }
+.link-arrow { color: var(--accent); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+.link-arrow:hover { color: var(--accent-ink); }
+.link-arrow svg { transition: transform .15s ease; }
+.link-arrow:hover svg { transform: translateX(2px); }
+.up { color: var(--up); } .down { color: var(--down); }
+.section-title { font-family: "Space Grotesk", "Noto Sans SC", sans-serif; font-weight: 700; letter-spacing: -0.02em; }
+
+/* ---- Form controls (filters) ---- */
+.field { height: 40px; border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 0 12px; font-size: 14px; color: var(--fg); }
+.field:hover { border-color: var(--border-strong); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--soft); border-radius: 10px; }
+.seg > button, .seg > a { height: 34px; padding: 0 12px; border-radius: 8px; font-size: 14px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; }
+.seg > [aria-pressed="true"], .seg > [aria-current="page"], .seg > [aria-current="location"], .seg > [aria-current="true"], .seg > [aria-selected="true"] { background: #fff; color: var(--fg); box-shadow: 0 1px 2px rgba(9,9,11,.08); font-weight: 500; }
+
+/* ---- Long-form prose ---- */
+.prose-site { color: #27272A; font-size: 17px; line-height: 1.85; }
+.prose-site > * + * { margin-top: 1.15em; }
+.prose-site h2 { font-family: "Space Grotesk", "Noto Sans SC", sans-serif; font-size: 1.6rem; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; color: var(--fg); margin-top: 2.2em; scroll-margin-top: 96px; }
+.prose-site h3 { font-family: "Space Grotesk", "Noto Sans SC", sans-serif; font-size: 1.22rem; font-weight: 600; color: var(--fg); margin-top: 1.8em; scroll-margin-top: 96px; }
+.prose-site a { color: var(--accent); text-decoration: underline; text-decoration-color: #93C5FD; text-underline-offset: 3px; }
+.prose-site a:hover { text-decoration-color: var(--accent); }
+.prose-site ul { list-style: disc; padding-left: 1.3em; } .prose-site ol { list-style: decimal; padding-left: 1.3em; }
+.prose-site li + li { margin-top: .35em; }
+.prose-site li::marker { color: #A1A1AA; }
+.prose-site blockquote { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: .8em 1em; border-radius: 0 12px 12px 0; color: #1E3A8A; }
+.prose-site code { font-family: "JetBrains Mono", monospace; font-size: .86em; background: var(--soft); border: 1px solid var(--border); padding: .08em .35em; border-radius: 6px; }
+.prose-site pre { background: #0B0F19; color: #E4E4E7; padding: 1.1rem 1.2rem; border-radius: 14px; overflow-x: auto; font-size: 14px; line-height: 1.7; }
+.prose-site pre code { background: transparent; border: 0; padding: 0; color: inherit; }
+.prose-site table { width: 100%; border-collapse: collapse; font-size: 15px; display: block; overflow-x: auto; }
+.prose-site th { text-align: left; font-weight: 600; background: var(--soft); }
+.prose-site th, .prose-site td { border: 1px solid var(--border); padding: .55em .8em; white-space: nowrap; }
+.prose-site img { border-radius: 14px; }
+
+/* ---- Cover placeholder (no real images in prototype) ---- */
+.cover { position: relative; overflow: hidden; background: linear-gradient(135deg, #EFF6FF, #F4F4F5 60%); }
+.cover::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(#C7D2FE 1px, transparent 1px); background-size: 14px 14px; opacity: .7; }
+.cover > * { position: relative; z-index: 1; }

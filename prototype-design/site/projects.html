@@ -4,80 +4,122 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>项目 · Silva</title>
-  <meta name="description" content="W06 项目展览原型：页标题与说明、精选项目优先、其他项目卡片网格。">
+  <meta name="description" content="W06 项目展览原型 v2：页标题与说明、精选项目 Bento、其他项目卡片网格。">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/base.css">
+  <link rel="stylesheet" href="../assets/site.css">
 </head>
-<body class="bg-paper text-ink font-sans antialiased" data-nav="projects"
+<body class="site antialiased" data-nav="projects"
       data-proto-states="default:有精选;nofeatured:无精选;empty:暂无项目">
 <div id="site-header"></div>
 
-<main id="main" class="max-w-site mx-auto px-4 md:px-8">
-  <header class="pt-12 md:pt-20 pb-8 border-b border-ink">
-    <h1 class="font-serif text-[40px] md:text-[56px] font-black leading-tight">项目</h1>
-    <p class="mt-4 text-[16px] leading-8 text-ink-2 max-w-[36em]">工作之外自己做、自己维护的东西。有的还在开发，有的已经归档；每个项目的状态都写在卡片上。</p>
+<main id="main" class="max-w-site mx-auto px-4 md:px-6">
+  <!-- 页标题 -->
+  <header class="pt-10 md:pt-16 pb-8 md:pb-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+    <div>
+      <span class="tag tag-accent"><i data-icon="briefcase" class="w-3.5 h-3.5"></i>项目展览</span>
+      <h1 class="mt-4 font-display font-bold tracking-[-0.03em] text-[36px] md:text-[48px] leading-tight text-zinc-900">项目</h1>
+      <p class="mt-3 text-[16px] leading-8 text-zinc-600 max-w-[36em]">工作之外自己做、自己维护的东西。有的还在开发，有的已经归档，每个项目的状态都写在卡片上。</p>
+    </div>
+    <dl data-state="default nofeatured" class="flex gap-2 text-[13px]">
+      <div class="tile !rounded-xl px-4 py-2.5"><dt class="text-zinc-500">维护中</dt><dd class="font-display font-bold text-[20px] tnum text-zinc-900">4</dd></div>
+      <div class="tile !rounded-xl px-4 py-2.5"><dt class="text-zinc-500">开发中</dt><dd class="font-display font-bold text-[20px] tnum text-zinc-900">2</dd></div>
+      <div class="tile !rounded-xl px-4 py-2.5"><dt class="text-zinc-500">已归档</dt><dd class="font-display font-bold text-[20px] tnum text-zinc-900">1</dd></div>
+    </dl>
   </header>
 
-  <!-- 精选：较大版面，优先展示 -->
-  <section data-state="default" aria-labelledby="featured-title" class="pt-10">
-    <h2 id="featured-title" class="text-[15px] text-ink-soft">精选项目</h2>
-    <div class="mt-5 grid md:grid-cols-2 gap-8">
-      <article class="group">
-        <a href="project-detail.html" class="block">
-          <div class="aspect-[16/10] rounded-md overflow-hidden bg-paper-3"><svg data-cover="3" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>
-          <div class="mt-5 flex items-center gap-3"><h3 class="font-serif text-[26px] font-bold group-hover:text-accent">Silva Hub</h3><span class="chip chip-ok">维护中</span></div>
-          <p class="mt-2 text-[16px] leading-7 text-ink-2">本站。Astro 静态前台、React 管理后台与 Rust Axum API，内容发布基于不可变 revision 与站点版本。</p>
-          <ul class="mt-4 flex flex-wrap gap-2 text-[13px] text-ink-2" aria-label="技术栈"><li class="px-2.5 py-1 rounded bg-paper-2">Rust</li><li class="px-2.5 py-1 rounded bg-paper-2">Axum</li><li class="px-2.5 py-1 rounded bg-paper-2">Astro</li><li class="px-2.5 py-1 rounded bg-paper-2">PostgreSQL</li></ul>
-        </a>
-      </article>
-      <article class="group">
-        <a href="project-detail.html" class="block">
-          <div class="aspect-[16/10] rounded-md overflow-hidden bg-paper-3"><svg data-cover="8" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>
-          <div class="mt-5 flex items-center gap-3"><h3 class="font-serif text-[26px] font-bold group-hover:text-accent">tidewatch</h3><span class="chip chip-info">开发中</span></div>
-          <p class="mt-2 text-[16px] leading-7 text-ink-2">采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长，数据不足时如实标注。</p>
-          <ul class="mt-4 flex flex-wrap gap-2 text-[13px] text-ink-2" aria-label="技术栈"><li class="px-2.5 py-1 rounded bg-paper-2">Rust</li><li class="px-2.5 py-1 rounded bg-paper-2">Tokio</li><li class="px-2.5 py-1 rounded bg-paper-2">GitHub API</li></ul>
-        </a>
-      </article>
+  <!-- 精选：Bento，优先展示 -->
+  <section data-state="default" aria-labelledby="featured-title">
+    <h2 id="featured-title" class="flex items-center gap-2 text-[14px] font-medium text-zinc-500"><i data-icon="star" class="w-4 h-4 text-amber-500"></i>精选项目</h2>
+    <div class="reveal mt-4 grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
+      <!-- 大卡：2 栏，带封面 -->
+      <a style="--i:0" href="project-detail.html" class="tile tile-link group overflow-hidden lg:col-span-2 flex flex-col">
+        <div class="cover aspect-[16/6] p-6 flex flex-col justify-between">
+          <span class="grid place-items-center w-12 h-12 rounded-2xl bg-white/90 text-blue-700 shadow-sm"><i data-icon="layers" class="w-6 h-6"></i></span>
+          <span class="font-mono text-[13px] text-blue-700/80 hidden sm:block" aria-hidden="true">astro · react · axum · postgres</span>
+        </div>
+        <div class="p-6 md:p-8 flex flex-col flex-1">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <h3 class="font-display font-bold text-[26px] md:text-[30px] tracking-[-0.02em] text-zinc-900">Silva Hub</h3>
+            <span class="chip chip-ok">维护中</span>
+          </div>
+          <p class="mt-3 text-[16px] leading-8 text-zinc-600 max-w-[40em]">本站。Astro 静态前台、React 管理后台与 Rust Axum API，内容发布基于不可变 revision 与站点版本。</p>
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-4">
+            <ul class="flex flex-wrap gap-1.5" aria-label="技术栈"><li class="tag">Rust</li><li class="tag">Axum</li><li class="tag">Astro</li><li class="tag">PostgreSQL</li></ul>
+            <span class="link-arrow text-[14px]">查看项目<i data-icon="arrow-right"></i></span>
+          </div>
+        </div>
+      </a>
+      <!-- 高卡 -->
+      <a style="--i:1" href="project-detail.html" class="tile tile-link group p-6 md:p-8 flex flex-col dot-grid">
+        <span class="grid place-items-center w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-100"><i data-icon="trending-up" class="w-6 h-6"></i></span>
+        <div class="mt-8 flex flex-wrap items-center gap-2.5">
+          <h3 class="font-display font-bold text-[24px] tracking-[-0.02em] text-zinc-900">tidewatch</h3>
+          <span class="chip chip-info">开发中</span>
+        </div>
+        <p class="mt-3 text-[15px] leading-7 text-zinc-600">采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长，数据不足时如实标注。</p>
+        <div class="mt-auto pt-8">
+          <div class="rounded-xl bg-[#0B0F19] text-zinc-300 font-mono text-[12px] leading-6 px-4 py-3 overflow-hidden" aria-hidden="true">
+            <span class="text-zinc-500">$</span> tidewatch run<br><span class="text-emerald-300">batch 2026-11-20 committed</span>
+          </div>
+          <ul class="mt-4 flex flex-wrap gap-1.5" aria-label="技术栈"><li class="tag">Rust</li><li class="tag">Tokio</li><li class="tag">GitHub API</li></ul>
+        </div>
+      </a>
     </div>
   </section>
 
   <!-- 其他项目网格 -->
-  <section data-state="default nofeatured" aria-labelledby="all-title" class="pt-16">
-    <h2 id="all-title" class="text-[15px] text-ink-soft"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2>
-    <ul id="grid" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-10"></ul>
+  <section data-state="default nofeatured" aria-labelledby="all-title" class="mt-14 md:mt-20">
+    <div class="flex items-end justify-between gap-4">
+      <h2 id="all-title" class="section-title text-[24px] md:text-[28px]"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2>
+      <p class="text-[13px] text-zinc-500">按展示顺序排列</p>
+    </div>
+    <ul id="grid" class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 [&>*]:min-w-0"></ul>
   </section>
 
-  <section data-state="empty" hidden class="mt-10 py-16 border-y border-rule">
-    <p class="font-serif text-[22px]">还没有公开的项目。</p>
-    <p class="mt-2 text-[15px] text-ink-soft">先去读读<a href="blog.html" class="text-accent underline underline-offset-4">文章</a>吧。</p>
+  <!-- 空态 -->
+  <section data-state="empty" hidden class="tile mt-4 p-10 md:p-16 text-center dot-grid">
+    <span class="mx-auto grid place-items-center w-14 h-14 rounded-2xl bg-white border border-zinc-200 text-zinc-500"><i data-icon="folder" class="w-6 h-6"></i></span>
+    <h2 class="mt-5 font-display font-bold text-[22px] text-zinc-900">还没有公开的项目</h2>
+    <p class="mt-2 text-[15px] text-zinc-600">项目上线后会出现在这里。先读读文章吧。</p>
+    <a href="blog.html" class="btn btn-primary mt-6">浏览文章<i data-icon="arrow-right"></i></a>
   </section>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
-<script src="../assets/proto.js"></script>
 <script>
+  const TONE = { ok: 'bg-blue-50 text-blue-700', info: 'bg-emerald-50 text-emerald-700', mute: 'bg-zinc-100 text-zinc-600' };
   const OTHERS = [
-    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: ['维护中', 'ok'], t: ['Rust', 'Axum', 'Astro'], nf: true },
-    { n: 'tidewatch', d: '采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长。', s: ['开发中', 'info'], t: ['Rust', 'Tokio'], nf: true },
-    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移是否会长时间锁表，给出分步执行建议。', s: ['已归档', 'mute'], t: ['Rust', 'SQL'], cover: true },
-    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: ['维护中', 'ok'], t: ['Rust', 'tower'] },
-    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览组件：白名单渲染、禁止原始 HTML、代码高亮。', s: ['维护中', 'ok'], t: ['TypeScript', 'React'], cover: true },
-    { n: 'astro-snapshot-loader', d: '让 Astro 在构建时从带版本号的不可变快照读取内容，校验失败即停止构建。', s: ['开发中', 'info'], t: ['TypeScript', 'Astro'] },
-    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附带一键安装脚本。', s: ['维护中', 'ok'], t: ['Shell', 'Neovim'] },
+    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: ['维护中', 'ok'], t: ['Rust', 'Axum', 'Astro'], i: 'layers', nf: true },
+    { n: 'tidewatch', d: '采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长。', s: ['开发中', 'info'], t: ['Rust', 'Tokio'], i: 'trending-up', nf: true },
+    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移是否会长时间锁表，给出分步执行建议。', s: ['已归档', 'mute'], t: ['Rust', 'SQL'], i: 'terminal', cover: true },
+    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: ['维护中', 'ok'], t: ['Rust', 'tower'], i: 'hash' },
+    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览组件：白名单渲染、禁止原始 HTML、代码高亮。', s: ['维护中', 'ok'], t: ['TypeScript', 'React'], i: 'code', cover: true },
+    { n: 'astro-snapshot-loader', d: '让 Astro 在构建时从带版本号的不可变快照读取内容，校验失败即停止构建。', s: ['开发中', 'info'], t: ['TypeScript', 'Astro'], i: 'folder' },
+    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附带一键安装脚本。', s: ['维护中', 'ok'], t: ['Shell', 'Neovim'], i: 'wrench' },
   ];
-  document.getElementById('grid').innerHTML = OTHERS.map((p, i) => `
-    <li ${p.nf ? 'data-state="nofeatured"' : ''}><article class="group h-full border-t border-ink pt-5">
-      <a href="project-detail.html" class="block">
-        ${p.cover ? `<div class="aspect-[16/9] rounded overflow-hidden bg-paper-3 mb-4"><svg data-cover="${20 + i}" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>` : ''}
-        <div class="flex items-start justify-between gap-3"><h3 class="font-serif text-[20px] font-bold leading-snug break-all group-hover:text-accent">${p.n}</h3><span class="chip chip-${p.s[1]} shrink-0 mt-1">${p.s[0]}</span></div>
-        <p class="mt-2 text-[15px] leading-7 text-ink-2">${p.d}</p>
-        <p class="mt-3 text-[13px] text-ink-soft">${p.t.join('、')}</p>
-      </a></article></li>`).join('');
-  document.querySelectorAll('[data-cover]').forEach(s => drawContours(s, { seed: +s.dataset.cover, rings: 24, step: 20, cx: 360, cy: 300, highlight: 8, animate: false }));
+  document.getElementById('grid').innerHTML = OTHERS.map(p => `
+    <li ${p.nf ? 'data-state="nofeatured"' : ''}>
+      <a href="project-detail.html" class="tile tile-link group h-full overflow-hidden flex flex-col">
+        ${p.cover ? `<div class="cover aspect-[16/7] p-4"><span class="grid place-items-center w-10 h-10 rounded-xl bg-white/90 text-zinc-800 shadow-sm">${icon(p.i, 'w-5 h-5')}</span></div>` : ''}
+        <div class="p-6 flex flex-col flex-1">
+          ${p.cover ? '' : `<span class="grid place-items-center w-10 h-10 rounded-xl ${TONE[p.s[1]]} mb-5">${icon(p.i, 'w-5 h-5')}</span>`}
+          <div class="flex items-start justify-between gap-3">
+            <h3 class="font-display font-semibold text-[19px] leading-snug break-all text-zinc-900 group-hover:text-blue-700 transition-colors">${p.n}</h3>
+            <span class="chip chip-${p.s[1]} shrink-0">${p.s[0]}</span>
+          </div>
+          <p class="mt-2 text-[14px] leading-7 text-zinc-600">${p.d}</p>
+          <div class="mt-auto pt-5 flex items-center justify-between gap-3">
+            <ul class="flex flex-wrap gap-1.5" aria-label="技术栈">${p.t.map(t => `<li class="tag">${t}</li>`).join('')}</ul>
+            ${icon('arrow-right', 'w-4 h-4 text-zinc-400 group-hover:text-blue-600 transition-colors')}
+          </div>
+        </div>
+      </a></li>`).join('');
 </script>
+<script src="../assets/proto.js"></script>
 </body>
 </html>

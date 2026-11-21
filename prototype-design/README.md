@@ -9,10 +9,12 @@
 ```text
 prototype-design/
 ├── index.html          原型目录（W01–W14、A01–A29）
+├── design-system/      公开站点设计系统（site.md）
 ├── assets/
 │   ├── tw-config.js    设计令牌：颜色、字体、宽度
 │   ├── base.css        长文排版、后台表格、状态标签、等高线动画
-│   ├── site.js         公开站点页头、页脚，等高线图形 drawContours()
+│   ├── site.css        公开站点 v2 组件类与长文排版
+│   ├── site.js         公开站点页头、页脚与 Lucide 图标
 │   ├── admin.js        后台外壳：分组侧栏、面包屑、账户菜单、手机抽屉
 │   └── proto.js        原型工具条、抽屉与弹窗、标签页、Toast
 ├── site/               公开站点，14 个页面
@@ -29,6 +31,6 @@ prototype-design/
 
 ## 视觉方向
 
-- 公开站点：暖白底（`#F6F4EF`）、深墨正文（`#1D2330`）、墨蓝强调色（`#27467A`）。标题用 Noto Serif SC，正文用 Noto Sans SC。首页首屏右侧是程序生成的等高线图形。
+- 公开站点（v2）：设计系统由 `ui-ux-pro-max` 生成，详见 `design-system/site.md`。整体是 Bento 模块拼版，配色为单色加蓝色强调（背景 `#FAFAFA`、白色卡片、强调色 `#2563EB`）。标题用 Space Grotesk，正文用 Inter，代码和数据用 JetBrains Mono，中文回退到 Noto Sans SC。图标统一用 Lucide。共享样式在 `assets/site.css`，页头页脚在 `assets/site.js`。
 - 管理后台：中性灰底，表格和表单排得紧凑。状态一律同时用文字和颜色表示。
-- 首页和 About 的区块节奏参考了 clin.pro，文案和装饰没有照搬。
+- 首页和 About 的区块顺序参考了 clin.pro，文案和装饰没有照搬。
