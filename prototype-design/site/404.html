@@ -4,38 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>页面不存在 · Silva</title>
-  <meta name="description" content="W09 公开 404 原型 v2：保留页头页脚，说明页面不存在或已下线，提供回首页与浏览文章。">
+  <meta name="description" content="你要找的页面不存在，或者已经下线。">
+  <meta name="robots" content="noindex">
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
-  <link rel="stylesheet" href="../assets/base.css">
-  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="../assets/silva.css">
 </head>
-<body class="site antialiased" data-nav="">
+<body class="silva" data-nav="">
 <div id="site-header"></div>
 
-<main id="main" class="max-w-site mx-auto px-4 md:px-6">
-  <section class="pt-10 md:pt-16">
-    <div class="tile relative overflow-hidden px-6 py-14 md:px-12 md:py-20 text-center">
-      <div class="absolute inset-0 dot-grid [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)] pointer-events-none" aria-hidden="true"></div>
-      <div class="relative">
-        <p class="font-mono font-medium text-[96px] md:text-[144px] leading-none tracking-[-0.04em] text-zinc-200 select-none" aria-hidden="true">404</p>
-        <h1 class="mt-2 font-display font-bold tracking-[-0.02em] text-[28px] md:text-[40px] leading-tight text-zinc-900">这个页面不存在</h1>
-        <p class="mt-4 mx-auto text-[16px] leading-8 text-zinc-600 max-w-[32em]">地址可能拼写有误，或者这篇内容已经下线。下线的内容不会再出现在列表、RSS 和站点地图里。</p>
-        <div class="mt-8 flex flex-wrap justify-center gap-3">
-          <a href="home.html" class="btn btn-primary"><i data-icon="home"></i>回首页</a>
-          <a href="blog.html" class="btn btn-ghost"><i data-icon="book-open"></i>浏览文章</a>
+<main id="main">
+  <section aria-labelledby="page-title" class="wrap pt-6 md:pt-10">
+    <div class="grid12 gap-y-12 items-center min-h-[calc(100svh-140px)]">
+      <div class="col-span-12 md:col-span-6" data-zoom>
+        <div class="photo lit aspect-[4/5] md:aspect-[3/4] w-[88%] md:w-auto">
+          <img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1376" height="1835" alt="1937 年拍摄的西黄松树桩切面，七百年的年轮里留着几道火痕" class="object-[50%_30%]">
         </div>
-        <div class="mt-10 mx-auto max-w-sm rounded-xl bg-[#0B0F19] text-left font-mono text-[12px] leading-6 text-zinc-400 px-4 py-3" aria-hidden="true">
-          <span class="text-zinc-500">$</span> curl -I /some/missing/page<br><span class="text-rose-300">HTTP/2 404</span>
+        <p class="muted mt-3">1937 年拍下的一段西黄松树桩，年轮从 1255 年记到 1930 年，中间几圈被火烧断过。</p>
+      </div>
+      <div class="col-span-12 md:col-start-8 md:col-span-5" data-rise>
+        <h1 id="page-title" class="t-head">这一圈没有长出来</h1>
+        <p class="t-lead mt-8 max-w-[20em]">你要找的页面不存在，或者已经下线了。</p>
+        <p class="mt-5 max-w-[30em] muted">可能是链接写错了，也可能这篇内容已经撤回。站点里的其他内容都还在。</p>
+        <div class="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
+          <a href="home.html" class="btn">回首页<span class="arrow"></span></a>
+          <a href="blog.html" class="link">浏览文章</a>
         </div>
       </div>
     </div>
   </section>
+
+  <!-- ===== Ways back ===== -->
+  <section aria-labelledby="maybe-title" class="section wrap">
+    <h2 id="maybe-title" class="t-head">也许你在找这些</h2>
+    <ul class="list-none p-0 m-0 mt-12 grid12 gap-y-14" data-rise>
+      <li class="col-span-12 md:col-span-5">
+        <a href="blog-detail.html" class="block no-underline">
+          <div class="photo aspect-[3/2]"><img src="img/tree-rings.jpg" width="1200" height="800" alt="一段刚锯开的树干，年轮清晰" loading="lazy"></div>
+          <p class="t-lead mt-4">最新文章：用不可变 revision 重写发布流程<span class="arrow"></span></p>
+        </a>
+      </li>
+      <li class="col-span-12 md:col-start-7 md:col-span-3 md:mt-24 w-[72%] md:w-auto">
+        <a href="projects.html" class="block no-underline">
+          <div class="photo aspect-[4/5]"><img src="img/redshank-moss-forest-flickr-hedera-baltica.jpg" width="900" height="1125" alt="苔藓长出的细茎特写" loading="lazy"></div>
+          <p class="t-lead mt-4">全部项目<span class="arrow"></span></p>
+        </a>
+      </li>
+      <li class="col-span-12 md:col-start-10 md:col-span-3 w-[72%] md:w-auto ml-auto md:ml-0">
+        <a href="ai-trending.html" class="block no-underline">
+          <div class="photo aspect-[4/5]"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="900" height="1125" alt="雾中的山脊" loading="lazy"></div>
+          <p class="t-lead mt-4">AI 开源项目趋势<span class="arrow"></span></p>
+        </a>
+      </li>
+    </ul>
+  </section>
 </main>
 
 <div id="site-footer"></div>
+<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 </body>

@@ -13,8 +13,10 @@ prototype-design/
 ├── assets/
 │   ├── tw-config.js    设计令牌：颜色、字体、宽度
 │   ├── base.css        长文排版、后台表格、状态标签、等高线动画
-│   ├── site.css        公开站点 v2 组件类与长文排版
-│   ├── site.js         公开站点页头、页脚与 Lucide 图标
+│   ├── silva.css       公开站点 v3 令牌、组件与长文排版
+│   ├── credits.js      图片与影像署名（由 site/img/credits.json 生成）
+│   ├── site.css        原型目录页样式
+│   ├── site.js         公开站点页头、页脚、入场动效与拖拽长廊
 │   ├── admin.js        后台外壳：分组侧栏、面包屑、账户菜单、手机抽屉
 │   └── proto.js        原型工具条、抽屉与弹窗、标签页、Toast
 ├── site/               公开站点，14 个页面
@@ -31,6 +33,6 @@ prototype-design/
 
 ## 视觉方向
 
-- 公开站点（v2）：设计系统由 `ui-ux-pro-max` 生成，详见 `design-system/site.md`。整体是 Bento 模块拼版，配色为单色加蓝色强调（背景 `#FAFAFA`、白色卡片、强调色 `#2563EB`）。标题用 Space Grotesk，正文用 Inter，代码和数据用 JetBrains Mono，中文回退到 Noto Sans SC。图标统一用 Lucide。共享样式在 `assets/site.css`，页头页脚在 `assets/site.js`。
+- 公开站点（v3「暗室」）：由 `design-taste-frontend` 抽取方向生成，详见 `design-system/site.md`。整页是森林绿暗底，正文用 Boska 搭配 Noto Serif SC，主操作用青柠色，所有元素方角，不用细分隔线、渐变、阴影和卡片网格。核心想法是 Silva 的本意：像树一样一圈一圈地成长，所以年轮作为被照亮的展品贯穿各页。图片来自开放图库，存放在 `site/img/`，署名写在页脚。共享样式在 `assets/silva.css`，页头、页脚和动效在 `assets/site.js`。
 - 管理后台：中性灰底，表格和表单排得紧凑。状态一律同时用文字和颜色表示。
 - 首页和 About 的区块顺序参考了 clin.pro，文案和装饰没有照搬。

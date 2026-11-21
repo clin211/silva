@@ -3,77 +3,71 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>postgres-mcp · MCP Server 目录 · Silva</title>
-  <meta name="description" content="W13 MCP 条目详情原型 v2：名称、摘要与外部链接，详情正文与版本列表，元数据右栏。">
+  <title>postgres-mcp · MCP 目录 · Silva</title>
+  <meta name="description" content="postgres-mcp：让模型以只读方式查询 PostgreSQL。声明的 Transport、实现语言、License、版本与元数据核对日期。">
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet"> <!-- taste-skill-ignore: mono only inside the real config code block -->
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
-  <link rel="stylesheet" href="../assets/base.css">
-  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="../assets/silva.css">
 </head>
-<body class="site antialiased" data-nav="mcp"
-      data-proto-states="default:已核对;unverified:尚未核对">
+<body class="silva" data-nav="mcp" data-proto-states="default:已核对;unverified:尚未核对">
 <div id="site-header"></div>
 
-<main id="main" class="max-w-site mx-auto px-4 md:px-6">
-  <nav aria-label="面包屑" class="pt-8 text-[13px] text-zinc-500">
-    <ol class="flex flex-wrap items-center gap-1.5">
-      <li><a href="home.html" class="hover:text-zinc-900">首页</a></li>
-      <li aria-hidden="true"><i data-icon="chevron-right" class="w-3.5 h-3.5"></i></li>
-      <li><a href="mcp.html" class="hover:text-zinc-900">MCP 目录</a></li>
-      <li aria-hidden="true"><i data-icon="chevron-right" class="w-3.5 h-3.5"></i></li>
-      <li aria-current="page" class="text-zinc-800 font-mono">postgres-mcp</li>
-    </ol>
-  </nav>
-
-  <!-- 名称、摘要与外部链接 -->
-  <header class="tile relative overflow-hidden mt-5 p-6 md:p-8">
-    <div class="absolute inset-0 line-grid [mask-image:linear-gradient(to_bottom_left,black,transparent_55%)] pointer-events-none" aria-hidden="true"></div>
-    <div class="relative flex flex-col md:flex-row md:items-start gap-5">
-      <span class="grid place-items-center w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 shrink-0"><i data-icon="layers" class="w-7 h-7"></i></span>
-      <div class="min-w-0 flex-1">
-        <a href="mcp.html?cat=%E6%95%B0%E6%8D%AE%E5%BA%93" class="tag hover:bg-zinc-200">数据库</a>
-        <h1 class="mt-3 font-mono font-semibold text-[28px] md:text-[40px] leading-tight tracking-[-0.02em] text-zinc-900 break-all">postgres-mcp</h1>
-        <p class="mt-3 text-[16px] md:text-[17px] leading-8 text-zinc-600 max-w-[40em]">让模型以只读方式查询 PostgreSQL：列出 schema 与表结构，执行受限的 SELECT 并返回结果。</p>
-        <ul class="mt-6 flex flex-wrap gap-2" aria-label="外部链接">
-          <li><a href="https://github.com/" target="_blank" rel="noopener" class="btn btn-primary"><i data-icon="github"></i>Repository<i data-icon="arrow-up-right"></i><span class="sr-only">（外部链接）</span></a></li>
-          <li><a href="https://example.com/" target="_blank" rel="noopener" class="btn btn-ghost"><i data-icon="home"></i>Homepage<i data-icon="arrow-up-right"></i><span class="sr-only">（外部链接）</span></a></li>
-          <li><a href="https://example.com/docs" target="_blank" rel="noopener" class="btn btn-ghost"><i data-icon="book-open"></i>Documentation<i data-icon="arrow-up-right"></i><span class="sr-only">（外部链接）</span></a></li>
-        </ul>
+<main id="main">
+  <!-- ===== Name, summary, links ===== -->
+  <section aria-labelledby="entry-title" class="wrap pt-8 md:pt-12">
+    <nav aria-label="面包屑" class="t-body muted" data-rise>
+      <a href="mcp.html" class="link">MCP 目录</a> <span aria-hidden="true">/</span> <a href="mcp.html?cat=%E6%95%B0%E6%8D%AE%E5%BA%93" class="link">数据库</a> <span aria-hidden="true">/</span> <span aria-current="page">postgres-mcp</span>
+    </nav>
+    <div class="grid12 gap-y-10 mt-10 md:mt-14 items-end">
+      <div class="col-span-12 md:col-span-5" data-rise>
+        <h1 id="entry-title" class="t-head break-all">postgres-mcp</h1>
+        <p class="t-lead mt-8 max-w-[22em]">让模型以只读方式查询 PostgreSQL：列出 schema 和表结构，执行受限的 SELECT 并返回结果。</p>
+        <div class="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
+          <a href="https://github.com/" target="_blank" rel="noopener" class="btn">打开仓库<span class="arrow"></span><span class="sr-only">（外部链接）</span></a>
+          <a href="https://example.com/" target="_blank" rel="noopener" class="link t-body">项目主页<span class="sr-only">（外部链接）</span> ↗</a>
+          <a href="https://example.com/docs" target="_blank" rel="noopener" class="link t-body">文档<span class="sr-only">（外部链接）</span> ↗</a>
+        </div>
       </div>
+      <figure class="col-span-12 md:col-start-6 md:col-span-7 m-0" data-zoom>
+        <div class="photo aspect-[5/4]"><img src="img/mount-lushan-fog.jpg" width="1600" height="1200" alt="庐山的云雾从山崖间漫过"></div>
+      </figure>
     </div>
-  </header>
+  </section>
 
-  <div class="mt-4 grid gap-4 lg:grid-cols-12 [&>*]:min-w-0">
-    <!-- 元数据：桌面右栏，手机在正文前按顺序叠放 -->
-    <aside class="lg:col-span-4 lg:order-2" aria-labelledby="meta-title">
-      <div class="tile lg:sticky lg:top-24 p-5 md:p-6">
-        <h2 id="meta-title" class="font-medium text-zinc-900 flex items-center gap-2"><i data-icon="info" class="w-4 h-4 text-blue-600"></i>条目信息</h2>
-        <dl class="mt-4 divide-y divide-zinc-100 text-[14px]">
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">传输方式</dt>
-            <dd class="flex flex-wrap gap-1.5"><span class="tag font-mono !text-[11px]">stdio</span><span class="tag font-mono !text-[11px]">streamable-http</span></dd></div>
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">实现语言</dt><dd class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#3178C6]"></span>TypeScript</dd></div>
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">License</dt><dd class="inline-flex items-center gap-1.5"><i data-icon="scale" class="w-4 h-4 text-zinc-400"></i>MIT</dd></div>
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">最新版本</dt><dd class="font-mono">v1.4.0</dd></div>
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">来源</dt><dd class="text-zinc-700">社区维护，作者自述于仓库 README</dd></div>
-          <div class="py-3 grid grid-cols-[6rem_1fr] gap-3"><dt class="text-zinc-500">核验</dt>
-            <dd data-state="default" class="text-zinc-800">元数据已核对<br><time class="font-mono text-[13px] text-zinc-500" datetime="2026-10-02">2026-10-02</time></dd>
-            <dd data-state="unverified" hidden class="text-zinc-500">元数据尚未核对</dd></div>
-        </dl>
-        <p class="mt-3 rounded-xl bg-zinc-50 p-3 text-[12px] leading-6 text-zinc-600">核验只表示维护者核对过名称、链接、许可证等目录信息，不代表安全认证、运行测试或服务可用。传输方式为项目自行声明。</p>
-      </div>
-    </aside>
+  <!-- ===== Body + sticky facts ===== -->
+  <section class="wrap section">
+    <div class="grid12 gap-y-14">
+      <!-- facts first on phones, right column on desktop -->
+      <aside aria-labelledby="facts-title" class="col-span-12 md:col-start-9 md:col-span-4 md:order-2">
+        <div class="md:sticky md:top-[12vh]" data-rise>
+          <h2 id="facts-title" class="t-lead">条目信息</h2>
+          <dl class="t-body mt-6 grid gap-5 m-0">
+            <div><dt class="muted">声明的 Transport</dt><dd class="m-0">stdio、streamable-http</dd></div>
+            <div><dt class="muted">实现语言</dt><dd class="m-0">TypeScript</dd></div>
+            <div><dt class="muted">License</dt><dd class="m-0">MIT</dd></div>
+            <div><dt class="muted">最新版本</dt><dd class="m-0">v1.4.0</dd></div>
+            <div><dt class="muted">来源</dt><dd class="m-0">社区维护，作者在仓库 README 中自述</dd></div>
+            <div><dt class="muted">元数据</dt>
+              <dd data-state="default" class="m-0">已核对，<time datetime="2026-10-02">2026 年 10 月 2 日</time></dd>
+              <dd data-state="unverified" hidden class="m-0 ink">尚未核对，信息以项目自述为准</dd></div>
+          </dl>
+          <p class="t-body muted mt-8">核对只表示我看过名称、链接和 License 这些目录信息，不代表安全认证、跑过测试或服务可用。Transport 是项目自己声明的。</p>
+        </div>
+      </aside>
 
-    <div class="lg:col-span-8 lg:order-1 grid gap-4 [&>*]:min-w-0">
-      <article aria-labelledby="detail-title" class="tile p-6 md:p-8">
-        <h2 id="detail-title" class="section-title text-[22px]">详情</h2>
-        <div class="prose-site mt-4 max-w-prose">
-          <p>postgres-mcp 通过一个只读数据库账号连接 PostgreSQL，向客户端暴露三个工具：列出 schema、读取表结构、执行 SELECT。写语句在解析阶段被拒绝，单次查询默认限制返回 500 行。</p>
+      <div class="col-span-12 md:col-span-7 md:order-1">
+        <article aria-labelledby="detail-title" class="prose" data-rise>
+          <h2 id="detail-title">它做什么</h2>
+          <p>postgres-mcp 用一个只读数据库账号连接 PostgreSQL，向客户端暴露三个工具：列出 schema、读取表结构、执行 SELECT。写语句在解析阶段就被拒绝，单次查询默认最多返回 500 行。</p>
           <h3>适合的场景</h3>
           <ul>
-            <li>让模型在回答前先查看真实的表结构，减少臆造的列名。</li>
-            <li>在本地开发库上做探索性查询与数据核对。</li>
+            <li>让模型在回答之前先看一眼真实的表结构，少编造几个列名。</li>
+            <li>在本地开发库上做探索性的查询和数据核对。</li>
           </ul>
           <h3>配置示例</h3>
 <pre><code>{
@@ -84,34 +78,46 @@
     }
   }
 }</code></pre>
-          <p>连接串由使用者自行在本地客户端配置，本站不保存任何密钥，也不代为调用。</p>
-        </div>
-      </article>
+          <p>连接串由你在自己的客户端里配置。这个站点不保存任何密钥，也不替你调用它。</p>
+        </article>
 
-      <section aria-labelledby="versions-title" class="tile p-6 md:p-8">
-        <h2 id="versions-title" class="section-title text-[22px]">版本</h2>
-        <ol class="mt-5 relative border-l border-zinc-200 ml-1.5 space-y-6">
-          <li class="pl-6 relative">
-            <span class="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-blue-600 ring-4 ring-blue-100"></span>
-            <div class="flex flex-wrap items-center gap-2"><span class="font-mono font-semibold text-zinc-900">v1.4.0</span><span class="chip chip-info">最新</span><time class="font-mono text-[13px] text-zinc-500" datetime="2026-09-28">2026-09-28</time></div>
-            <p class="mt-1 text-[14px] leading-6 text-zinc-600">新增 streamable-http 传输；查询结果默认上限改为 500 行。</p></li>
-          <li class="pl-6 relative">
-            <span class="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-zinc-300"></span>
-            <div class="flex flex-wrap items-center gap-2"><span class="font-mono font-semibold text-zinc-900">v1.3.2</span><time class="font-mono text-[13px] text-zinc-500" datetime="2026-07-11">2026-07-11</time></div>
-            <p class="mt-1 text-[14px] leading-6 text-zinc-600">修复带引号的 schema 名称无法读取的问题。</p></li>
-          <li class="pl-6 relative">
-            <span class="absolute -left-[7px] top-1.5 w-3 h-3 rounded-full bg-zinc-300"></span>
-            <div class="flex flex-wrap items-center gap-2"><span class="font-mono font-semibold text-zinc-900">v1.0.0</span><time class="font-mono text-[13px] text-zinc-500" datetime="2026-03-02">2026-03-02</time></div>
-            <p class="mt-1 text-[14px] leading-6 text-zinc-600">首个稳定版本，提供 stdio 传输。</p></li>
-        </ol>
-      </section>
+        <div class="photo aspect-[16/9] mt-16" data-zoom><img src="img/a-true-bamboo-forest-36443777482.jpg" width="1600" height="900" alt="竹林里一根根竹竿" loading="lazy"></div>
 
-      <p><a href="mcp.html" class="btn btn-ghost"><i data-icon="arrow-left"></i>返回 MCP 目录</a></p>
+        <section aria-labelledby="versions-title" class="mt-20">
+          <h2 id="versions-title" class="t-head">版本</h2>
+          <ol class="list-none p-0 mt-10 grid gap-10" data-rise>
+            <li class="grid grid-cols-[8rem_1fr] gap-x-6 gap-y-1">
+              <p class="t-lead">v1.4.0</p>
+              <div><p class="t-body muted"><time datetime="2026-09-28">2026 年 9 月 28 日</time>，最新</p><p class="t-body mt-2">新增 streamable-http 传输；查询结果的默认上限改为 500 行。</p></div>
+            </li>
+            <li class="grid grid-cols-[8rem_1fr] gap-x-6 gap-y-1">
+              <p class="t-lead">v1.3.2</p>
+              <div><p class="t-body muted"><time datetime="2026-07-11">2026 年 7 月 11 日</time></p><p class="t-body mt-2">修复带引号的 schema 名称读不出来的问题。</p></div>
+            </li>
+            <li class="grid grid-cols-[8rem_1fr] gap-x-6 gap-y-1">
+              <p class="t-lead">v1.0.0</p>
+              <div><p class="t-body muted"><time datetime="2026-03-02">2026 年 3 月 2 日</time></p><p class="t-body mt-2">第一个稳定版本，只提供 stdio 传输。</p></div>
+            </li>
+          </ol>
+        </section>
+      </div>
     </div>
-  </div>
+  </section>
+
+  <!-- ===== Close: two photographs and the way back ===== -->
+  <section aria-label="返回目录" class="wrap section">
+    <div class="grid12 gap-y-10 items-end">
+      <div class="col-span-7 md:col-span-4"><div class="photo aspect-[3/4]" data-zoom><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="900" height="1200" alt="松树树桩上的年轮" loading="lazy"></div></div>
+      <div class="col-span-12 md:col-start-6 md:col-span-6" data-rise>
+        <p class="t-lead max-w-[20em]">每条目录都和年轮一样，只往外加一圈：版本更新时追加一行，旧的记录留着。</p>
+        <a href="mcp.html" class="link inline-block mt-8">← 回到 MCP 目录</a>
+      </div>
+    </div>
+  </section>
 </main>
 
 <div id="site-footer"></div>
+<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 </body>

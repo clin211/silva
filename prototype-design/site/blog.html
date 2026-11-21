@@ -4,134 +4,109 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>文章 · Silva</title>
-  <meta name="description" content="W02 文章列表原型 v2：页标题与栏目说明、精选大卡＋文章卡片网格、分类/标签侧栏、分页。">
+  <meta name="description" content="周屿的技术文章：后端工程、Rust、前端构建与工程随笔。">
+  <script>document.documentElement.classList.add('js')</script>
+  <link rel="preconnect" href="https://api.fontshare.com"><link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=boska@400,500&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
-  <link rel="stylesheet" href="../assets/base.css">
-  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="../assets/silva.css">
 </head>
-<body class="site antialiased" data-nav="blog"
-      data-proto-states="default:有文章;empty:暂无文章">
+<body class="silva" data-nav="blog" data-proto-states="default:有文章;empty:暂无文章">
 <div id="site-header"></div>
 
-<main id="main" class="max-w-site mx-auto px-4 md:px-6">
-  
-  <header class="pt-6 md:pt-8 grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-8 min-w-0">
-      <p class="mb-3 pt-4 flex items-center gap-2 text-[14px] text-zinc-500"><i data-icon="book-open" class="w-4 h-4 text-blue-600"></i>技术文章</p>
-      <h1 class="font-display font-bold text-[36px] md:text-[48px] leading-[1.1] tracking-[-0.03em] text-zinc-900 break-words">文章</h1>
-      <p class="mt-4 text-[16px] md:text-[17px] leading-8 text-zinc-600 max-w-[38em]">后端工程、Rust、前端架构与发布流程的笔记。按发布时间倒序排列，也可以按分类或标签浏览。</p>
+<main id="main">
+
+  <section aria-labelledby="page-title" class="wrap pt-[clamp(40px,7vw,96px)]">
+    <h1 id="page-title" class="t-display -ml-[0.04em]">文章</h1>
+    <div class="grid12 gap-y-10 mt-[clamp(32px,4vw,56px)] items-start" data-rise>
+      <p class="col-span-12 lg:col-span-6 t-lead max-w-[22em]">35 篇，一圈一圈记下来的：后端工程、Rust、前端构建，还有一些写给自己的随笔。</p>
+      <div class="col-span-12 lg:col-start-8 lg:col-span-5">
+      <div class="lg:hidden"><button type="button" id="taxo-toggle" class="btn btn-quiet w-full justify-between" aria-expanded="false" aria-controls="taxo-panel">按分类或标签浏览<span aria-hidden="true" id="taxo-sign">＋</span></button></div>
+      <div id="taxo-panel" class="hidden lg:block mt-6 lg:mt-0" data-rise>
+        <h2 class="t-body muted">按分类</h2>
+        <p class="mt-2 t-lead leading-[1.6]"><a href="category.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >后端工程<span class="muted"> 14</span></a>　<a href="category.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >Rust<span class="muted"> 9</span></a>　<a href="category.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >前端<span class="muted"> 7</span></a>　<a href="category.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >工程随笔<span class="muted"> 5</span></a></p>
+        <h2 class="t-body muted mt-8">按标签</h2>
+        <p class="mt-2 t-lead leading-[1.6]"><a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#PostgreSQL</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#Axum</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#Astro</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#CMS</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#可观测性</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#MCP</a>　<a href="tag.html" class="muted hover:text-[var(--ink)] whitespace-nowrap" style="text-decoration:none" >#CI/CD</a></p>
+        <p class="mt-8 t-body"><a class="link" href="#rss">订阅 RSS</a><span class="muted">，新文章上线后自动推送。</span></p>
+      </div></div>
     </div>
-    <ul class="lg:col-span-4 grid grid-cols-3 gap-2" aria-label="统计"><li class="tile !rounded-2xl px-4 py-3 min-w-0"><span class="block font-display font-bold text-[22px] text-zinc-900 tnum">35</span><span class="block text-[12px] text-zinc-500">篇文章</span></li><li class="tile !rounded-2xl px-4 py-3 min-w-0"><span class="block font-display font-bold text-[22px] text-zinc-900 tnum">4</span><span class="block text-[12px] text-zinc-500">个分类</span></li><li class="tile !rounded-2xl px-4 py-3 min-w-0"><span class="block font-display font-bold text-[22px] text-zinc-900 tnum">7</span><span class="block text-[12px] text-zinc-500">个标签</span></li></ul>
-  </header>
+  </section>
 
-  <div class="mt-10 grid gap-6 lg:grid-cols-12 lg:gap-8">
-    
-    <aside class="lg:col-span-4 lg:order-2 min-w-0" aria-label="分类与标签">
-      <button type="button" id="taxo-toggle" class="lg:hidden w-full tile flex items-center justify-between h-12 px-4 text-[15px] font-medium" aria-expanded="false" aria-controls="taxo-panel">
-        <span class="flex items-center gap-2"><i data-icon="filter" class="w-4 h-4 text-zinc-500"></i>按分类或标签浏览</span><i data-icon="chevron-down" class="w-4 h-4 text-zinc-500 transition-transform"></i>
-      </button>
-      <div id="taxo-panel" class="hidden lg:block lg:sticky lg:top-24 mt-3 lg:mt-0 space-y-4">
-        <section class="tile p-3" aria-labelledby="side-cat">
-          <h2 id="side-cat" class="px-3 pt-2 pb-2 text-[13px] font-medium text-zinc-500">分类</h2>
-          <ul class="grid gap-0.5 text-[14px]"><li><a href="category.html" class="flex items-center justify-between h-10 px-3 rounded-xl transition-colors text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"><span class="flex items-center gap-2"><i data-icon="folder" class="w-4 h-4 text-zinc-400"></i>后端工程</span><span class="font-mono text-[12px] text-zinc-400">14</span></a></li><li><a href="category.html" class="flex items-center justify-between h-10 px-3 rounded-xl transition-colors text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"><span class="flex items-center gap-2"><i data-icon="folder" class="w-4 h-4 text-zinc-400"></i>Rust</span><span class="font-mono text-[12px] text-zinc-400">9</span></a></li><li><a href="category.html" class="flex items-center justify-between h-10 px-3 rounded-xl transition-colors text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"><span class="flex items-center gap-2"><i data-icon="folder" class="w-4 h-4 text-zinc-400"></i>前端</span><span class="font-mono text-[12px] text-zinc-400">7</span></a></li><li><a href="category.html" class="flex items-center justify-between h-10 px-3 rounded-xl transition-colors text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"><span class="flex items-center gap-2"><i data-icon="folder" class="w-4 h-4 text-zinc-400"></i>工程随笔</span><span class="font-mono text-[12px] text-zinc-400">5</span></a></li></ul>
-        </section>
-        <section class="tile p-5" aria-labelledby="side-tag">
-          <h2 id="side-tag" class="text-[13px] font-medium text-zinc-500">标签</h2>
-          <ul class="mt-3 flex flex-wrap gap-2"><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#PostgreSQL</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#Axum</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#Astro</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#CMS</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#可观测性</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#MCP</a></li><li><a href="tag.html" class="tag !text-[13px] !px-2.5 !py-1.5 transition-colors hover:!bg-zinc-200">#CI/CD</a></li></ul>
-        </section>
-        <a href="#rss" class="tile tile-link p-5 flex items-center gap-3">
-          <span class="grid place-items-center w-10 h-10 rounded-xl bg-orange-50 text-orange-600"><i data-icon="rss" class="w-5 h-5"></i></span>
-          <span class="min-w-0"><span class="block font-medium text-[15px] text-zinc-900">RSS 订阅</span><span class="block text-[13px] text-zinc-500">新文章上线后自动推送</span></span>
-        </a>
-      </div>
-    </aside>
-
-    <section class="lg:col-span-8 lg:order-1 min-w-0" aria-label="文章列表">
-      <div data-state="default">
-        <ol id="post-list" class="grid gap-4 sm:grid-cols-2"></ol>
-        <nav aria-label="分页" class="mt-8 flex items-center justify-between gap-3">
-          <span class="btn btn-ghost !px-3 sm:!px-[18px] opacity-50 cursor-not-allowed" aria-disabled="true"><i data-icon="chevron-left"></i><span class="sr-only sm:not-sr-only">上一页</span></span>
-          <ol class="flex items-center gap-1 font-mono text-[14px]">
-            <li><a href="blog.html" aria-current="page" class="grid place-items-center w-10 h-10 rounded-xl bg-zinc-900 text-white">1</a></li>
-            <li><a href="blog.html?page=2" class="grid place-items-center w-10 h-10 rounded-xl text-zinc-700 hover:bg-zinc-100">2</a></li>
-            <li><a href="blog.html?page=3" class="grid place-items-center w-10 h-10 rounded-xl text-zinc-700 hover:bg-zinc-100">3</a></li>
-          </ol>
-          <a href="blog.html?page=2" class="btn btn-ghost !px-3 sm:!px-[18px]"><span class="sr-only sm:not-sr-only">下一页</span><i data-icon="chevron-right"></i></a>
-        </nav>
-      </div>
-      <div data-state="empty" hidden class="tile border-dashed !border-zinc-300 p-10 md:p-14 text-center">
-        <span class="mx-auto grid place-items-center w-14 h-14 rounded-2xl bg-zinc-100 text-zinc-500"><i data-icon="book-open" class="w-6 h-6"></i></span>
-        <p class="mt-5 font-display font-semibold text-[20px] text-zinc-900">还没有已上线的文章</p>
-        <p class="mt-2 text-[15px] text-zinc-600">文章发布并完成站点构建后会出现在这里。</p>
-        <div class="mt-6 flex flex-wrap justify-center gap-3">
-          <a href="projects.html" class="btn btn-ghost"><i data-icon="briefcase"></i>看看项目</a>
-          <a href="tools.html" class="btn btn-ghost"><i data-icon="wrench"></i>常用工具</a>
+  <section aria-label="文章列表" class="section wrap" style="margin-top:clamp(72px,9vw,140px)">
+    <div data-state="default" class="grid12 gap-y-10">
+      <div class="col-span-12 lg:col-span-5">
+        <div class="lg:sticky lg:top-[12vh]">
+          <div class="photo aspect-[4/3] lg:aspect-[4/5] relative" id="list-photo" data-zoom><img src="img/tree-rings.jpg" width="1200" height="1500" alt="刚锯开的树干横截面，年轮清晰" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-100" data-ph="0" ><img src="img/growth-rings-on-stump-of-pine-2.jpg" width="1200" height="1500" alt="松树树桩上的年轮" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="1" loading="lazy"><img src="img/a-true-bamboo-forest-36443777482.jpg" width="1200" height="1500" alt="竹林里笔直的竹竿" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="2" loading="lazy"><img src="img/1937-ponderosa-pine-stump-section-showing-tree.jpg" width="1200" height="1500" alt="1937 年拍摄的西黄松树桩切面，年轮与火痕" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="3" loading="lazy"><img src="img/fog-descending-on-a-pine-forest-unsplash.jpg" width="1200" height="1500" alt="雾气落在松林上" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="4" loading="lazy"><img src="img/china-emei-shan-9-misty-mountains-135961844.jpg" width="1200" height="1500" alt="雾中的峨眉山山脊" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="5" loading="lazy"><img src="img/cathedral-grove-old-growth-forest-vancouver-island.jpg" width="1200" height="1500" alt="老林里高大的树干" class="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-0" data-ph="6" loading="lazy"></div>
         </div>
       </div>
-    </section>
-  </div>
-</main>
+      <div class="col-span-12 lg:col-start-7 lg:col-span-6">
+        <ol id="post-list" class="list-none p-0 m-0" data-rise></ol>
+        <nav aria-label="分页" data-rise class="mt-14 flex flex-wrap items-baseline gap-x-6 gap-y-3 t-body">
+          <span class="muted" aria-disabled="true">上一页</span>
+          <a href="blog.html" aria-current="page" class="link ink">1</a>
+          <a href="blog.html?page=2" class="muted hover:text-[var(--ink)]" style="text-decoration:none">2</a>
+          <a href="blog.html?page=3" class="muted hover:text-[var(--ink)]" style="text-decoration:none">3</a>
+          <a href="blog.html?page=4" class="muted hover:text-[var(--ink)]" style="text-decoration:none">4</a>
+          <a href="blog.html?page=5" class="muted hover:text-[var(--ink)]" style="text-decoration:none">5</a>
+          <a href="blog.html?page=2" class="link">下一页<span class="arrow"></span></a>
+          <span class="muted w-full md:w-auto md:ml-auto">第 1 页，共 5 页</span>
+        </nav>
+      </div>
+    </div>
+    <div data-state="empty" hidden class="max-w-[34em]">
+      <p class="t-lead">这里还没有已上线的文章。</p>
+      <p class="mt-4 muted">文章发布并完成站点构建后，会出现在这里。</p>
+      <p class="mt-8 flex flex-wrap gap-x-8 gap-y-3"><a class="link" href="projects.html">看看项目<span class="arrow"></span></a><a class="link" href="tools.html">我常用的工具<span class="arrow"></span></a></p>
+    </div>
+  </section>
 
+</main>
 <div id="site-footer"></div>
+<script src="../assets/credits.js"></script>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-  // 原型数据（真实页面由构建快照生成）
-  const POSTS = [
-    { c: '后端工程', d: '2026-11-18', r: 12, t: '用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线', e: '把「保存」「批准」「上线」拆成三个独立状态之后，旧版本可以在新草稿审核期间继续在线。', tags: ['CMS', 'PostgreSQL'], cover: true },
-    { c: 'Rust', d: '2026-11-12', r: 8, t: 'Axum 中间件的执行顺序，一张图讲清楚', e: '从 Layer 的包裹方向说起，顺便整理 request ID 与 tracing 的放置位置。', tags: ['Axum', '可观测性'] },
-    { c: '前端', d: '2026-11-03', r: 6, t: '静态优先的 Astro 站点，什么时候才需要 Island', e: '筛选、分页和图表之外，几乎所有页面都可以在构建时完成。', tags: ['Astro'], cover: true },
-    { c: '后端工程', d: '2026-10-27', r: 10, t: 'PostgreSQL 迁移里那些会悄悄锁表的语句', e: 'ADD COLUMN 带默认值、创建索引、改约束——哪些在新版本里已经安全，哪些仍需要分步执行。', tags: ['PostgreSQL', 'CI/CD'] },
-    { c: '工程随笔', d: '2026-10-15', r: 5, t: '一个人维护一个站点：我如何安排发布与回滚', e: '没有整站回滚时，重新发布一个历史已批准版本是最稳妥的恢复方式。', tags: ['CMS'] },
-    { c: 'Rust', d: '2026-10-02', r: 9, t: '在 Worker 进程里安全地重试 GitHub API：限流、退避与幂等批次', e: '每日采集只要一次失败就不发布该批次，重试也不能生成重复快照。', tags: ['PostgreSQL', 'MCP'] },
-    { c: '前端', d: '2026-09-21', r: 7, t: '给 MCP 目录做筛选：URL 即状态，后退即恢复', e: '筛选项和页码写进查询参数，筛选变化回到第一页，浏览器后退可以完整还原。', tags: ['MCP', 'Astro'] },
-  ];
-  
-  const CAT_ICON = { '后端工程': 'layers', 'Rust': 'terminal', '前端': 'code', '工程随笔': 'book-open' };
-  const meta = p => `
-    <div class="relative z-10 flex flex-wrap items-center gap-2 text-[13px] text-zinc-500">
-      <a href="category.html" class="tag tag-accent hover:!bg-blue-100">${p.c}</a>
-      <time class="font-mono" datetime="${p.d}">${p.d}</time>
-      <span aria-hidden="true">·</span><span class="inline-flex items-center gap-1">${icon('clock', 'w-3.5 h-3.5')}${p.r} 分钟</span>
-    </div>`;
-  const tagRow = p => `<div class="relative z-10 mt-4 flex flex-wrap gap-1.5">${p.tags.map(t => `<a href="tag.html" class="tag hover:!bg-zinc-200">#${t}</a>`).join('')}</div>`;
-  const cover = (p, cls) => `<div class="cover ${cls} grid place-items-center" aria-hidden="true"><span class="grid place-items-center w-14 h-14 rounded-2xl bg-white/90 text-blue-600 shadow-sm">${icon(CAT_ICON[p.c] || 'book-open', 'w-7 h-7')}</span></div>`;
-  const featured = p => `
-    <li class="sm:col-span-2 min-w-0">
-      <article class="tile tile-link relative overflow-hidden grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] h-full">
-        ${cover(p, 'aspect-[16/9] md:aspect-auto md:min-h-[260px]')}
-        <div class="p-6 md:p-8 flex flex-col">
-          ${meta(p)}
-          <h2 class="mt-3 font-display font-bold text-[22px] md:text-[26px] leading-snug tracking-[-0.01em] text-zinc-900"><a href="blog-detail.html" class="after:absolute after:inset-0">${p.t}</a></h2>
-          <p class="mt-3 text-[15px] leading-7 text-zinc-600">${p.e}</p>
-          <div class="mt-auto">${tagRow(p)}</div>
-        </div>
-      </article>
-    </li>`;
-  const card = p => `
-    <li class="min-w-0">
-      <article class="tile tile-link relative overflow-hidden h-full flex flex-col">
-        ${cover(p, 'hidden sm:grid aspect-[16/6]')}
-        <div class="p-6 flex flex-col flex-1">
-          ${meta(p)}
-          <h2 class="mt-3 font-display font-semibold text-[18px] leading-snug text-zinc-900"><a href="blog-detail.html" class="after:absolute after:inset-0">${p.t}</a></h2>
-          <p class="mt-2 text-[14px] leading-7 text-zinc-600">${p.e}</p>
-          <div class="mt-auto">${tagRow(p)}</div>
-        </div>
-      </article>
-    </li>`;
-  document.getElementById('post-list').innerHTML = POSTS.map((p, i) => i === 0 ? featured(p) : card(p)).join('');
-
-  // 手机/平板：分类标签折叠区（桌面始终展开，所以用 class 切换而不是 hidden 属性）
-  const tg = document.getElementById('taxo-toggle'), panel = document.getElementById('taxo-panel');
-  tg.addEventListener('click', () => {
-    const open = panel.classList.toggle('hidden') === false;
-    tg.setAttribute('aria-expanded', open);
-    tg.querySelector('svg:last-child').style.transform = open ? 'rotate(180deg)' : '';
+const POSTS = [{"c": "后端工程", "d": "2026-11-18", "r": 12, "t": "用不可变 revision 重写 CMS 的发布流程", "e": "把「保存」「批准」「上线」拆成三个独立状态。旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。", "tags": ["CMS", "PostgreSQL"]}, {"c": "Rust", "d": "2026-11-12", "r": 8, "t": "Axum 中间件的执行顺序，一张图讲清楚", "e": "从 Layer 的包裹方向讲起，顺便整理 request ID 和 tracing 该放在哪一层。", "tags": ["Axum", "可观测性"]}, {"c": "前端", "d": "2026-11-03", "r": 6, "t": "静态优先的 Astro 站点，什么时候才需要 Island", "e": "筛选、分页和图表之外，几乎所有页面都可以在构建时生成好。", "tags": ["Astro"]}, {"c": "后端工程", "d": "2026-10-27", "r": 10, "t": "PostgreSQL 迁移里那些会悄悄锁表的语句", "e": "加列带默认值、建索引、改约束：哪些在新版本里已经安全，哪些仍要分步执行。", "tags": ["PostgreSQL", "CI/CD"]}, {"c": "工程随笔", "d": "2026-10-15", "r": 5, "t": "一个人维护一个站点：我怎样安排发布与回滚", "e": "没有整站回滚时，重新发布一个历史上批准过的版本，是最稳妥的恢复方式。", "tags": ["CMS"]}, {"c": "Rust", "d": "2026-10-02", "r": 9, "t": "在 Worker 里安全地重试 GitHub API", "e": "每日采集只要有一次失败就不发布该批次，重试也不能生成重复的快照。", "tags": ["PostgreSQL", "MCP"]}, {"c": "前端", "d": "2026-09-21", "r": 7, "t": "给 MCP 目录做筛选：URL 即状态，后退即恢复", "e": "筛选项和页码写进查询参数，筛选变化回到第一页，浏览器后退可以完整还原。", "tags": ["MCP", "Astro"]}];
+const list = document.getElementById('post-list');
+const photos = [...document.querySelectorAll('#list-photo [data-ph]')];
+list.innerHTML = POSTS.map((p, i) => `
+  <li>
+    <a href="blog-detail.html" class="block py-5 no-underline" data-i="${i}" aria-describedby="pd-${i}">
+      <span class="flex items-baseline justify-between gap-6">
+        <span class="row-title t-lead muted transition-colors duration-300">${p.t}</span>
+        <time class="t-small muted shrink-0" datetime="${p.d}">${p.d.slice(5)}</time>
+      </span>
+      <span class="block t-small muted mt-1">${p.c} · ${p.r} 分钟</span>
+      <span id="pd-${i}" class="row-desc block mt-3 max-w-[32em]" hidden>${p.e}<span class="block t-small muted mt-2">${p.tags.map(t => '#' + t).join('　')}</span></span>
+    </a>
+  </li>`).join('');
+[...list.children].forEach((li, i) => li.style.setProperty('--n', i));
+const rows = [...list.querySelectorAll('a[data-i]')];
+let cur = -1;
+function activate(i) {
+  if (i === cur) return; cur = i;
+  rows.forEach((r, j) => {
+    const t = r.querySelector('.row-title');
+    t.classList.toggle('ink', j === i); t.classList.toggle('muted', j !== i);
+    r.querySelector('.row-desc').hidden = j !== i;
   });
+  photos.forEach((ph, j) => { ph.classList.toggle('opacity-100', j === i); ph.classList.toggle('opacity-0', j !== i); });
+}
+rows.forEach(r => { const i = +r.dataset.i; r.addEventListener('mouseenter', () => activate(i)); r.addEventListener('focus', () => activate(i)); });
+const rowIO = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && activate(+e.target.dataset.i)), { rootMargin: '-45% 0px -45% 0px' });
+rows.forEach(r => rowIO.observe(r));
+activate(0);
+
+// 手机/平板：分类标签折叠区（桌面始终展开，所以切换 class 而不是 hidden 属性）
+const tg = document.getElementById('taxo-toggle'), panel = document.getElementById('taxo-panel');
+tg.addEventListener('click', () => {
+  const open = panel.classList.toggle('hidden') === false;
+  tg.setAttribute('aria-expanded', open);
+  document.getElementById('taxo-sign').textContent = open ? '－' : '＋';
+});
 </script>
 </body>
 </html>

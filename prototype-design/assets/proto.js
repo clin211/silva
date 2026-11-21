@@ -157,7 +157,7 @@
 
   /* ---------- init (after shells injected) ---------- */
   function init() {
-    buildBar();
+    if (qs.get('bar') !== '0') buildBar();
     if (states.length) applyState(states.some(s => s.k === qs.get('state')) ? qs.get('state') : states[0].k);
     if (hasRoles) applyRole(ROLE_RANK[qs.get('role')] ? qs.get('role') : (body.dataset.protoRoles || 'admin'));
   }
