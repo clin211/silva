@@ -1,0 +1,103 @@
+name: Backend
+
+on:
+  push:
+    paths:
+      - "server/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: server
+    env:
+      DATABASE_URL: postgres://silva:silva@localhost:5432/silva_test
+      SILVA_TEST_DATABASE_URL: postgres://silva:silva@localhost:5432/silva_test
+      SILVA_ENV: test
+      SILVA_ADMIN_ORIGIN: http://localhost:5173
+      RUST_LOG: info
+      CARGO_TERM_COLOR: always
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: silva_test
+          POSTGRES_USER: silva
+          POSTGRES_PASSWORD: silva
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U silva -d silva_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server -> target
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build all binaries
+        run: cargo build --workspace --locked
+      - name: Migrate PostgreSQL
+        run: cargo run --locked -p silva-cli -- migrate
+      - name: Validate schema comments and UUIDv7 constraints
+        run: cargo run --locked -p silva-cli -- check-schema
+      - name: Unit and contract tests
+        run: cargo test --workspace --locked
+      - name: PostgreSQL identity integration tests
+        run: cargo test --locked -p silva-api --test identity -- --ignored
+      - name: API process HTTP smoke test
+        shell: bash
+        run: |
+          target/debug/silva-api > "$RUNNER_TEMP/silva-api.log" 2>&1 &
+          silva_api_pid=$!
+          trap 'kill "$silva_api_pid" 2>/dev/null || true; wait "$silva_api_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8088/health/ready > /dev/null; then
+              break
+            fi
+            if ! kill -0 "$silva_api_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/silva-api.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:8088/health/live
+          curl --fail --silent --show-error http://127.0.0.1:8088/health/ready
+          curl --fail --silent --show-error http://127.0.0.1:8088/metrics > /dev/null
+          curl --fail --silent --show-error http://127.0.0.1:8088/openapi.json \
+            | jq --exit-status '.paths | has("/api/v1/admin/auth/login")'
+      - name: Worker maintenance smoke test
+        run: cargo run --locked -p silva-worker -- --once
+
+  observability-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate observability configurations and alert behavior
+        run: make observability-check
