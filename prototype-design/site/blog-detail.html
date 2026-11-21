@@ -19,7 +19,8 @@
     .toc a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
     /* reading column on the left, one rail on the right: article info on top, "On this page" below */
     .read-grid { display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr); }
-    @media (min-width: 1024px) { .read-grid { grid-template-columns: minmax(0, 720px) 15rem; justify-content: space-between; gap: 64px; } }
+    @media (min-width: 1024px) { .read-grid { grid-template-columns: minmax(0, 860px) 15rem; justify-content: space-between; gap: 64px; } }
+    @media (min-width: 1440px) { .read-grid { grid-template-columns: minmax(0, 940px) 17rem; } .read-grid .prose, .after-read { max-width: 940px; } }
     .rail-sec + .rail-sec { border-top: 1px solid var(--line); padding-top: 24px; }
     /* share panel: popover on desktop, bottom sheet on phones */
     #share-panel { position: fixed; z-index: 70; width: 340px; border-radius: 24px; background: var(--paper); padding: 18px;
@@ -49,7 +50,7 @@
       <nav aria-label="面包屑" class="t-small muted flex flex-wrap items-center gap-2">
         <a class="hover-accent" href="home.html">首页</a><span aria-hidden="true">/</span><a class="hover-accent" href="blog.html">技术文章</a><span aria-hidden="true">/</span><a class="hover-accent" href="category.html">后端</a>
       </nav>
-      <div class="max-w-4xl mt-8" data-rise>
+      <div class="max-w-5xl mt-8" data-rise>
         <a href="category.html" class="chip chip-teal">后端 · 部署</a>
         <h1 class="mt-5 text-[2rem] sm:text-5xl lg:text-[3.5rem] leading-[1.12] font-semibold">基于 GitHub Actions 与 Docker 的 Go 项目部署实战</h1>
         <p class="t-lead ink-2 mt-5 max-w-[40em]">对于 Go 项目，怎样搭一套既简单可靠、又方便回滚的部署流程？这篇从多阶段构建讲到镜像推送、远程部署和一键回滚。</p>
@@ -144,7 +145,7 @@ jobs:
 
     <!-- ===== After reading ===== -->
     <footer class="wrap mt-16">
-      <div class="max-w-[720px]">
+      <div class="max-w-[860px] after-read">
         <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-[rgba(16,37,35,.04)] px-5 py-4">
           <p class="t-small ink-2">觉得有用？分享给可能需要的人。</p>
           <button type="button" class="btn btn-dark btn-sm" data-share aria-haspopup="dialog" aria-expanded="false"><span data-ico="share"></span>分享这篇文章</button>

@@ -45,8 +45,7 @@
     header.outerHTML = `
     <a href="#main" class="skip" style="position:fixed;left:-9999px;top:8px;z-index:100;background:var(--ink);color:#fff;padding:10px 14px;border-radius:999px" onfocus="this.style.left='8px'" onblur="this.style.left='-9999px'">跳到正文</a>
     <header class="site-head" style="position:fixed;inset:16px 0 auto;z-index:50;pointer-events:none">
-      <div style="pointer-events:auto;margin-inline:auto;width:calc(100% - 24px);max-width:1120px;height:56px;padding:0 10px 0 20px;border-radius:999px;display:flex;align-items:center;gap:12px;
-        background:rgba(255,255,255,.88);backdrop-filter:blur(20px) saturate(1.4);-webkit-backdrop-filter:blur(20px) saturate(1.4);box-shadow:0 16px 48px rgba(5,32,30,.12),inset 0 0 0 1px rgba(0,0,0,.07)">
+      <div class="glass head-bar" style="pointer-events:auto;margin-inline:auto;height:58px;padding:0 10px 0 20px;border-radius:999px;display:flex;align-items:center;gap:12px">
         <a href="home.html" style="font-weight:700;font-size:1.125rem;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;margin-right:auto" aria-label="Silva 首页">
           <span aria-hidden="true" style="display:inline-grid;place-items:center;width:28px;height:28px;border-radius:99px;background:var(--teal);color:#fff;font-size:.8125rem">S</span>Silva</a>
         <nav aria-label="主导航" class="nav-desk">
@@ -57,13 +56,24 @@
         <a href="#rss" class="btn btn-dark btn-sm nav-rss" style="height:38px">${icon('rss', '', 16)}<span>RSS</span></a>
         <button type="button" class="nav-btn" aria-expanded="false" aria-controls="nav-sheet" aria-label="打开菜单">${icon('menu', '', 20)}</button>
       </div>
-      <div id="nav-sheet" hidden style="pointer-events:auto;margin:8px auto 0;width:calc(100% - 24px);max-width:1120px;border-radius:28px;padding:10px;background:rgba(255,255,255,.96);backdrop-filter:blur(20px);box-shadow:0 16px 48px rgba(5,32,30,.16),inset 0 0 0 1px rgba(0,0,0,.07)">
+      <div id="nav-sheet" class="glass head-bar" hidden style="pointer-events:auto;margin:8px auto 0;border-radius:28px;padding:10px">
         <nav aria-label="主导航（手机）"><ul style="list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:4px">
           ${NAV.map(([k, l, h]) => `<li><a href="${h}" class="nav-a" style="display:flex;height:48px;font-size:1rem" ${k === active ? 'aria-current="page"' : ''}>${l}</a></li>`).join('')}
         </ul></nav>
       </div>
     </header>
     <style>
+      .head-bar{width:calc(100% - 2 * max(12px, var(--gutter) - 20px));max-width:calc(var(--content-max) + 40px)}
+      /* frosted glass: translucent white, strong blur + saturation, light rim on top, soft shadow below */
+      .glass{position:relative;isolation:isolate;
+        background:linear-gradient(180deg,rgba(255,255,255,.62),rgba(255,255,255,.42));
+        -webkit-backdrop-filter:blur(22px) saturate(1.8);backdrop-filter:blur(22px) saturate(1.8);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.75),inset 0 0 0 1px rgba(255,255,255,.35),0 0 0 1px rgba(16,37,35,.06),0 8px 28px rgba(5,32,30,.08);
+        transition:background .4s var(--ease),box-shadow .4s var(--ease)}
+      .glass::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;
+        background:radial-gradient(120% 140% at 10% -20%,rgba(255,255,255,.55),transparent 55%)}
+      .site-head.scrolled .glass{background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.55))}
+      @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.glass{background:rgba(255,255,255,.94)}}
       .nav-a{display:inline-flex;align-items:center;height:38px;padding:0 14px;border-radius:999px;font-size:.875rem;font-weight:500;color:rgba(16,37,35,.62);transition:color .3s,background-color .3s}
       .nav-a:hover{color:var(--ink);background:rgba(16,37,35,.05)}
       .nav-a[aria-current]{color:var(--ink);background:rgba(11,137,146,.1)}
@@ -71,6 +81,9 @@
       @media (max-width: 900px){ .nav-desk{display:none} .nav-btn{display:grid} }
       @media (max-width: 420px){ .nav-rss span{display:none} .nav-rss{width:38px;padding:0} }
     </style>`;
+    const head = document.querySelector('.site-head');
+    const onScroll = () => head.classList.toggle('scrolled', scrollY > 24);
+    addEventListener('scroll', onScroll, { passive: true }); onScroll();
     const btn = document.querySelector('.nav-btn'), sheet = document.getElementById('nav-sheet');
     const set = open => { sheet.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.innerHTML = icon(open ? 'x' : 'menu', '', 20); btn.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单'); };
     btn.addEventListener('click', () => set(sheet.hidden));
