@@ -171,11 +171,11 @@
 (function () {
   /* ---------------- mock dataset (deterministic) ---------------- */
   const LANGS = ['Python', 'TypeScript', 'Rust', 'Go', 'C++'];
-  const TOPICS = ['llm', 'agents', 'rag', 'vector-database', 'llm-inference', 'mcp', 'fine-tuning'];
+  const TOPICS = ['llm', 'agents', 'rag', 'vector-database', 'llm-inference', 'code-agent', 'fine-tuning'];
   const CATS = ['智能体', '推理与部署', '检索与数据', '开发工具', '模型训练'];
   const OWNERS = ['openmind-labs', 'vecstore', 'tinyllm', 'kite-ai', 'oakbridge', 'mlforge', 'quietdev', 'northwind-ai', 'synapse-hq', 'lumen'];
-  const REPOS = ['agentkit', 'lancet', 'infer-rs', 'ragline', 'promptbench', 'evalkit', 'tokenizer-x', 'graphrag-lite', 'serve-llm', 'mcp-hub', 'loraforge', 'chunker', 'docqa', 'vision-agent', 'speculate', 'kvcache', 'toolcall', 'memoria', 'flowchain', 'quantize-it'];
-  const DESCS = ['面向生产环境的多智能体编排框架', '嵌入式向量数据库，单文件部署', '纯 Rust 实现的本地大模型推理引擎', '可插拔的检索增强生成流水线', '提示词回归测试与评测工具', '大模型输出质量评测套件', '高性能分词器与词表工具', '轻量的知识图谱 RAG 实现', 'OpenAI 兼容的推理服务网关', 'MCP Server 注册与发现服务', 'LoRA 微调脚手架', '面向长文档的语义切分库', '针对内部文档的问答机器人', '视觉理解智能体工具包', '推测解码加速实验', 'KV 缓存复用与调度', '函数调用协议适配层', '为智能体设计的长期记忆存储', '声明式的 LLM 工作流引擎', '模型量化与精度对比工具'];
+  const REPOS = ['agentkit', 'lancet', 'infer-rs', 'ragline', 'promptbench', 'evalkit', 'tokenizer-x', 'graphrag-lite', 'serve-llm', 'tool-hub', 'loraforge', 'chunker', 'docqa', 'vision-agent', 'speculate', 'kvcache', 'toolcall', 'memoria', 'flowchain', 'quantize-it'];
+  const DESCS = ['面向生产环境的多智能体编排框架', '嵌入式向量数据库，单文件部署', '纯 Rust 实现的本地大模型推理引擎', '可插拔的检索增强生成流水线', '提示词回归测试与评测工具', '大模型输出质量评测套件', '高性能分词器与词表工具', '轻量的知识图谱 RAG 实现', 'OpenAI 兼容的推理服务网关', '智能体工具注册与发现服务', 'LoRA 微调脚手架', '面向长文档的语义切分库', '针对内部文档的问答机器人', '视觉理解智能体工具包', '推测解码加速实验', 'KV 缓存复用与调度', '函数调用协议适配层', '为智能体设计的长期记忆存储', '声明式的 LLM 工作流引擎', '模型量化与精度对比工具'];
   const r = i => { const x = Math.sin(i * 91.17 + 3.3) * 10000; return x - Math.floor(x); };
   const DATA = Array.from({ length: 40 }, (_, i) => {
     const stars = Math.round(800 + r(i) * 42000);

@@ -265,7 +265,7 @@ PUT /api/v1/admin/posts/{id}
     ? { saved: false, rev: 0, reviewStatus: null, target: null, live: null, dirty: false,
         approved: [] }
     : { saved: true, rev: 14, reviewStatus: 'draft', target: { rev: 12, label: '已批准 · 待上线' }, live: 9, dirty: false,
-        approved: [{ rev: 13, at: '11-21 09:30', by: '林夏' }, { rev: 12, at: '11-20 18:02', by: '周屿' }, { rev: 9, at: '11-12 14:20', by: '周屿' }] };
+        approved: [{ rev: 13, at: '11-21 09:30', by: '林夏' }, { rev: 12, at: '11-20 18:02', by: '长林啊' }, { rev: 9, at: '11-12 14:20', by: '长林啊' }] };
   if (!isNew) src.value = $('seed-edit').content.textContent.trim() + '\n';
 
   const chip = (cls, t) => `<span class="chip ${cls}">${t}</span>`;

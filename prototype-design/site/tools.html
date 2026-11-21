@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>工具 · Silva</title>
-  <meta name="description" content="周屿日常写代码、排查问题和写作时真正在用的工具。">
+  <title>工具导航 · Silva</title>
+  <meta name="description" content="长林啊日常开发用到的工具：JSON、图片、编码、开发环境、设计协作与部署运维，按分类整理，可搜索。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -12,102 +12,140 @@
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
   <style>
-    .tool-group { scroll-margin-top: 170px; }
-    .fav { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; font-weight: 600; font-size: .9375rem; flex: none; }
+    .glyph { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; font: 600 15px/1 var(--mono); letter-spacing: -.02em; flex: none; }
+    .glyph.sm { width: 36px; height: 36px; border-radius: 11px; font-size: 12px; }
+    .hot { transition: transform .6s var(--ease), box-shadow .6s var(--ease); }
+    .hot:hover { transform: translateY(-4px); box-shadow: 0 18px 40px -20px rgba(5,32,30,.35), inset 0 0 0 1px var(--line-soft); }
+    .tool-row { transition: background-color .2s; }
+    .tool-row:hover { background: rgba(11,137,146,.05); }
+    .search-wrap { position: relative; }
+    .search-wrap svg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .search-wrap .input { height: 56px; padding-left: 48px; font-size: 1rem; }
+    .search-wrap kbd { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font: 500 11px/1 var(--mono); color: var(--muted); padding: 5px 7px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--line); }
+    mark { background: rgba(246,191,53,.45); color: inherit; border-radius: 3px; padding: 0 1px; }
   </style>
 </head>
 <body class="silva" data-nav="tools" data-proto-states="default:有精选;nofeatured:无精选">
 <div id="site-header"></div>
 
 <main id="main">
-  <div class="wrap">
-    <!-- ===== Header ===== -->
-    <header class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
-      <div>
-        <span class="eyebrow">工具导航</span>
-        <h1 id="page-title" class="t-h1 mt-4">每天会打开的工具</h1>
-      </div>
-      <div>
-        <p class="t-lead">写代码、查问题和写文章时真的在用的东西。点名字会在新标签页打开它的官网。</p>
-        <!-- featured -->
-        <section data-state="default" aria-labelledby="featured-title" class="mt-8">
-          <h2 id="featured-title" class="t-small font-medium muted">最常打开的三个</h2>
-          <ul class="mt-3 grid gap-3 sm:grid-cols-3 list-none p-0">
-            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://neovim.io/" target="_blank" rel="noopener"><span class="fav c-teal">N</span><span class="min-w-0"><span class="block font-medium hover-accent">Neovim <span class="arrow">↗</span></span><span class="block t-xs muted">写所有东西</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
-            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://pgcli.com/" target="_blank" rel="noopener"><span class="fav c-ink">pg</span><span class="min-w-0"><span class="block font-medium hover-accent">pgcli <span class="arrow">↗</span></span><span class="block t-xs muted">查数据库</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
-            <li><a class="group panel p-4 flex items-center gap-3 lift" href="https://github.com/sharkdp/hyperfine" target="_blank" rel="noopener"><span class="fav c-sun">h</span><span class="min-w-0"><span class="block font-medium hover-accent">hyperfine <span class="arrow">↗</span></span><span class="block t-xs muted">比较两个实现谁更快</span></span><span class="sr-only">（外部链接，新标签页打开）</span></a></li>
-          </ul>
-        </section>
-      </div>
-    </header>
-  </div>
+  <!-- ===== Header + search ===== -->
+  <header class="wrap pt-10 sm:pt-14" data-rise>
+    <div class="max-w-3xl">
+      <span class="eyebrow">工具导航</span>
+      <h1 class="t-h1 mt-4">顺手的工具，<span class="soft block">省下来的都是时间。</span></h1>
+      <p class="t-lead ink-2 mt-5">日常开发里反复打开的工具，按用途整理。站内自己写的会标「站内」，其余都是外部链接，新窗口打开。</p>
+    </div>
+    <div class="mt-8 max-w-2xl search-wrap">
+      <label for="q" class="sr-only">搜索工具</label>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" class="input" type="search" placeholder="搜索工具名称或用途，比如 JSON、压缩、Base64" autocomplete="off">
+      <kbd aria-hidden="true">/</kbd>
+    </div>
+  </header>
 
-  <!-- ===== Category filter (sticky pills) ===== -->
-  <nav aria-label="工具分类" class="sticky top-[84px] z-30 mt-8">
-    <div class="wrap"><div id="anchors" class="choice max-w-full overflow-x-auto !flex-nowrap bg-white/80 backdrop-blur shadow-[inset_0_0_0_1px_var(--line-soft)]"></div></div>
-  </nav>
+  <!-- ===== Hot ===== -->
+  <section data-state="default" aria-labelledby="hot-title" class="wrap mt-14" id="hot-sec">
+    <div class="flex items-center gap-3"><span id="i-star" class="text-[var(--sun)]"></span><h2 id="hot-title" class="t-h3">热门工具</h2></div>
+    <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" id="hot"></div>
+  </section>
 
-  <div id="groups" class="wrap pb-20"></div>
+  <!-- ===== Categories ===== -->
+  <section aria-labelledby="all-title" class="wrap mt-16 pb-20">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <h2 id="all-title" class="t-h2">所有工具分类</h2>
+      <p class="t-small muted" id="total" aria-live="polite"></p>
+    </div>
+    <div class="mt-5 -mx-4 px-4 overflow-x-auto [scrollbar-width:none]">
+      <div class="choice !flex-nowrap w-max" role="group" aria-label="按分类筛选" id="cats"></div>
+    </div>
+    <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3 items-start" id="grid"></div>
+    <div id="empty" hidden class="panel mt-8 p-10 text-center">
+      <p class="t-h3">没有找到「<span id="empty-q"></span>」相关的工具</p>
+      <p class="ink-2 mt-2">换个关键词试试，或者清空搜索看全部分类。</p>
+      <button type="button" class="btn btn-dark btn-sm mt-6" id="clear">清空搜索</button>
+    </div>
+  </section>
+
+  <!-- ===== Suggest ===== -->
+  <section class="band band-sun">
+    <div class="wrap grid gap-6 md:grid-cols-[1fr_auto] md:items-center" data-rise>
+      <div>
+        <h2 class="t-h1">有好用的工具，<span class="block text-[#102523]/55">推荐给我？</span></h2>
+        <p class="mt-4 max-w-[34em] text-[#102523]/80">我会自己用一段时间，确实顺手再收录进来。</p>
+      </div>
+      <a class="btn btn-dark" href="mailto:hello@example.com?subject=推荐一个工具">写邮件推荐<span class="dot"><span class="arrow">↗</span></span></a>
+    </div>
+  </section>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
-<script>
-  const GROUPS = [
-    { id: 'dev', name: '开发与调试', items: [
-      { n: 'Neovim', d: '主力编辑器，配置放在 dotfiles 里。', u: 'neovim.io', f: true },
-      { n: 'Bruno', d: '本地优先的 API 调试客户端，请求集合可以提交到 Git。', u: 'usebruno.com' },
-      { n: 'just', d: '比 Makefile 更顺手的命令运行器。', u: 'just.systems' },
-      { n: 'WezTerm', d: '用 Lua 配置的终端。', u: 'wezfurlong.org' },
-    ] },
-    { id: 'db', name: '数据库', items: [
-      { n: 'pgcli', d: '带补全和高亮的 PostgreSQL 命令行。', u: 'pgcli.com', f: true },
-      { n: 'explain.dalibo.com', d: '把 EXPLAIN ANALYZE 的结果画成一棵树。', u: 'explain.dalibo.com' },
-    ] },
-    { id: 'ops', name: '可观测与运维', items: [
-      { n: 'Grafana', d: '看指标和日志的面板。', u: 'grafana.com' },
-      { n: 'hyperfine', d: '命令行基准测试，比较两个实现的耗时。', u: 'github.com/sharkdp/hyperfine', f: true },
-    ] },
-    { id: 'write', name: '写作与图表', items: [
-      { n: 'Excalidraw', d: '手绘风格的架构草图。', u: 'excalidraw.com' },
-      { n: 'Mermaid Live', d: '用文本写时序图和流程图。', u: 'mermaid.live' },
-    ] },
-    { id: 'other', name: '其他', items: [
-      { n: 'regex101', d: '调试正则表达式，带逐步解释。', u: 'regex101.com' },
-    ] },
-  ];
-  const TINTS = ['c-teal', 'c-coral', 'c-sun', 'c-ink', 'c-mist', 'c-deep'];
-  document.getElementById('anchors').innerHTML = GROUPS.map(g => `<a href="#${g.id}" data-anchor="${g.id}" class="shrink-0">${g.name}<span class="ml-1.5 t-xs muted num">${g.items.length}</span></a>`).join('');
-  document.getElementById('groups').innerHTML = GROUPS.map((g, gi) => `
-    <section id="${g.id}" class="tool-group pt-12" aria-labelledby="${g.id}-t">
-      <header class="flex items-baseline justify-between gap-4 border-b border-[var(--line)] pb-4">
-        <h2 id="${g.id}-t" class="t-h2">${g.name}</h2><p class="t-small muted num">${g.items.length} 个</p>
-      </header>
-      <ul class="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 list-none p-0" data-rise>
-        ${g.items.map((t, i) => `<li class="min-w-0">
-          <a href="https://${t.u}/" target="_blank" rel="noopener" class="group panel h-full p-5 flex gap-4 lift">
-            <span class="fav ${TINTS[(gi + i) % TINTS.length]}" aria-hidden="true">${t.n[0].toUpperCase()}</span>
-            <span class="min-w-0 flex-1">
-              <span class="flex items-center gap-2 flex-wrap"><span class="font-semibold hover-accent">${t.n}</span>${t.f ? '<span class="featured-word chip chip-teal">最常用</span>' : ''}</span>
-              <span class="block t-small ink-2 mt-1">${t.d}</span>
-              <span class="block t-xs muted mt-2 break-all">${t.u} <span class="arrow">↗</span></span>
-            </span>
-            <span class="sr-only">（外部链接，新标签页打开）</span>
-          </a></li>`).join('')}
-      </ul>
-    </section>`).join('');
-  observeRise(document.getElementById('groups'));
-
-  // 当前分类高亮
-  const anchors = document.querySelectorAll('[data-anchor]');
-  const setActive = id => anchors.forEach(a => a.dataset.anchor === id ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current'));
-  setActive(GROUPS[0].id);
-  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) setActive(e.target.id); }), { rootMargin: '-180px 0px -60% 0px' });
-  document.querySelectorAll('.tool-group').forEach(s => io.observe(s));
-
-  // 无精选状态：去掉「最常用」标记
-  document.addEventListener('proto:state', e => document.querySelectorAll('.featured-word').forEach(w => { w.hidden = e.detail === 'nofeatured'; }));
-</script>
 <script src="../assets/proto.js"></script>
+<script>
+const C = [
+  { k: 'json', name: 'JSON 工具', desc: '格式化、压缩、转换 JSON 数据', g: '{ }', c: ['#E4F3F1', '#076A71'], tools: [
+    ['JSON 格式化', '格式化与校验，定位语法错误', 1, 1], ['JSON → TypeScript', '生成类型定义，推断可选字段', 1, 1], ['JSON 压缩', '去掉空白，减小体积', 1], ['JSON → YAML', '在两种配置格式间互转', 1], ['jq play', '在线调试 jq 查询'], ['JSON Crack', '把 JSON 画成可交互的图'] ] },
+  { k: 'image', name: '图片工具', desc: '处理、优化和转换图片', g: 'IMG', c: ['#FCE6E0', '#9A3A26'], tools: [
+    ['图片压缩', 'TinyPNG 与本地双引擎，支持批量', 1, 1], ['Squoosh', '浏览器里对比不同编码的效果'], ['SVGOMG', 'SVG 精简与优化'], ['图片格式转换', 'PNG / JPG / WebP / AVIF 互转', 1] ] },
+  { k: 'encode', name: '编码工具', desc: '编码、解码与哈希', g: '%', c: ['#FDF1D3', '#6B4E00'], tools: [
+    ['Base64 编解码', '文本与文件都支持', 1], ['URL 编解码', '处理查询参数里的中文', 1], ['JWT 解析', '查看 header 与 payload，不上传', 1], ['哈希计算', 'MD5 / SHA-1 / SHA-256', 1] ] },
+  { k: 'dev', name: '开发环境', desc: '终端、编辑器与调试', g: '>_', c: ['#E3EAF5', '#1A3B6E'], tools: [
+    ['Warp', '带 AI 补全的现代终端'], ['Cursor', 'AI 辅助的代码编辑器', 0, 1], ['Bruno', '本地优先的 API 调试工具'], ['Regex101', '正则表达式调试与解释'], ['crontab.guru', '读懂 cron 表达式'] ] },
+  { k: 'design', name: '设计协作', desc: '画图、原型与配色', g: 'Aa', c: ['#ECE6FB', '#4B32A8'], tools: [
+    ['Excalidraw', '手绘风格的在线白板', 0, 1], ['Figma', '界面设计与原型'], ['Realtime Colors', '在真实页面上预览配色'], ['Mermaid Live', '用文本画流程图和时序图'] ] },
+  { k: 'ops', name: '部署运维', desc: '容器、部署与监控', g: 'CI', c: ['#E2F0E8', '#1F6B4A'], tools: [
+    ['Docker Desktop', '本地容器与 Compose'], ['GitHub Actions', 'CI/CD 工作流'], ['Uptime Kuma', '自托管的可用性监控'], ['SSL Labs', '检查 HTTPS 配置'] ] },
+];
+const glyph = (c, cls = '') => `<span class="glyph ${cls}" style="background:${c.c[0]};color:${c.c[1]}" aria-hidden="true">${c.g}</span>`;
+const ext = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>';
+const esc = s => s.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+
+/* hot */
+document.getElementById('i-star').innerHTML = icon('star', '', 18);
+const hot = C.flatMap(c => c.tools.filter(t => t[3]).map(t => [t, c])).slice(0, 4);
+document.getElementById('hot').innerHTML = hot.map(([t, c]) => `
+  <a href="${t[2] ? '#' : 'https://example.com'}" ${t[2] ? '' : 'target="_blank" rel="noopener"'} class="hot panel p-5 flex items-start gap-4 group">
+    ${glyph(c)}
+    <span class="min-w-0"><span class="flex flex-wrap items-center gap-x-2 gap-y-1"><span class="font-semibold hover-accent">${t[0]}</span>${t[2] ? '<span class="chip chip-teal !h-5 !text-[11px]">站内</span>' : ''}</span>
+    <span class="block t-small muted mt-1">${t[1]}</span></span>
+  </a>`).join('');
+
+/* category pills */
+let cat = 'all', q = '';
+const cats = document.getElementById('cats');
+cats.innerHTML = `<button type="button" data-k="all" aria-pressed="true">全部</button>` + C.map(c => `<button type="button" data-k="${c.k}" aria-pressed="false">${c.name}</button>`).join('');
+cats.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cat = b.dataset.k; cats.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render(); });
+
+function hl(s) { if (!q) return esc(s); const i = s.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(s) : esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length)); }
+function render() {
+  const nl = q.toLowerCase();
+  const list = C.filter(c => cat === 'all' || c.k === cat).map(c => ({ c, tools: c.tools.filter(t => !nl || (t[0] + t[1] + c.name).toLowerCase().includes(nl)) })).filter(x => x.tools.length);
+  const n = list.reduce((a, x) => a + x.tools.length, 0);
+  document.getElementById('total').textContent = q ? `找到 ${n} 个工具` : `共 ${C.reduce((a, c) => a + c.tools.length, 0)} 个工具，${C.length} 个分类`;
+  document.getElementById('grid').innerHTML = list.map(({ c, tools }) => `
+    <article class="bezel"><div class="face p-5 md:p-6">
+      <header class="flex items-start gap-4">
+        ${glyph(c)}
+        <div class="min-w-0 flex-1"><h3 class="t-h3">${c.name}</h3><p class="t-small muted mt-0.5">${c.desc}</p></div>
+      </header>
+      <p class="t-xs muted mt-4">共 ${c.tools.length} 个工具${q ? `，匹配 ${tools.length} 个` : ''}</p>
+      <ul class="rows mt-2 list-none p-0">
+        ${tools.map(t => `<li><a href="${t[2] ? '#' : 'https://example.com'}" ${t[2] ? '' : 'target="_blank" rel="noopener"'} class="tool-row group flex items-center gap-3 rounded-xl -mx-2 px-2 py-3">
+          <span class="min-w-0 flex-1"><span class="flex items-center gap-2"><span class="font-medium hover-accent">${hl(t[0])}</span>${t[2] ? '<span class="chip chip-teal !h-5 !text-[11px]">站内</span>' : ''}</span>
+          <span class="block t-small muted truncate">${hl(t[1])}</span></span>
+          <span class="muted shrink-0">${t[2] ? '<span class="arrow arrow-r">→</span>' : ext}</span>${t[2] ? '' : '<span class="sr-only">（新窗口打开）</span>'}
+        </a></li>`).join('')}
+      </ul>
+    </div></article>`).join('');
+  document.getElementById('empty').hidden = n > 0;
+  document.getElementById('empty-q').textContent = q;
+}
+const qi = document.getElementById('q');
+qi.addEventListener('input', () => { q = qi.value.trim(); render(); });
+document.getElementById('clear').addEventListener('click', () => { qi.value = ''; q = ''; render(); qi.focus(); });
+document.addEventListener('keydown', e => { if (e.key === '/' && document.activeElement !== qi && !/input|textarea/i.test(document.activeElement.tagName)) { e.preventDefault(); qi.focus(); } });
+render();
+</script>
 </body>
 </html>

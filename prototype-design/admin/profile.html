@@ -41,10 +41,10 @@
             <p class="mt-1 text-[12px] text-ui-sub">无头像时显示姓名首字。</p>
           </div>
           <div class="grid sm:grid-cols-2 gap-4">
-            <div><label for="p-name" class="block text-[13px] font-medium">显示名</label><input id="p-name" value="周屿" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
-            <div><label for="p-loc" class="block text-[13px] font-medium">所在地 <span class="text-ui-sub font-normal">（可选）</span></label><input id="p-loc" value="杭州" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
-            <div class="sm:col-span-2"><label for="p-role" class="block text-[13px] font-medium">身份标签</label><input id="p-role" value="后端工程师" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
-            <div class="sm:col-span-2"><label for="p-tagline" class="block text-[13px] font-medium">一句话定位</label><input id="p-tagline" value="用 Rust 写服务端，也记录把系统做稳的每一步。" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"><p class="mt-1 text-[12px] text-ui-sub">首页首屏大字显示，建议 30 字以内。</p></div>
+            <div><label for="p-name" class="block text-[13px] font-medium">显示名</label><input id="p-name" value="长林啊" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div><label for="p-loc" class="block text-[13px] font-medium">所在地 <span class="text-ui-sub font-normal">（可选）</span></label><input id="p-loc" value="四川，成都" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div class="sm:col-span-2"><label for="p-role" class="block text-[13px] font-medium">身份标签</label><input id="p-role" value="全栈开发工程师" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div class="sm:col-span-2"><label for="p-tagline" class="block text-[13px] font-medium">一句话定位</label><input id="p-tagline" value="把复杂的技术，写成可以抵达的路径。" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"><p class="mt-1 text-[12px] text-ui-sub">首页首屏大字显示，建议 30 字以内。</p></div>
           </div>
         </div>
       </section>
@@ -61,19 +61,19 @@
           </div>
         </div>
         <div class="mt-3">
-          <textarea data-panel="bio-src" id="p-bio" aria-labelledby="s-bio" rows="9" class="w-full rounded-md border border-ui-line px-3 py-2 text-[14px] font-code leading-6">做了六年后端，大部分时间在和**数据一致性**、发布流程打交道。
+          <textarea data-panel="bio-src" id="p-bio" aria-labelledby="s-bio" rows="9" class="w-full rounded-md border border-ui-line px-3 py-2 text-[14px] font-code leading-6">我是长林啊，一名常驻成都的**全栈开发工程师**，2019 年开始从事软件开发。
 
 ## 关注方向
-- Rust 服务端与可观测性
-- 内容系统的发布与版本管理
-- AI 开源生态里的开发者工具
+- AI Agent 与知识工具的工程化
+- 开发者工具
+- 跨端产品
 
-工作之外喜欢徒步和看地形图，站名 Silva 就来自拉丁语里的「森林」。</textarea>
+Silva 的意思是像树一样，一圈一圈地成长。</textarea>
           <div data-panel="bio-pre" hidden class="prose-ink rounded-md border border-ui-line p-4 !text-[15px]">
-            <p>做了六年后端，大部分时间在和<strong>数据一致性</strong>、发布流程打交道。</p>
+            <p>我是长林啊，一名常驻成都的<strong>全栈开发工程师</strong>，2019 年开始从事软件开发。</p>
             <h2>关注方向</h2>
-            <ul><li>Rust 服务端与可观测性</li><li>内容系统的发布与版本管理</li><li>AI 开源生态里的开发者工具</li></ul>
-            <p>工作之外喜欢徒步和看地形图，站名 Silva 就来自拉丁语里的「森林」。</p>
+            <ul><li>AI Agent 与知识工具的工程化</li><li>开发者工具</li><li>跨端产品</li></ul>
+            <p>Silva 的意思是像树一样，一圈一圈地成长。</p>
           </div>
           <p class="mt-1 text-[12px] text-ui-sub">预览经过安全渲染，原始 HTML 不会输出。</p>
         </div>
@@ -131,12 +131,12 @@
 <script>
   const lists = {
     exp: [
-      { start: '2023-03', end: '', now: true, title: '高级后端工程师', org: '某云服务公司', desc: '负责内容平台的发布系统与多租户存储。' },
-      { start: '2020-07', end: '2023-02', now: false, title: '后端工程师', org: '某电商公司', desc: '订单与库存服务，参与从单体到服务化的迁移。' },
-      { start: '', end: '', now: false, title: '开源贡献者', org: 'tokio-rs 生态', desc: '日期不填时，公开页省略日期行。' },
+      { start: '2025-10', end: '', now: true, title: '全栈 AI 开发工程师', org: '某互联网公司', desc: '参与 AI Agent 应用的方案设计与全栈实现。' },
+      { start: '2021-05', end: '2025-08', now: false, title: '全栈开发工程师', org: '某外企游戏电商公司', desc: 'React Native 跨平台应用与后台管理系统基建。' },
+      { start: '2019-12', end: '2021-04', now: false, title: '前端开发工程师', org: '某互联网公司', desc: '活动页、微信小程序商城与 UniApp 多端小程序。' },
     ],
-    skill: [['Rust', '语言', '日常主力'], ['Go', '语言', ''], ['PostgreSQL', '数据', '熟练'], ['Astro', '前端', ''], ['Kubernetes', '', '会用']],
-    social: [['GitHub', 'https://github.com/zhouyu'], ['邮箱', 'mailto:hello@example.com'], ['RSS', '/rss.xml']],
+    skill: [['Go', '语言', '日常主力'], ['TypeScript', '语言', '日常主力'], ['JavaScript', '语言', ''], ['Rust', '语言', ''], ['React Native', '跨端', '熟练']],
+    social: [['GitHub', 'https://github.com/clin211'], ['邮箱', 'mailto:hello@example.com'], ['RSS', '/rss.xml']],
   };
   const mv = (k, i, n) => `<div class="flex"><button type="button" class="p-1.5 text-ui-sub disabled:opacity-30" aria-label="上移" data-mv="${k},${i},-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="p-1.5 text-ui-sub disabled:opacity-30" aria-label="下移" data-mv="${k},${i},1" ${i === n - 1 ? 'disabled' : ''}>↓</button><button type="button" class="p-1.5 text-bad text-[13px]" data-rm="${k},${i}">移除</button></div>`;
   const inp = 'h-9 w-full rounded-md border border-ui-line px-3 text-[14px]';

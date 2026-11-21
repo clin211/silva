@@ -5,7 +5,7 @@ body { font-feature-settings: "palt" 1; text-rendering: optimizeLegibility; }
 :focus-visible { outline: 2px solid #27467A; outline-offset: 2px; border-radius: 2px; }
 ::selection { background: #27467A; color: #fff; }
 
-/* Long-form prose (article / project / MCP body) */
+/* Long-form prose (article / project body) */
 .prose-ink { color: #2A303B; font-size: 17px; line-height: 1.85; }
 .prose-ink > * + * { margin-top: 1.1em; }
 .prose-ink h2 { font-family: "Noto Serif SC", serif; font-size: 1.55rem; font-weight: 700; color: #1D2330; margin-top: 2.2em; scroll-margin-top: 88px; }

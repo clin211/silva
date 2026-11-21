@@ -4,122 +4,219 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>项目 · Silva</title>
-  <meta name="description" content="周屿工作之外自己做、自己维护的项目：维护中、开发中和已归档的状态都照实写着。">
+  <meta name="description" content="长林啊做过和正在做的项目：从这个站点本身，到图片压缩、JSON 转 TypeScript、仓库快照和 Agent 工作台。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
+  <style>
+    /* Browser-window mockup: generated, no screenshots */
+    .win { border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 18px 40px -18px rgba(5,32,30,.35), 0 0 0 1px rgba(16,37,35,.08);
+      transition: transform .8s var(--ease); }
+    a:hover .win { transform: translateY(-4px) rotate(-.4deg); }
+    .win-bar { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; background: #EEF3F1; border-bottom: 1px solid rgba(16,37,35,.06); }
+    .win-bar i { width: 8px; height: 8px; border-radius: 99px; background: #D5DEDB; }
+    .win-bar i:nth-child(1) { background: #F08C76; } .win-bar i:nth-child(2) { background: #F6CF6B; } .win-bar i:nth-child(3) { background: #7ED3A8; }
+    .win-url { margin-left: 10px; flex: 1; max-width: 260px; height: 18px; border-radius: 99px; background: #fff; font: 500 10px/18px var(--mono); color: var(--muted); padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .win-body { position: relative; padding: 14px; display: grid; gap: 8px; background: color-mix(in srgb, var(--pc) 6%, #fff); }
+    .blk { border-radius: 6px; background: color-mix(in srgb, var(--pc) 16%, #fff); }
+    .blk.s { background: var(--pc); }
+    .blk.ln { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--pc) 22%, #fff); }
+    .stage { position: relative; overflow: hidden; border-radius: calc(2rem - 6px) calc(2rem - 6px) 0 0; background: var(--stage); padding: 28px 28px 0; }
+    .stage .win { border-radius: 14px 14px 0 0; }
+    .stage::before { content: ""; position: absolute; inset: 0; opacity: .18; background-image: radial-gradient(currentColor 1px, transparent 1.2px); background-size: 18px 18px; color: #fff; }
+    .bento { display: grid; gap: 16px; }
+    @media (min-width: 1024px) { .bento { grid-template-columns: 1.35fr 1fr; grid-template-rows: auto auto; } .bento > :first-child { grid-row: span 2; } }
+    .proj[hidden] { display: none !important; }
+  </style>
 </head>
 <body class="silva" data-nav="projects" data-proto-states="default:有精选;nofeatured:无精选;empty:暂无项目">
 <div id="site-header"></div>
 
 <main id="main">
-  <div class="wrap">
-    <!-- ===== Header ===== -->
-    <header class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
-      <div>
+  <!-- ===== Header ===== -->
+  <header class="wrap pt-10 sm:pt-14 pb-10" data-rise>
+    <div class="grid gap-8 lg:grid-cols-12 lg:items-end">
+      <div class="lg:col-span-7">
         <span class="eyebrow">项目</span>
-        <h1 id="page-title" class="t-h1 mt-4">长出来的项目</h1>
+        <h1 class="t-h1 mt-4">做出来，<span class="soft block">才算想清楚。</span></h1>
+        <p class="t-lead ink-2 mt-5 max-w-[34em]">这里是我做过和正在做的东西：有的每天在用，有的还在实验，有的已经完成使命归档。每个项目都写了背景、取舍和结果。</p>
       </div>
-      <div>
-        <p class="t-lead">工作之外自己做、自己维护的东西。有的还在长，有的已经停下来归档，状态都照实写着。</p>
-        <dl data-state="default nofeatured" class="mt-8 grid grid-cols-3 gap-3 max-w-xl">
-          <div class="panel p-4"><dt class="t-xs muted">维护中</dt><dd class="m-0 mt-1 text-2xl font-semibold num">4</dd></div>
-          <div class="panel p-4"><dt class="t-xs muted">开发中</dt><dd class="m-0 mt-1 text-2xl font-semibold num">2</dd></div>
-          <div class="panel p-4"><dt class="t-xs muted">已归档</dt><dd class="m-0 mt-1 text-2xl font-semibold num">1</dd></div>
-        </dl>
+      <dl data-state="default nofeatured" class="lg:col-span-5 grid grid-cols-4 gap-2">
+        <div class="panel p-4"><dt class="t-xs muted">全部</dt><dd class="m-0 mt-1 text-2xl font-semibold num">7</dd></div>
+        <div class="panel p-4"><dt class="t-xs muted">维护中</dt><dd class="m-0 mt-1 text-2xl font-semibold num text-[var(--accent)]">2</dd></div>
+        <div class="panel p-4"><dt class="t-xs muted">进行中</dt><dd class="m-0 mt-1 text-2xl font-semibold num text-[#B07A00]">3</dd></div>
+        <div class="panel p-4"><dt class="t-xs muted">已归档</dt><dd class="m-0 mt-1 text-2xl font-semibold num muted">2</dd></div>
+      </dl>
+    </div>
+  </header>
+
+  <div data-state="default nofeatured" class="wrap">
+    <!-- ===== Filter ===== -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-6">
+      <div class="choice" role="group" aria-label="按状态筛选" id="filter">
+        <button type="button" data-f="all" aria-pressed="true">全部</button>
+        <button type="button" data-f="维护中" aria-pressed="false">维护中</button>
+        <button type="button" data-f="开发中" aria-pressed="false">开发中</button>
+        <button type="button" data-f="实验中" aria-pressed="false">实验中</button>
+        <button type="button" data-f="已归档" aria-pressed="false">已归档</button>
       </div>
-    </header>
+      <p class="t-small muted" id="count" aria-live="polite"></p>
+    </div>
+
+    <!-- ===== Featured bento ===== -->
+    <section data-state="default" aria-labelledby="featured-title" class="mt-10">
+      <h2 id="featured-title" class="sr-only">精选项目</h2>
+      <div class="bento" id="bento"></div>
+    </section>
+
+    <!-- ===== Others ===== -->
+    <section aria-labelledby="more-title" class="mt-16">
+      <div class="flex items-baseline justify-between gap-4">
+        <h2 id="more-title" class="t-h2"><span data-state="default">更多项目</span><span data-state="nofeatured" hidden>全部项目</span></h2>
+        <p class="t-small muted hidden sm:block">点卡片看背景、技术决策和结果</p>
+      </div>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" id="grid"></div>
+      <p id="none" hidden class="panel p-8 mt-6 text-center ink-2">这个状态下暂时没有项目。</p>
+    </section>
+
+    <!-- ===== Archive table ===== -->
+    <section aria-labelledby="archive-title" class="mt-20" id="archive-sec">
+      <div class="flex items-baseline justify-between gap-4">
+        <h2 id="archive-title" class="t-h2">归档</h2>
+        <p class="t-small muted">完成了使命，不再更新</p>
+      </div>
+      <div class="bezel mt-6">
+        <div class="face overflow-hidden">
+          <table class="data-table">
+            <thead><tr><th scope="col">项目</th><th scope="col">年份</th><th scope="col" class="hidden md:table-cell">技术栈</th><th scope="col" class="hidden sm:table-cell">结果</th></tr></thead>
+            <tbody id="archive"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <!-- ===== Featured ===== -->
-  <section data-state="default" aria-labelledby="featured-title" class="band !pt-14">
-    <div class="wrap">
-      <header class="flex flex-wrap items-end justify-between gap-4" data-rise>
-        <div><p class="kicker">Featured</p><h2 id="featured-title" class="t-h2 mt-2">正在长的</h2></div>
-        <p class="t-small muted max-w-sm">每个项目都从一个让我不太舒服的问题开始。</p>
-      </header>
-      <div class="mt-8 grid gap-6 lg:grid-cols-2" data-rise>
-        <article>
-          <a href="project-detail.html" class="group block bezel h-full">
-            <div class="face h-full overflow-hidden lift">
-              <div class="cover c-deep aspect-[16/9] !rounded-none"><span class="cover-tag">rust · astro · postgres</span><span class="cover-mark">hub</span></div>
-              <div class="p-6 md:p-8">
-                <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="t-h2 hover-accent">Silva Hub</h3><span class="chip chip-teal">维护中</span></div>
-                <p class="ink-2 mt-3">这个站点本身。Astro 静态前台、React 管理后台和 Rust Axum API，内容发布基于不可变修订与站点版本。</p>
-                <div class="mt-5 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">axum</span><span class="chip hash">astro</span><span class="chip hash">postgresql</span></div>
-              </div>
-            </div>
-          </a>
-        </article>
-        <article>
-          <a href="project-detail.html" class="group block bezel h-full">
-            <div class="face h-full overflow-hidden lift">
-              <div class="cover c-sun aspect-[16/9] !rounded-none"><span class="cover-tag">github-api · worker</span><span class="cover-mark">+Δ7d</span></div>
-              <div class="p-6 md:p-8">
-                <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="t-h2 hover-accent">tidewatch</h3><span class="chip chip-sun">开发中</span></div>
-                <p class="ink-2 mt-3">采集 GitHub 仓库指标并保存每日快照，用快照相减算增长，数据不足时照实标注。</p>
-                <div class="mt-5 flex flex-wrap gap-2"><span class="chip hash">rust</span><span class="chip hash">tokio</span><span class="chip hash">github-api</span></div>
-              </div>
-            </div>
-          </a>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== All ===== -->
-  <section data-state="default nofeatured" aria-labelledby="all-title" class="band band-mist">
-    <div class="wrap">
-      <header class="flex flex-wrap items-end justify-between gap-4" data-rise>
-        <div><p class="kicker">Index</p><h2 id="all-title" class="t-h2 mt-2"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2></div>
-        <p class="t-small muted">按展示顺序排列。</p>
-      </header>
-      <ul id="index" class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 list-none p-0"></ul>
-    </div>
-  </section>
-
   <!-- ===== Empty ===== -->
-  <section data-state="empty" hidden class="band !pt-14">
-    <div class="wrap">
-      <div class="bezel max-w-2xl"><div class="face p-8 md:p-10">
-        <p class="kicker">Empty</p>
-        <h2 class="t-h2 mt-2">还没有公开的项目</h2>
-        <p class="ink-2 mt-3">项目上线后会出现在这里。先读读文章吧。</p>
-        <a href="blog.html" class="btn btn-dark mt-8">浏览文章<span class="dot"><span class="arrow">↗</span></span></a>
-      </div></div>
+  <section data-state="empty" hidden class="wrap pb-10">
+    <div class="bezel max-w-2xl"><div class="face p-8 md:p-10">
+      <p class="kicker">Empty</p>
+      <h2 class="t-h2 mt-2">还没有公开的项目</h2>
+      <p class="ink-2 mt-3">项目整理好之后会出现在这里。可以先去读读文章，或者看看我常用的工具。</p>
+      <div class="mt-6 flex flex-wrap gap-3"><a class="btn btn-dark" href="blog.html">读文章<span class="dot"><span class="arrow">↗</span></span></a><a class="btn btn-ghost" href="tools.html">工具导航</a></div>
+    </div></div>
+  </section>
+
+  <!-- ===== CTA ===== -->
+  <section class="band band-mist mt-20">
+    <div class="wrap grid gap-6 md:grid-cols-[1fr_auto] md:items-center" data-rise>
+      <div>
+        <h2 class="t-h1">有个想法，<span class="soft block">想一起做出来？</span></h2>
+        <p class="ink-2 mt-4 max-w-[34em]">开源项目的问题和建议，欢迎直接在 GitHub 提 issue；合作和交流可以写邮件。</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <a class="btn btn-dark" href="https://github.com/clin211" target="_blank" rel="noopener">GitHub<span class="dot"><span class="arrow">↗</span></span><span class="sr-only">（新窗口打开）</span></a>
+        <a class="btn btn-ghost" href="mailto:hello@example.com">写邮件</a>
+      </div>
     </div>
   </section>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
-<script>
-  const PROJECTS = [
-    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: '维护中', t: ['rust', 'axum', 'astro'], c: 'c-deep', m: 'hub', nf: true },
-    { n: 'tidewatch', d: '采集 GitHub 仓库指标，保存每日快照，用快照相减算增长。', s: '开发中', t: ['rust', 'tokio'], c: 'c-sun', m: '+Δ', nf: true },
-    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移会不会长时间锁表，给出分步执行建议。', s: '已归档', t: ['rust', 'sql'], c: 'c-ink', m: 'pg' },
-    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: '维护中', t: ['rust', 'tower'], c: 'c-coral', m: 'rid' },
-    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览：白名单渲染，禁止原始 HTML，代码高亮。', s: '维护中', t: ['typescript', 'react'], c: 'c-mist', m: 'md' },
-    { n: 'astro-snapshot-loader', d: '构建时从带版本号的不可变快照读取内容，校验失败就停止构建。', s: '开发中', t: ['typescript', 'astro'], c: 'c-teal', m: 'snap' },
-    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附一键安装脚本。', s: '维护中', t: ['shell', 'neovim'], c: 'c-deep', m: '~/.' },
-  ];
-  const chip = s => s === '维护中' ? 'chip-teal' : s === '开发中' ? 'chip-sun' : '';
-  document.getElementById('index').innerHTML = PROJECTS.map(p => `
-    <li ${p.nf ? 'data-state="nofeatured" hidden' : ''}>
-      <a href="project-detail.html" class="group panel h-full p-2 flex flex-col lift">
-        <div class="cover small ${p.c} r-md aspect-[16/7]"><span class="cover-mark">${p.m}</span></div>
-        <div class="p-4 flex flex-col flex-1">
-          <div class="flex items-center justify-between gap-3"><h3 class="t-h3 hover-accent truncate">${p.n}</h3><span class="chip ${chip(p.s)}">${p.s}</span></div>
-          <p class="t-small ink-2 mt-2">${p.d}</p>
-          <div class="mt-auto pt-4 flex flex-wrap gap-2">${p.t.map(x => `<span class="chip hash">${x}</span>`).join('')}</div>
-        </div>
-      </a>
-    </li>`).join('');
-  observeRise();
-</script>
 <script src="../assets/proto.js"></script>
+<script>
+/* kind: site | tool | chart | chat | app — picks the abstract UI drawn inside the window mockup */
+const P = [
+  { name: 'Silva Hub', slug: 'silva-hub', status: '维护中', year: '2026', color: '#087F89', stage: '#0F2A27', kind: 'site', url: 'silva.dev', featured: 1,
+    line: '这个站点本身：Astro 静态前台、React 管理后台和 Rust Axum API，内容按不可变修订发布。', tech: ['Astro', 'React', 'Rust', 'PostgreSQL'] },
+  { name: '图片压缩工具', slug: 'img-compress', status: '开发中', year: '2026', color: '#E8735A', stage: '#F6BF35', kind: 'tool', url: 'tools/image-compress', featured: 1,
+    line: 'TinyPNG 与本地压缩双引擎，分片上传、质量预设、批量任务与历史记录。', tech: ['Next.js', 'Go', 'Sharp'] },
+  { name: 'JSON → TypeScript', slug: 'json2ts', status: '维护中', year: '2025', color: '#3178C6', stage: '#1A2B3C', kind: 'tool', url: 'tools/json-to-ts', featured: 1,
+    line: '把 JSON 转成 TypeScript 类型：可选字段推断、泛型与注释生成，支持多语言导出。', tech: ['TypeScript', 'Web Worker'] },
+  { name: 'tidewatch', slug: 'tidewatch', status: '开发中', year: '2026', color: '#0B8992', kind: 'chart', url: 'github.com/clin211/tidewatch',
+    line: '每天给 GitHub 仓库拍一次快照，用快照相减算增长，缺一天就写「数据不足」。', tech: ['Go', 'PostgreSQL', 'GitHub API'] },
+  { name: 'Agent 工作台', slug: 'agent-bench', status: '实验中', year: '2026', color: '#7A5AF8', kind: 'chat', url: 'localhost:5173',
+    line: '把 RAG 检索、函数调用和多工具编排放进一个可观测的工作台，评估不同模型的效果。', tech: ['TypeScript', 'Go', 'pgvector'] },
+  { name: 'RN 跨端商城 App', slug: 'rn-mall', status: '已归档', year: '2021–2024', color: '#E8735A', kind: 'app', url: 'app.store',
+    line: 'React Native 从零到一，集成原生模块与第三方 SDK。', tech: ['React Native', 'TypeScript', 'Firebase'], result: '上架 6 个应用商店，用户 16 万+' },
+  { name: 'uni-app 多端组件库', slug: 'uni-ui', status: '已归档', year: '2020–2021', color: '#0E7C55', kind: 'site', url: 'ui.docs',
+    line: '30+ 通用组件，支持主题定制，一套代码适配 6 个小程序平台。', tech: ['uni-app', 'Vue', 'Sass'], result: '30+ 组件，被团队多个项目复用' },
+];
+const CHIP = { '维护中': 'chip-teal', '开发中': 'chip-sun', '实验中': 'chip-coral', '已归档': '' };
+
+function mock(p, tall) {
+  const h = tall ? 'min-h-[260px] md:min-h-[340px] lg:min-h-[468px]' : 'min-h-[150px]';
+  const inner = {
+    site: `<div class="flex items-center justify-between"><div class="blk s w-14 h-3"></div><div class="flex gap-2"><div class="blk ln w-8"></div><div class="blk ln w-8"></div><div class="blk ln w-8"></div></div></div>
+      <div class="blk h-16 md:h-20 mt-1 grid place-items-start p-3"><div class="blk s w-2/3 h-3"></div><div class="blk ln w-1/2 mt-2 !bg-white/70"></div></div>
+      <div class="grid grid-cols-3 gap-2"><div class="blk h-12"></div><div class="blk h-12"></div><div class="blk h-12"></div></div>`,
+    tool: `<div class="grid grid-cols-2 gap-2 flex-1"><div class="blk p-3 grid gap-1.5 content-start"><div class="blk ln w-3/4"></div><div class="blk ln w-1/2"></div><div class="blk ln w-2/3"></div><div class="blk ln w-1/3"></div></div>
+      <div class="blk p-3 grid gap-1.5 content-start !bg-white"><div class="blk ln w-2/3 !bg-[var(--pc)]"></div><div class="blk ln w-1/2"></div><div class="blk ln w-3/4"></div><div class="blk ln w-1/2"></div></div></div>
+      <div class="flex justify-end gap-2"><div class="blk w-14 h-5"></div><div class="blk s w-16 h-5"></div></div>`,
+    chart: `<div class="flex gap-2"><div class="blk w-16 h-8"></div><div class="blk w-16 h-8"></div><div class="blk s w-16 h-8"></div></div>
+      <div class="blk h-20 flex items-end gap-1 p-2">${[30, 42, 38, 55, 48, 62, 58, 70, 66, 82, 78, 90].map(v => `<div class="blk s flex-1" style="height:${v}%"></div>`).join('')}</div>`,
+    chat: `<div class="grid gap-2"><div class="blk h-7 w-2/3"></div><div class="blk s h-7 w-1/2 justify-self-end"></div><div class="blk h-10 w-3/4"></div><div class="flex gap-1.5"><div class="blk ln w-10 !h-4"></div><div class="blk ln w-14 !h-4"></div></div></div>`,
+    app: `<div class="grid grid-cols-[1fr_auto_1fr] gap-3 items-end"><div></div><div class="w-24 rounded-[14px] p-1.5 bg-[var(--pc)]"><div class="rounded-[10px] bg-white p-2 grid gap-1.5"><div class="blk h-10"></div><div class="grid grid-cols-2 gap-1.5"><div class="blk h-8"></div><div class="blk h-8"></div></div><div class="blk ln"></div></div></div><div></div></div>`,
+  }[p.kind];
+  return `<div class="win" style="--pc:${p.color}" aria-hidden="true">
+    <div class="win-bar"><i></i><i></i><i></i><span class="win-url">${p.url}</span></div>
+    <div class="win-body ${h} content-start">${inner}</div></div>`;
+}
+
+const bento = document.getElementById('bento'), grid = document.getElementById('grid'), archive = document.getElementById('archive');
+function render() {
+  const nf = window.Proto && Proto.state === 'nofeatured';
+  const feat = nf ? [] : P.filter(p => p.featured);
+  const rest = P.filter(p => (nf || !p.featured) && p.status !== '已归档');
+  bento.innerHTML = feat.map((p, i) => `
+    <a href="project-detail.html" class="proj group block bezel" data-status="${p.status}">
+      <div class="face h-full flex flex-col overflow-hidden">
+        <div class="stage" style="--stage:${p.stage}"><div class="relative">${mock(p, i === 0)}</div></div>
+        <div class="p-6 md:p-7 flex-1 flex flex-col">
+          <div class="flex flex-wrap items-center justify-between gap-3"><h3 class="t-h2 hover-accent">${p.name}</h3><span class="chip ${CHIP[p.status]}">${p.status}</span></div>
+          <p class="ink-2 mt-3 ${i ? 't-small' : ''}">${p.line}</p>
+          <div class="mt-auto pt-5 flex flex-wrap items-center gap-2">${p.tech.map(t => `<span class="chip hash">${t}</span>`).join('')}<span class="ml-auto t-small font-medium inline-flex items-center gap-1">详情<span class="arrow">↗</span></span></div>
+        </div>
+      </div>
+    </a>`).join('');
+  grid.innerHTML = rest.map(p => `
+    <a href="project-detail.html" class="proj group panel p-5 flex flex-col lift" data-status="${p.status}">
+      <div class="rounded-xl p-4 pb-0 overflow-hidden" style="background:color-mix(in srgb, ${p.color} 12%, #fff)">${mock(p, false)}</div>
+      <div class="mt-5 flex items-center justify-between gap-3"><h3 class="t-h3 hover-accent">${p.name}</h3><span class="chip ${CHIP[p.status]}">${p.status}</span></div>
+      <p class="t-small ink-2 mt-2">${p.line}</p>
+      <div class="mt-auto pt-4 flex flex-wrap gap-1.5">${p.tech.map(t => `<span class="chip hash">${t}</span>`).join('')}</div>
+    </a>`).join('');
+  archive.innerHTML = P.filter(p => p.status === '已归档').map(p => `
+    <tr class="proj" data-status="${p.status}">
+      <td><a href="project-detail.html" class="font-medium hover-accent">${p.name}</a><p class="t-xs muted mt-0.5 sm:hidden">${p.result}</p></td>
+      <td class="num muted whitespace-nowrap">${p.year}</td>
+      <td class="hidden md:table-cell"><div class="flex flex-wrap gap-1.5">${p.tech.map(t => `<span class="chip">${t}</span>`).join('')}</div></td>
+      <td class="hidden sm:table-cell ink-2 t-small">${p.result}</td>
+    </tr>`).join('');
+  applyFilter();
+}
+
+let cur = 'all';
+function applyFilter() {
+  let shown = 0;
+  document.querySelectorAll('.proj').forEach(el => { const ok = cur === 'all' || el.dataset.status === cur; el.hidden = !ok; if (ok) shown++; });
+  document.getElementById('archive-sec').hidden = !(cur === 'all' || cur === '已归档');
+  const gridShown = [...grid.children].some(c => !c.hidden), bentoShown = [...bento.children].some(c => !c.hidden);
+  document.getElementById('none').hidden = gridShown || bentoShown || cur === '已归档';
+  grid.hidden = !gridShown;
+  document.getElementById('more-title').closest('section').hidden = cur === '已归档';
+  document.getElementById('count').textContent = cur === 'all' ? `共 ${P.length} 个项目` : `「${cur}」${shown} 个`;
+}
+document.querySelectorAll('#filter button').forEach(b => b.addEventListener('click', () => {
+  cur = b.dataset.f;
+  document.querySelectorAll('#filter button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  applyFilter();
+}));
+document.addEventListener('proto:state', render);
+render();
+</script>
 </body>
 </html>

@@ -38,7 +38,7 @@
   <div class="mt-6 flex flex-wrap items-center gap-2">
     <label><span class="sr-only">搜索文件名</span><input type="search" placeholder="搜索文件名" class="h-9 w-56 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></label>
     <label><span class="sr-only">状态</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部状态</option><option>就绪</option><option>校验中</option><option>失败</option></select></label>
-    <label data-role="editor"><span class="sr-only">上传者</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部上传者</option><option>周屿</option><option>林夏</option></select></label>
+    <label data-role="editor"><span class="sr-only">上传者</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部上传者</option><option>长林啊</option><option>林夏</option></select></label>
   </div>
 
   <!-- 媒体网格 -->
@@ -70,7 +70,7 @@
         <dt class="text-ui-sub">MIME</dt><dd class="font-code text-[13px]">image/png</dd>
         <dt class="text-ui-sub">大小</dt><dd class="tnum">842 KB</dd>
         <dt class="text-ui-sub">尺寸</dt><dd class="tnum">1600 × 900</dd>
-        <dt class="text-ui-sub">上传者</dt><dd>周屿</dd>
+        <dt class="text-ui-sub">上传者</dt><dd>长林啊</dd>
         <dt class="text-ui-sub">上传时间</dt><dd class="tnum">2026-11-17 21:04</dd>
       </dl>
       <h3 class="mt-6 text-[13px] font-medium">被引用</h3>
@@ -99,11 +99,11 @@
 <script>
   // ---- 媒体网格（占位图用色块＋等宽文件名，不依赖外部图片）----
   const items = [
-    ['cover-revision-flow.png', 'ready', '#C9D3E3', '周屿'], ['axum-layers.svg', 'ready', '#DCE6DA', '周屿'],
-    ['astro-islands.webp', 'ready', '#E8DFCF', '林夏'], ['tidewatch-dashboard.png', 'ready', '#D8D2E4', '周屿'],
-    ['pg-lock-chart.png', 'failed', '#F1D9D6', '周屿'], ['hero-contour.png', 'ready', '#E4E1DA', '周屿'],
-    ['mcp-directory.png', 'checking', '#D5E3E6', '林夏'], ['profile-avatar.jpg', 'ready', '#E6D9CF', '周屿'],
-    ['release-timeline.png', 'ready', '#CFD9E6', '周屿'], ['trending-chart.png', 'ready', '#DDE6D3', '林夏'],
+    ['cover-revision-flow.png', 'ready', '#C9D3E3', '长林啊'], ['axum-layers.svg', 'ready', '#DCE6DA', '长林啊'],
+    ['astro-islands.webp', 'ready', '#E8DFCF', '林夏'], ['tidewatch-dashboard.png', 'ready', '#D8D2E4', '长林啊'],
+    ['pg-lock-chart.png', 'failed', '#F1D9D6', '长林啊'], ['hero-contour.png', 'ready', '#E4E1DA', '长林啊'],
+    ['collector-flow.png', 'checking', '#D5E3E6', '林夏'], ['profile-avatar.jpg', 'ready', '#E6D9CF', '长林啊'],
+    ['release-timeline.png', 'ready', '#CFD9E6', '长林啊'], ['trending-chart.png', 'ready', '#DDE6D3', '林夏'],
   ];
   const STATUS = { ready: ['chip-ok', '就绪'], checking: ['chip-warn', '校验中'], failed: ['chip-bad', '校验失败'], uploading: ['chip-info', '上传中'] };
   const grid = document.getElementById('media-grid');
@@ -127,7 +127,7 @@
   });
   // Author 只看到自己的媒体
   document.addEventListener('proto:role', e => {
-    grid.querySelectorAll('li').forEach(li => { li.hidden = e.detail === 'author' && li.dataset.owner !== '周屿'; });
+    grid.querySelectorAll('li').forEach(li => { li.hidden = e.detail === 'author' && li.dataset.owner !== '长林啊'; });
   });
   if (window.Proto.role) document.dispatchEvent(new CustomEvent('proto:role', { detail: Proto.role }));
 

@@ -44,7 +44,6 @@ backend/
 │   │   │   ├── projects/
 │   │   │   ├── tools/
 │   │   │   ├── profile/
-│   │   │   ├── mcp/
 │   │   │   └── ai_trending/
 │   ├── application/
 │   │   └── src/
@@ -576,100 +575,7 @@ COMMENT ON COLUMN social_links.url IS '公开主页或社交账号的访问地�
 COMMENT ON COLUMN social_links.position IS '链接在个人资料中的排序值';
 ```
 
-### 4.5 MCP Server Directory
-
-```sql
-CREATE TABLE mcp_servers (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  slug text NOT NULL UNIQUE,
-  name text NOT NULL,
-  summary text NOT NULL,
-  description_md text,
-  repository_url text,
-  homepage_url text,
-  documentation_url text,
-  transport_types text[] NOT NULL DEFAULT '{}',
-  primary_language text,
-  license_spdx text,
-  verification_status text NOT NULL DEFAULT 'unverified',
-  last_verified_at timestamptz,
-  source_name text,
-  source_url text,
-  featured boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE mcp_servers IS 'MCP Server 目录条目，仅记录元数据，不代表托管、运行或安全认证。';
-COMMENT ON COLUMN mcp_servers.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN mcp_servers.slug IS '用于公开页面路由的唯一标识。';
-COMMENT ON COLUMN mcp_servers.name IS '服务在目录中的展示名称';
-COMMENT ON COLUMN mcp_servers.summary IS '目录列表使用的简要描述';
-COMMENT ON COLUMN mcp_servers.description_md IS '目录详情的 Markdown 说明，未填写时为 NULL';
-COMMENT ON COLUMN mcp_servers.repository_url IS '源码仓库地址，未收录时为 NULL';
-COMMENT ON COLUMN mcp_servers.homepage_url IS '项目主页地址，未收录时为 NULL';
-COMMENT ON COLUMN mcp_servers.documentation_url IS '项目文档地址，未收录时为 NULL';
-COMMENT ON COLUMN mcp_servers.transport_types IS '项目声明的传输方式，空数组表示未记录';
-COMMENT ON COLUMN mcp_servers.primary_language IS '主要实现语言，未确定时为 NULL';
-COMMENT ON COLUMN mcp_servers.license_spdx IS 'SPDX 许可证标识，未知时为 NULL';
-COMMENT ON COLUMN mcp_servers.verification_status IS '维护者核对元数据的状态，默认 unverified，不代表服务安全或可用';
-COMMENT ON COLUMN mcp_servers.last_verified_at IS '最近一次元数据核验时间，未核验时为 NULL';
-COMMENT ON COLUMN mcp_servers.source_name IS '收录信息的来源名称，未填写时为 NULL';
-COMMENT ON COLUMN mcp_servers.source_url IS '收录信息的来源地址，未填写时为 NULL';
-COMMENT ON COLUMN mcp_servers.featured IS '是否标记为目录精选';
-COMMENT ON COLUMN mcp_servers.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN mcp_servers.updated_at IS '该记录在本系统最近一次更新的时间。';
-
-CREATE TABLE mcp_server_versions (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
-  version text NOT NULL,
-  release_url text,
-  changelog text,
-  released_at timestamptz,
-  is_latest boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (server_id, version)
-);
-
-COMMENT ON TABLE mcp_server_versions IS '某一 MCP 目录条目的版本记录，同一条目内版本标识唯一。';
-COMMENT ON COLUMN mcp_server_versions.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN mcp_server_versions.server_id IS '版本所属的 MCP 条目 ID';
-COMMENT ON COLUMN mcp_server_versions.version IS '项目使用的版本标识';
-COMMENT ON COLUMN mcp_server_versions.release_url IS '该版本的发布页面地址，未收录时为 NULL';
-COMMENT ON COLUMN mcp_server_versions.changelog IS '该版本的变更说明，未收录时为 NULL';
-COMMENT ON COLUMN mcp_server_versions.released_at IS '上游发布此版本的时间，未知时为 NULL';
-COMMENT ON COLUMN mcp_server_versions.is_latest IS '是否被标记为该条目的最新版本，每个条目最多一条';
-COMMENT ON COLUMN mcp_server_versions.created_at IS '该记录首次写入本系统的时间。';
-
-CREATE UNIQUE INDEX mcp_server_single_latest_idx
-  ON mcp_server_versions(server_id) WHERE is_latest;
-
-CREATE TABLE mcp_categories (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  name text NOT NULL,
-  slug text NOT NULL UNIQUE
-);
-
-COMMENT ON TABLE mcp_categories IS 'MCP 目录的分类字典。';
-COMMENT ON COLUMN mcp_categories.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN mcp_categories.name IS '目录中对外显示的分类名称';
-COMMENT ON COLUMN mcp_categories.slug IS '用于公开页面路由的唯一标识。';
-
-CREATE TABLE mcp_server_categories (
-  server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
-  category_id uuid NOT NULL REFERENCES mcp_categories(id) ON DELETE CASCADE,
-  PRIMARY KEY (server_id, category_id)
-);
-
-COMMENT ON TABLE mcp_server_categories IS 'MCP 目录条目与分类的多对多关联。';
-COMMENT ON COLUMN mcp_server_categories.server_id IS '加入分类的 MCP 条目 ID';
-COMMENT ON COLUMN mcp_server_categories.category_id IS '该条目归属的目录分类 ID';
-```
-
-`transport_types` 表示项目声明支持的传输方式；`verification_status` 表示维护者核对元数据的状态，不等于安全认证或服务可用。每个条目最多一个 `is_latest` 版本，切换时在同一事务更新。标签和结构化能力清单不在一期。
-
-### 4.6 AI Trending 自动采集
+### 4.5 AI Trending 自动采集
 
 ```sql
 CREATE TABLE ai_sources (
@@ -813,7 +719,7 @@ CREATE INDEX ai_repositories_featured_idx
 - `ai_ingestion_runs` 记录每日批次；`ai_repository_snapshots` 关联批次且只追加成功样本。写入用例校验批次与仓库属于同一数据源。窗口和排序见 §7.1。
 - `ai_sources.config` 保存 topic 白名单和采集上限等配置；凭据放 Secret/环境变量，不进入数据库配置或公开 API。一期只启用 GitHub 数据源。
 
-### 4.7 发布、Outbox、审计
+### 4.6 发布、Outbox、审计
 
 ```sql
 CREATE TABLE publish_jobs (
@@ -973,9 +879,6 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | GET                                          | `/api/v1/public/projects/{slug}`    | 项目详情                                         |
 | GET                                          | `/api/v1/public/tools`              | 工具列表                                         |
 | GET                                          | `/api/v1/public/profile`            | 个人资料                                         |
-| GET                                          | `/api/v1/public/mcp/servers`        | MCP Server 列表                                  |
-| GET                                          | `/api/v1/public/mcp/servers/{slug}` | MCP Server 详情                                  |
-| GET                                          | `/api/v1/public/mcp/categories`     | MCP 分类                                         |
 | GET                                          | `/api/v1/public/ai-trending`        | AI 趋势榜单                                      |
 | GET                                          | `/api/v1/public/ai-trending/{slug}` | AI 项目详情                                      |
 | GET                                          |                                     | `/api/v1/public/ai-trending/{slug}/snapshots`    | 项目历史快照 |
@@ -999,12 +902,11 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | POST        | `/posts/{id}/reviews`                                                                                     | Editor/Admin 批准或拒绝指定修订                |
 | POST        | `/posts/{id}/publish`、`/posts/{id}/unpublish`                                                            | Editor/Admin 提交上线或下线目标，见 §6.2       |
 | CRUD        | `/categories`、`/tags`                                                                                    | 分类标签维护；有引用时不允许删除               |
-| POST        | `/media/presign`、`/media/{id}/complete`                                                                  | 申请和确认上传，见 §6.5                        |
+| POST        | `/media/presign`、`/media/{id}/complete`                                                                  | 申请和确认上传，见 §6.4                        |
 | GET, DELETE | `/media/{id}`                                                                                             | 媒体元数据和授权删除；列表使用 `GET /media`    |
 | GET         | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存               |
 | CRUD        | `/projects`、`/tools`                                                                                     | 资源管理；删除随生成版本生效                   |
 | GET, PUT    | `/profile`                                                                                                | 读取和整体保存单例个人资料                     |
-| CRUD        | `/mcp/servers`、`/mcp/categories`、`/mcp/servers/{id}/versions`                                           | MCP 条目、分类、版本维护                       |
 | GET         | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 项目与成功批次快照                             |
 | PATCH       | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                      |
 | GET         | `/ai-trending/runs`                                                                                       | 采集批次、错误与限流信息                       |
@@ -1064,13 +966,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 - `period` 为 `7d`（默认）或 `30d`；`sort` 为 `stars_growth`（默认）、`forks_growth`、`stars` 或 `recently_updated`，榜单固定降序。
 - 可用 `language`、`topic`、`category` 筛选，并使用标准分页。响应包括 `data_date`（成功批次 UTC 日期，尚无成功批次时为 `null`）、分页后的 `data` 及同样受筛选约束的 `featured`。`stars_growth`、`forks_growth` 可为负或 `null`。计算与排序见 §7.1。
 
-### 6.4 MCP 目录列表参数
-
-`GET /api/v1/public/mcp/servers?category=database&transport=stdio&language=TypeScript&page=1&per_page=20`
-
-详情 DTO 返回项目声明的 transport、language、license、versions、categories、repository/documentation links 和 verification 状态，不输出一期未实现的能力清单。
-
-### 6.5 媒体上传
+### 6.4 媒体上传
 
 `presign` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `complete`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或资源时，不可引用未通过校验的媒体（`422 media_not_ready`），删除被引用的媒体返回 `409 media_in_use`。
 
@@ -1087,7 +983,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 7.2 站点发布流程
 
-1. **登记站点目标。** API/Worker 对所有影响公开结果的事务统一调用 `enqueue_site_publish`：文章发布/取消发布、公开 taxonomy 修改、Projects/Tools/Profile/MCP 的保存或删除、AI 展示调整与采集成功。锁定 `site_state` 单例后递增 `desired_generation`（首次为 1），并在同一事务内保存业务变更、创建 `queued` 的 `publish_jobs` 与业务键为 generation 的 Outbox 事件。保存草稿、上传和审核不重建。初次部署以 `bootstrap` 触发，未上线前站点返回 503。
+1. **登记站点目标。** API/Worker 对所有影响公开结果的事务统一调用 `enqueue_site_publish`：文章发布/取消发布、公开 taxonomy 修改、Projects/Tools/Profile 的保存或删除、AI 展示调整与采集成功。锁定 `site_state` 单例后递增 `desired_generation`（首次为 1），并在同一事务内保存业务变更、创建 `queued` 的 `publish_jobs` 与业务键为 generation 的 Outbox 事件。保存草稿、上传和审核不重建。初次部署以 `bootstrap` 触发，未上线前站点返回 503。
 2. **领取与导出。** Worker 短事务领取任务，写入租约后提交。导出使用同一 `REPEATABLE READ` 视图，首先确认请求 generation 为该视图的 `desired_generation`，再一次性导出期望公开的 revision、taxonomy、资源、最新成功 AI 批次、媒体 ID 与页面索引。输出带 `generation`、`schema_version` 和完整性摘要的不可变快照：仅含公开投影（不含账户、草稿、原始外部 payload 或内部 key），站点构建及 Public API 使用同一数据；文章 ID 与公开 revision 的映射也写入快照，供后台查询线上状态。
 3. **构建候选产物。** Worker 将快照以只读文件交给 Astro，并将 HTML、sitemap、RSS 等输出上传至按 generation 和尝试隔离的私有产物位置。验证上传完成及产物清单后才能尝试上线。构建、上传均不修改生产路由；过期租约不能覆盖后续尝试的产物。
 4. **原子切换。** 生产站点入口和 Public API 均以数据库 `site_state.active_generation` 为唯一线上指针。成功候选在短事务内锁定同一单例行，验证 `generation == desired_generation`、租约仍有效且产物已就绪，然后一次性写入对应快照与产物位置、推进 `active_generation`、标记当前任务为 `active` 与上一线上任务为 `retired`。若 `desired_generation` 已变，旧候选标记 `superseded`，不切流量；同一已激活任务重复确认是空操作。
@@ -1135,6 +1031,5 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 2. 媒体直传与确认、Markdown 修订、分类标签、审核、发布和取消发布。
 3. Outbox、generation 快照、Astro 构建与生产指针切换；Public API 和 Admin 任务页面。
 4. Projects、Tools、Profile。
-5. MCP Server 目录。
-6. GitHub 采集、快照、趋势计算和后台运行记录。
-7. 审计、监控、备份恢复和端到端测试。优先覆盖过期租约、旧构建晚完成、新草稿不影响线上、部分采集失败、取消发布后的 404 和媒体引用权限。
+5. GitHub 采集、快照、趋势计算和后台运行记录。
+6. 审计、监控、备份恢复和端到端测试。优先覆盖过期租约、旧构建晚完成、新草稿不影响线上、部分采集失败、取消发布后的 404 和媒体引用权限。

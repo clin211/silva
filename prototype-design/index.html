@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Silva 原型目录</title>
-  <meta name="description" content="Developer Hub 一期前端原型：公开站点 W01–W14 与管理后台 A01–A29。">
+  <meta name="description" content="Developer Hub 一期前端原型：公开站点 W01–W12 与管理后台 A01–A25。">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
@@ -26,13 +26,13 @@
 
   <div class="mt-6">
     <label class="sr-only" for="q">筛选页面</label>
-    <input id="q" type="search" placeholder="按名称或路由筛选，例如 mcp、发布、/posts" class="w-full md:w-[420px] h-11 px-4 rounded-md border border-zinc-200 bg-white text-[15px] placeholder:text-zinc-400 focus:outline-none focus:border-blue-600">
+    <input id="q" type="search" placeholder="按名称或路由筛选，例如 趋势、发布、/posts" class="w-full md:w-[420px] h-11 px-4 rounded-md border border-zinc-200 bg-white text-[15px] placeholder:text-zinc-400 focus:outline-none focus:border-blue-600">
   </div>
 
   <section aria-labelledby="w-title" class="mt-12">
     <div class="flex items-baseline justify-between gap-4">
       <h2 id="w-title" class="font-display text-[28px] font-bold">公开站点</h2>
-      <span class="text-[14px] text-zinc-500">Astro · 14 页</span>
+      <span class="text-[14px] text-zinc-500">Astro · 12 页</span>
     </div>
     <ul id="w-list" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></ul>
   </section>
@@ -40,7 +40,7 @@
   <section aria-labelledby="a-title" class="mt-16">
     <div class="flex items-baseline justify-between gap-4">
       <h2 id="a-title" class="font-display text-[28px] font-bold">管理后台</h2>
-      <span class="text-[14px] text-zinc-500">React SPA · 29 页</span>
+      <span class="text-[14px] text-zinc-500">React SPA · 25 页</span>
     </div>
     <div id="a-groups"></div>
   </section>
@@ -60,9 +60,7 @@ const W = [
   ['W09', '公开 404', '未匹配路径', 'site/404.html', '回首页、浏览文章'],
   ['W10', 'AI 趋势榜', '/ai-trending', 'site/ai-trending.html', '筛选、精选区、自然榜单与分页'],
   ['W11', 'AI 项目详情', '/ai-trending/[slug]', 'site/ai-trending-detail.html', '摘要指标与历史趋势图'],
-  ['W12', 'MCP 目录', '/mcp', 'site/mcp.html', '分类、Transport、语言筛选'],
-  ['W13', 'MCP 条目详情', '/mcp/[slug]', 'site/mcp-detail.html', '正文、版本与元数据'],
-  ['W14', '关于', '/about', 'site/about.html', '档案、简介、经历、技能、联络'],
+  ['W12', '关于', '/about', 'site/about.html', '档案、简介、经历、技能、联络'],
 ];
 const A = [
   ['入口', [
@@ -84,25 +82,21 @@ const A = [
     ['A12', '项目列表', '/projects', 'projects.html'],
     ['A13', '新建项目', '/projects/new', 'project-new.html'],
     ['A14', '编辑项目', '/projects/{id}/edit', 'project-edit.html'],
-    ['A15', 'MCP 条目列表', '/mcp', 'mcp.html'],
-    ['A16', '新建 MCP 条目', '/mcp/new', 'mcp-new.html'],
-    ['A17', '编辑 MCP 条目', '/mcp/{id}/edit', 'mcp-edit.html'],
-    ['A18', 'MCP 分类', '/mcp/categories', 'mcp-categories.html'],
   ]],
   ['运行', [
-    ['A19', 'AI 项目管理', '/ai-trending', 'ai-trending.html'],
-    ['A20', 'AI 仓库详情', '/ai-trending/repositories/{id}', 'ai-repo-detail.html'],
-    ['A21', '采集批次', '/ai-trending/runs', 'ai-runs.html'],
-    ['A22', '发布任务列表', '/publishing', 'publishing.html'],
-    ['A23', '发布任务详情', '/publishing/{id}', 'publishing-detail.html'],
+    ['A15', 'AI 项目管理', '/ai-trending', 'ai-trending.html'],
+    ['A16', 'AI 仓库详情', '/ai-trending/repositories/{id}', 'ai-repo-detail.html'],
+    ['A17', '采集批次', '/ai-trending/runs', 'ai-runs.html'],
+    ['A18', '发布任务列表', '/publishing', 'publishing.html'],
+    ['A19', '发布任务详情', '/publishing/{id}', 'publishing-detail.html'],
   ]],
   ['系统', [
-    ['A24', '账户', '/users', 'users.html'],
-    ['A25', '角色', '/roles', 'roles.html'],
-    ['A26', '审计日志', '/audit-logs', 'audit-logs.html'],
-    ['A27', '系统健康', '/system/health', 'system-health.html'],
-    ['A28', '后台 403', '无权访问', '403.html'],
-    ['A29', '后台 404', '未匹配路径', '404.html'],
+    ['A20', '账户', '/users', 'users.html'],
+    ['A21', '角色', '/roles', 'roles.html'],
+    ['A22', '审计日志', '/audit-logs', 'audit-logs.html'],
+    ['A23', '系统健康', '/system/health', 'system-health.html'],
+    ['A24', '后台 403', '无权访问', '403.html'],
+    ['A25', '后台 404', '未匹配路径', '404.html'],
   ]],
 ];
 const item = (id, name, route, href, note) => `

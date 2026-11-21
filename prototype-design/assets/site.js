@@ -37,7 +37,6 @@
     ['projects', '项目', 'projects.html'],
     ['tools', '工具', 'tools.html'],
     ['ai-trending', 'AI 趋势', 'ai-trending.html'],
-    ['mcp', 'MCP', 'mcp.html'],
     ['about', '关于', 'about.html'],
   ];
   const active = document.body.dataset.nav;
@@ -91,27 +90,27 @@
       <div class="wrap">
         <div style="display:grid;gap:40px" class="foot-grid">
           <div style="max-width:22rem">
-            <p style="font-weight:700;font-size:1.25rem;color:var(--accent);margin:0">Silva · 周屿</p>
-            <p class="t-small muted" style="margin:12px 0 0">写后端，也写代码之外。这里是文章、项目和每天的开源观察，一点一点地长。</p>
+            <p style="font-weight:700;font-size:1.25rem;color:var(--accent);margin:0">Silva · 长林啊</p>
+            <p class="t-small muted" style="margin:12px 0 0">分享技术见解，记录学习心得。这里是文章、项目、工具和每天的开源观察，一点一点地长。</p>
             <div style="display:flex;gap:8px;margin-top:20px">
-              <a href="https://github.com/" target="_blank" rel="noopener" aria-label="GitHub（新窗口打开）" class="foot-ico">${icon('github', '', 18)}</a>
+              <a href="https://github.com/clin211" target="_blank" rel="noopener" aria-label="GitHub（新窗口打开）" class="foot-ico">${icon('github', '', 18)}</a>
               <a href="mailto:hello@example.com" aria-label="发邮件" class="foot-ico">${icon('mail', '', 18)}</a>
               <a href="#rss" aria-label="RSS 订阅" class="foot-ico">${icon('rss', '', 18)}</a>
             </div>
           </div>
-          ${col('内容', [['技术文章', 'blog.html'], ['项目', 'projects.html'], ['工具导航', 'tools.html'], ['AI 趋势', 'ai-trending.html'], ['MCP 目录', 'mcp.html']])}
-          ${col('关于本站', [['关于周屿', 'about.html'], ['RSS 订阅', '#rss'], ['站点地图', '#sitemap']])}
+          ${col('内容', [['技术文章', 'blog.html'], ['项目', 'projects.html'], ['工具导航', 'tools.html'], ['AI 趋势', 'ai-trending.html']])}
+          ${col('关于本站', [['关于长林啊', 'about.html'], ['RSS 订阅', '#rss'], ['站点地图', '#sitemap']])}
           <div>
             <h3 style="font-size:.9375rem;font-weight:600;margin:0 0 14px">联系方式</h3>
             <ul style="list-style:none;margin:0;padding:0;display:grid;gap:10px" class="t-small muted">
               <li style="display:flex;gap:8px;align-items:center">${icon('mail', '', 16)}<a class="hover-accent" href="mailto:hello@example.com">hello@example.com</a></li>
-              <li style="display:flex;gap:8px;align-items:center">${icon('pin', '', 16)}浙江，杭州</li>
+              <li style="display:flex;gap:8px;align-items:center">${icon('pin', '', 16)}四川，成都</li>
             </ul>
             <p class="t-small muted" style="margin:18px 0 0">新文章会同步到 RSS，不收集邮箱。</p>
           </div>
         </div>
         <div class="t-xs muted" style="margin-top:48px;padding-top:20px;border-top:1px solid var(--line-soft);display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px">
-          <span>© 2026 周屿 · 保留所有权利</span>
+          <span>© 2026 长林啊 · 保留所有权利</span>
           <span class="num">线上版本 g-0142 · 数据快照 2026-11-20</span>
         </div>
       </div>

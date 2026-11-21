@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>用不可变 revision 重写 CMS 的发布流程 · Silva</title>
-  <meta name="description" content="把「保存」「批准」「上线」拆成三个独立状态：旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。">
+  <title>基于 GitHub Actions 与 Docker 的 Go 项目部署实战 · Silva</title>
+  <meta name="description" content="从多阶段构建到镜像推送、远程部署与一键回滚，一套简单可靠的 Go 项目部署流水线。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -12,11 +12,18 @@
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
   <style>
-    .toc a { display: block; padding: 6px 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: .875rem; line-height: 1.5; transition: color .3s, border-color .3s; }
+    #progress { position: fixed; left: 0; top: 0; height: 3px; width: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--accent); z-index: 60; }
+    .toc a { display: block; padding: 6px 0 6px 14px; border-left: 2px solid var(--line); font-size: .875rem; line-height: 1.5; color: var(--muted); transition: color .3s, border-color .3s; }
+    .toc a.sub { padding-left: 26px; font-size: .8125rem; }
     .toc a:hover { color: var(--ink); }
     .toc a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
-    .toc a.sub { padding-left: 26px; }
-    #progress { position: fixed; left: 0; top: 0; height: 3px; width: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--accent); z-index: 60; }
+    .read-grid { display: grid; gap: 40px; grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1024px) { .read-grid { grid-template-columns: 13rem minmax(0, 1fr); gap: 56px; } }
+    @media (min-width: 1280px) { .read-grid { grid-template-columns: 13rem minmax(0, 720px) 12rem; justify-content: space-between; } }
+    .read-grid.no-toc { grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1280px) { .read-grid.no-toc { grid-template-columns: minmax(0, 720px) 12rem; justify-content: center; gap: 80px; } }
+    .prose pre { position: relative; }
+    .prose pre::before { content: attr(data-lang); position: absolute; right: 14px; top: 10px; font-size: 11px; letter-spacing: .06em; color: rgba(215, 238, 234, .45); text-transform: uppercase; }
   </style>
 </head>
 <body class="silva" data-nav="blog" data-proto-states="default:完整;nocover:无封面;notoc:标题不足（无目录）">
@@ -25,181 +32,163 @@
 
 <main id="main">
   <article>
-    <!-- ===== Title ===== -->
-    <header class="wrap pt-8 sm:pt-12">
-      <div class="max-w-[820px] mx-auto" data-rise>
-        <nav aria-label="面包屑" class="t-small muted flex flex-wrap items-center gap-2">
-          <a class="hover-accent" href="home.html">首页</a><span aria-hidden="true">/</span><a class="hover-accent" href="blog.html">文章</a><span aria-hidden="true">/</span><a class="hover-accent" href="category.html">后端工程</a>
-        </nav>
-        <div class="mt-8 flex flex-wrap items-center gap-3 t-small muted">
-          <a href="category.html" class="chip chip-teal">后端工程</a><time datetime="2026-11-18">2026 年 11 月 18 日</time><span>· 约 12 分钟</span>
+    <!-- ===== Header ===== -->
+    <header class="wrap pt-10 md:pt-14">
+      <nav aria-label="面包屑" class="t-small muted flex flex-wrap items-center gap-2">
+        <a class="hover-accent" href="home.html">首页</a><span aria-hidden="true">/</span><a class="hover-accent" href="blog.html">技术文章</a><span aria-hidden="true">/</span><a class="hover-accent" href="category.html">后端</a>
+      </nav>
+      <div class="max-w-4xl mt-8" data-rise>
+        <a href="category.html" class="chip chip-teal">后端 · 部署</a>
+        <h1 class="mt-5 text-[2rem] sm:text-5xl lg:text-[3.5rem] leading-[1.12] font-semibold">基于 GitHub Actions 与 Docker 的 Go 项目部署实战</h1>
+        <p class="t-lead ink-2 mt-5 max-w-[40em]">对于 Go 项目，怎样搭一套既简单可靠、又方便回滚的部署流程？这篇从多阶段构建讲到镜像推送、远程部署和一键回滚。</p>
+        <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 t-small">
+          <span class="flex items-center gap-3"><span class="grid place-items-center w-10 h-10 rounded-full bg-[var(--teal)] text-white font-semibold" aria-hidden="true">长</span><span><span class="block font-medium">长林啊</span><span class="block t-xs muted">全栈开发工程师</span></span></span>
+          <span class="muted">发布于 <time datetime="2026-11-18">2026-11-18</time></span>
+          <span class="muted">阅读约 14 分钟</span>
+          <span class="muted">4,260 字</span>
         </div>
-        <h1 class="t-h1 mt-5">用不可变 revision 重写 CMS 的发布流程</h1>
-        <p class="t-lead ink-2 mt-6">草稿、审核与上线是三条线。把它们拆开之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。</p>
-        <a href="about.html" class="group mt-8 inline-flex items-center gap-3">
-          <span class="grid place-items-center w-10 h-10 rounded-full bg-[var(--teal)] text-white font-semibold" aria-hidden="true">周</span>
-          <span><span class="block font-medium hover-accent">周屿</span><span class="block t-xs muted">后端工程师 · 杭州</span></span>
-        </a>
+      </div>
+      <div data-state="default notoc" class="cover c-deep mt-10 aspect-[16/9] sm:aspect-[21/9] !rounded-[2rem]" role="img" aria-label="封面：CI/CD 字样的深色色板">
+        <span class="cover-tag">GitHub Actions · Docker · Go</span>
+        <span class="cover-mark !text-[clamp(4rem,12vw,11rem)]">ci/cd</span>
       </div>
     </header>
 
-    <!-- ===== Cover (optional) ===== -->
-    <figure data-state="default notoc" class="mx-0 mb-0 mt-10 sm:mt-14">
-      <div class="wrap"><div class="bezel max-w-[1080px] mx-auto">
-        <div class="cover c-deep aspect-[16/9] md:aspect-[21/9]">
-          <span class="cover-tag">后端工程 · 发布系统</span>
-          <span class="cover-mark">rev:v2</span>
-        </div>
-      </div></div>
-    </figure>
-
-    <!-- ===== Body + TOC ===== -->
-    <div class="wrap mt-12 sm:mt-16">
-      <div id="layout" class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_15rem] lg:gap-16 max-w-[1080px] mx-auto">
-        <!-- mobile TOC -->
-        <div data-state="default nocover" class="lg:hidden">
-          <button type="button" class="btn btn-ghost w-full justify-between" data-toggle="toc-mobile" aria-expanded="false" aria-controls="toc-mobile">本文目录<span aria-hidden="true">＋</span></button>
-          <nav id="toc-mobile" hidden aria-label="本文目录（手机）" class="toc panel mt-3 p-4"></nav>
-        </div>
-
-        <div id="body-col" class="min-w-0">
-          <div id="article-body" class="prose">
-            <p>在最早的版本里，文章只有一张表、一个 <code>status</code> 字段：草稿、已发布、已下线。它很直观，直到我第一次想在不影响线上内容的情况下修改一篇已发布的文章。</p>
-            <h2 id="s1">一个字段承担了三件事</h2>
-            <p><code>status = published</code> 同时意味着「这是最新内容」「它被批准过」「访客能看到它」。只要我开始编辑，这三件事就不再同时成立。</p>
-            <ul>
-              <li>编辑中的内容不应该出现在线上；</li>
-              <li>批准的是某个具体版本，而不是「这篇文章」；</li>
-              <li>访客看到什么，取决于哪个站点版本已经构建成功并激活。</li>
-            </ul>
-            <h2 id="s2">拆成三条线</h2>
-            <p>于是每次保存都会生成一个不可变的 revision，文章本身只保存三个指针：</p>
-            <table>
-              <thead><tr><th>指针</th><th>含义</th><th>谁来改变它</th></tr></thead>
-              <tbody>
-                <tr><td><code>current_revision</code></td><td>当前编辑的版本</td><td>保存 / 自动保存</td></tr>
-                <tr><td><code>desired_revision</code></td><td>期望公开的版本</td><td>发布、取消发布</td></tr>
-                <tr><td><code>live_revision</code></td><td>当前线上的版本</td><td>站点版本激活</td></tr>
-              </tbody>
-            </table>
-            <figure class="!mt-10 m-0">
-              <div class="rounded-2xl p-5 sm:p-6 bg-[var(--mist)] ring-1 ring-[var(--line-soft)] grid gap-3 sm:grid-cols-3 text-sm" aria-label="三个指针的示意">
-                <div class="panel p-4"><p class="mono t-xs muted">current</p><p class="font-semibold mt-1">r-7 · 草稿</p></div>
-                <div class="panel p-4"><p class="mono t-xs muted">desired</p><p class="font-semibold mt-1">r-6 · 已批准</p></div>
-                <div class="panel p-4 ring-2 ring-[var(--accent)]"><p class="mono t-xs muted">live</p><p class="font-semibold mt-1">r-5 · g-0141</p></div>
-              </div>
-              <figcaption class="mt-3 t-small muted">三个指针可以指向不同的 revision。新的 revision 长在外面，旧的不会被覆盖。</figcaption>
-            </figure>
-            <h3 id="s2-1">保存时带上期望版本</h3>
-            <p>并发编辑用乐观锁处理。客户端保存时带上它看到的版本号，服务端不一致就返回冲突，而不是悄悄覆盖：</p>
-<pre><code>PUT /api/v1/admin/posts/{id}
-{
-  "expected_revision_id": "01936f0e-7c1a-7b2e-9f0d-3c1a8e2b4d55",
-  "title": "用不可变 revision 重写 CMS 的发布流程",
-  "body_markdown": "..."
-}
-// 409 { "error": { "code": "revision_conflict" } }</code></pre>
-            <h3 id="s2-2">审核绑定具体版本</h3>
-            <p>提交审核锁定的是某个 revision。之后的编辑会产生新的 revision，不会继承旧版本的批准。</p>
-            <h2 id="s3">上线是另一件事</h2>
-            <p>「发布」只是把一个已批准的 revision 设为期望公开版本，然后排队构建。只有构建成功、新的 <code>generation</code> 被激活，访客才看得到。构建失败时，上一个线上版本保持不变。</p>
-            <blockquote>发布不是上线。把这两个词分开，后台的状态文案就不会骗人。</blockquote>
-            <h2 id="s4">小结</h2>
-            <p>三条线让每个状态都有唯一的来源。代价是表和接口多了一些，换来的是：旧版本永远不会被新草稿覆盖，也不会因为一次失败的构建而消失。</p>
-          </div>
-
-          <div class="mt-12 flex flex-wrap items-center gap-2">
-            <span class="t-small muted mr-1">标签</span>
-            <a class="chip hash" href="tag.html">CMS</a><a class="chip hash" href="tag.html">PostgreSQL</a><a class="chip hash" href="tag.html">Axum</a>
-          </div>
-
-          <!-- author card -->
-          <aside aria-label="关于作者" class="bezel mt-10">
-            <div class="face p-6 sm:p-7 grid gap-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-              <span class="grid place-items-center w-14 h-14 rounded-full bg-[var(--teal)] text-white text-lg font-semibold" aria-hidden="true">周</span>
-              <div>
-                <p class="font-semibold">周屿</p>
-                <p class="t-small ink-2 mt-1">在杭州写 Rust 服务端的后端工程师。文章大多来自真实踩过的坑；发现错误欢迎写信指出。</p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <a class="btn btn-dark btn-sm" href="about.html">关于我<span class="arrow">↗</span></a>
-                <a class="btn btn-ghost btn-sm" href="mailto:hello@example.com">写信</a>
-              </div>
+    <!-- ===== Body ===== -->
+    <div class="wrap mt-12 md:mt-16">
+      <div class="read-grid" id="read-grid">
+        <aside data-state="default nocover" class="toc-wrap" aria-label="本文目录">
+          <div class="lg:sticky lg:top-28">
+            <details class="lg:hidden panel p-4" open>
+              <summary class="font-medium cursor-pointer">目录</summary>
+              <nav class="toc mt-3" data-toc></nav>
+            </details>
+            <div class="hidden lg:block">
+              <p class="kicker mb-3">On this page</p>
+              <nav class="toc" data-toc></nav>
+              <div class="mt-6 bar"><i id="toc-bar" style="width:0%"></i></div>
+              <p class="t-xs muted mt-2"><span id="pct" class="num">0</span>% 已读</p>
             </div>
-          </aside>
+          </div>
+        </aside>
+
+        <div class="prose min-w-0" id="prose">
+          <p>在现代软件开发中，自动化部署已经是提升团队效率和产品质量的关键环节。对 Go 开发者来说，静态编译让部署天然简单，但「简单」不等于「可靠」：镜像怎么打得小、密钥放在哪、出了问题怎么回滚，都需要提前想清楚。</p>
+          <h2 id="s1">一、整体流程</h2>
+          <p>整条流水线分为四步：代码检查与测试、构建镜像、推送到镜像仓库、通过 SSH 在服务器上拉取并重启。每一步失败都会中止后续步骤，线上保持上一个版本。</p>
+          <table>
+            <thead><tr><th>阶段</th><th>触发条件</th><th>产物</th><th>失败时</th></tr></thead>
+            <tbody>
+              <tr><td>test</td><td>每次 push</td><td>测试报告</td><td>中止</td></tr>
+              <tr><td>build</td><td>main 分支</td><td>镜像 <code>app:sha</code></td><td>中止</td></tr>
+              <tr><td>deploy</td><td>打 tag</td><td>线上容器</td><td>保留旧版本</td></tr>
+            </tbody>
+          </table>
+          <h2 id="s2">二、多阶段构建</h2>
+          <p>Go 程序编译后只有一个二进制文件，运行阶段不需要工具链。用多阶段构建，最终镜像可以从近 1GB 降到二十几 MB。</p>
+          <pre data-lang="dockerfile"><code>FROM golang:1.23-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /app ./cmd/server
+
+FROM gcr.io/distroless/static
+COPY --from=build /app /app
+ENTRYPOINT ["/app"]</code></pre>
+          <h3 id="s2-1">缓存依赖层</h3>
+          <p>先复制 <code>go.mod</code> 和 <code>go.sum</code> 再下载依赖，只要依赖没变，这一层就会命中缓存，构建时间能省下一大半。</p>
+          <h2 id="s3">三、GitHub Actions 工作流</h2>
+          <pre data-lang="yaml"><code>on:
+  push:
+    tags: ['v*']
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ghcr.io/clin211/app:${{ github.ref_name }}</code></pre>
+          <blockquote>密钥一律放在仓库的 Secrets 里，工作流只通过环境变量读取，不要写进镜像，也不要打印到日志。</blockquote>
+          <h2 id="s4">四、回滚</h2>
+          <p>每次部署都用 tag 作为镜像版本，回滚就是把服务指回上一个 tag：</p>
+          <ul>
+            <li>服务器上保留最近 5 个镜像版本；</li>
+            <li>部署脚本记录当前版本到文件，方便一键切回；</li>
+            <li>健康检查失败时自动回退，并在 Actions 里标红。</li>
+          </ul>
+          <h2 id="s5">小结</h2>
+          <p>这套流程没有用到任何复杂的编排工具，但覆盖了日常最需要的三件事：构建可复现、密钥不外泄、出了问题能马上回去。等服务多起来，再考虑引入更完整的平台也不迟。</p>
         </div>
 
-        <!-- desktop TOC -->
-        <aside id="toc-aside" data-state="default nocover" class="hidden lg:block" aria-label="本文目录">
-          <div class="sticky top-28">
-            <p class="kicker mb-3">本文目录</p>
-            <nav id="toc-desktop" class="toc"></nav>
-            <a class="mt-6 inline-flex items-center gap-2 t-small muted hover-accent" href="#main">回到顶部 ↑</a>
+        <aside class="hidden xl:block" aria-label="本文信息">
+          <div class="sticky top-28 grid gap-5 t-small">
+            <p class="kicker">本文信息</p>
+            <div><p class="t-xs muted">分类</p><a class="link font-medium" href="category.html">后端</a></div>
+            <div><p class="t-xs muted">标签</p><div class="mt-1.5 flex flex-wrap gap-1.5"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div></div>
+            <div><p class="t-xs muted">更新于</p><p class="font-medium">2026-11-20</p></div>
+            <button type="button" class="btn btn-ghost btn-sm justify-self-start" data-toast="链接已复制">复制链接</button>
           </div>
         </aside>
       </div>
     </div>
-  </article>
 
-  <!-- ===== Prev / next ===== -->
-  <nav aria-label="相邻文章" class="band band-mist mt-20">
-    <div class="wrap">
-      <div class="grid gap-4 md:grid-cols-2">
-        <a href="blog-detail.html" class="group bezel block">
-          <div class="face lift p-4 grid grid-cols-[96px_1fr] sm:grid-cols-[120px_1fr] gap-5 items-center">
-            <div class="cover small c-coral r-md aspect-[4/3]"><span class="cover-mark">fn</span></div>
-            <span class="min-w-0"><span class="block t-small muted">← 上一篇</span><span class="block t-h3 mt-1 line-clamp-2 hover-accent">Axum 中间件的执行顺序，一张图讲清楚</span></span>
-          </div>
-        </a>
-        <a href="blog-detail.html" class="group bezel block">
-          <div class="face lift p-4 grid grid-cols-[1fr_96px] sm:grid-cols-[1fr_120px] gap-5 items-center text-right">
-            <span class="min-w-0"><span class="block t-small muted">下一篇 →</span><span class="block t-h3 mt-1 line-clamp-2 hover-accent">静态优先的 Astro 站点，什么时候才需要 Island</span></span>
-            <div class="cover small c-sun r-md aspect-[4/3]"><span class="cover-mark">&lt;/&gt;</span></div>
-          </div>
-        </a>
+    <!-- ===== After reading ===== -->
+    <footer class="wrap mt-16">
+      <div class="max-w-[720px] mx-auto">
+        <div class="flex flex-wrap gap-2 xl:hidden"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div>
+        <div class="bezel mt-8"><div class="face p-6 flex flex-col sm:flex-row gap-5 sm:items-center">
+          <span class="grid place-items-center w-14 h-14 shrink-0 rounded-full bg-[var(--teal)] text-white text-xl font-semibold" aria-hidden="true">长</span>
+          <div class="flex-1"><p class="font-semibold">长林啊</p><p class="t-small ink-2 mt-1">成都的全栈开发工程师，在探索 AI Agent 与智能工具的工程化。写工程实践，也写代码之外。</p></div>
+          <a class="btn btn-dark btn-sm" href="about.html">关于作者<span class="arrow">↗</span></a>
+        </div></div>
       </div>
-      <p class="mt-10"><a class="btn btn-dark" href="blog.html">回到全部文章<span class="dot"><span class="arrow">↗</span></span></a></p>
-    </div>
-  </nav>
+      <nav aria-label="上一篇与下一篇" class="mt-12 grid gap-4 md:grid-cols-2">
+        <a href="blog-detail.html" class="group panel p-6 md:p-8 lift block">
+          <span class="t-xs muted">← 上一篇</span>
+          <span class="block t-h3 mt-3 hover-accent">用不可变 revision 重写 CMS 的发布流程</span>
+        </a>
+        <a href="blog-detail.html" class="group panel p-6 md:p-8 lift block md:text-right" style="background:var(--deep);color:#fff">
+          <span class="t-xs text-white/60">下一篇 →</span>
+          <span class="block t-h3 mt-3">Next.js 技术选型攻略：最佳实践与工具推荐</span>
+        </a>
+      </nav>
+      <section class="mt-16 pb-6" aria-labelledby="rel-title">
+        <h2 id="rel-title" class="t-h2">相关文章</h2>
+        <div class="mt-6 grid gap-5 md:grid-cols-3">
+          <a href="blog-detail.html" class="group block"><div class="cover small c-teal r-md aspect-[16/9]"><span class="cover-mark">gin</span></div><p class="t-xs muted mt-3">后端 · 2026-08-30</p><p class="font-semibold mt-1 hover-accent">Go + Gin 常用工程实践：分层、错误与日志</p></a>
+          <a href="blog-detail.html" class="group block"><div class="cover small c-coral r-md aspect-[16/9]"><span class="cover-mark">wp5</span></div><p class="t-xs muted mt-3">前端 · 2025-11-30</p><p class="font-semibold mt-1 hover-accent">Webpack 5 构建提速 40% 的几处改动</p></a>
+          <a href="blog-detail.html" class="group block"><div class="cover small c-ink r-md aspect-[16/9]"><span class="cover-mark">rev</span></div><p class="t-xs muted mt-3">后端 · 2026-11-10</p><p class="font-semibold mt-1 hover-accent">用不可变 revision 重写 CMS 的发布流程</p></a>
+        </div>
+      </section>
+    </footer>
+  </article>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-  // 目录：由正文 h2/h3 生成
-  const heads = [...document.querySelectorAll('#article-body h2, #article-body h3')];
-  const tocHTML = heads.map(h => `<a href="#${h.id}" class="${h.tagName === 'H3' ? 'sub' : ''}" data-for="${h.id}">${h.textContent}</a>`).join('');
-  document.getElementById('toc-desktop').innerHTML = tocHTML;
-  document.getElementById('toc-mobile').innerHTML = tocHTML;
-
-  // 手机目录：点选后收起
-  document.getElementById('toc-mobile').addEventListener('click', e => {
-    if (e.target.closest('a')) { document.getElementById('toc-mobile').hidden = true; document.querySelector('[aria-controls="toc-mobile"]').setAttribute('aria-expanded', 'false'); }
-  });
-
-  // scroll-spy
-  const links = [...document.querySelectorAll('.toc a')];
-  const setOn = id => links.forEach(a => a.classList.toggle('on', a.dataset.for === id));
-  const spy = new IntersectionObserver(es => {
-    const vis = es.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-    if (vis[0]) setOn(vis[0].target.id);
-  }, { rootMargin: '0px 0px -70% 0px' });
-  heads.forEach(h => spy.observe(h));
-  setOn(heads[0].id);
-
-  // 阅读进度
-  const bar = document.getElementById('progress'), art = document.getElementById('article-body');
-  const prog = () => { const r = art.getBoundingClientRect(); const t = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - innerHeight * .6))); bar.style.transform = `scaleX(${t})`; };
-  addEventListener('scroll', () => requestAnimationFrame(prog), { passive: true }); prog();
-
-  // notoc 状态：去掉目录列，正文居中
-  document.addEventListener('proto:state', e => {
-    const notoc = e.detail === 'notoc';
-    document.getElementById('layout').classList.toggle('lg:grid-cols-[minmax(0,1fr)_15rem]', !notoc);
-    document.getElementById('body-col').classList.toggle('max-w-[720px]', notoc);
-    document.getElementById('body-col').classList.toggle('mx-auto', notoc);
-  });
+const heads = [...document.querySelectorAll('#prose h2, #prose h3')];
+document.querySelectorAll('[data-toc]').forEach(nav => {
+  nav.innerHTML = heads.map(h => `<a href="#${h.id}" class="${h.tagName === 'H3' ? 'sub' : ''}" data-for="${h.id}">${h.textContent}</a>`).join('');
+});
+const bar = document.getElementById('progress'), tocBar = document.getElementById('toc-bar'), pct = document.getElementById('pct');
+const prose = document.getElementById('prose');
+function onScroll() {
+  const r = prose.getBoundingClientRect();
+  const p = Math.min(1, Math.max(0, (innerHeight * .3 - r.top) / r.height));
+  bar.style.transform = `scaleX(${p})`; tocBar.style.width = (p * 100).toFixed(0) + '%'; pct.textContent = Math.round(p * 100);
+  let cur = heads[0];
+  heads.forEach(h => { if (h.getBoundingClientRect().top < 140) cur = h; });
+  document.querySelectorAll('[data-for]').forEach(a => a.classList.toggle('on', a.dataset.for === cur.id));
+}
+addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true }); onScroll();
+document.addEventListener('proto:state', e => {
+  document.getElementById('read-grid').classList.toggle('no-toc', e.detail === 'notoc');
+});
 </script>
 </body>
 </html>

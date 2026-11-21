@@ -59,7 +59,7 @@ frontend/
 
 公开站点采用 Static-first：
 
-- 首页、文章、分类、标签、项目、About、MCP、AI Trending 初始榜单等使用 SSG；筛选、分页和趋势图按需调用 Public API。
+- 首页、文章、分类、标签、项目、About、AI Trending 初始榜单等使用 SSG；筛选、分页和趋势图按需调用 Public API。
 - 一期不实现站内搜索、收藏或访客登录，不因少量动态区块引入 SSR。
 
 ### 2.2 Admin
@@ -86,7 +86,6 @@ src/
 │   ├── categories/
 │   ├── tags/
 │   ├── ai-trending/
-│   ├── mcp/
 │   ├── projects/
 │   ├── tools/
 │   └── about.astro
@@ -98,8 +97,7 @@ src/
 │   └── seo/
 ├── islands/
 │   ├── AiTrendingFilters.tsx
-│   ├── AiTrendingChart.tsx
-│   └── McpDirectoryFilters.tsx
+│   └── AiTrendingChart.tsx
 ├── layouts/
 └── lib/
     ├── api.ts
@@ -111,7 +109,7 @@ src/
 
 - Worker 向 Astro 提供指定 `generation` 的不可变构建快照。页面、分类/标签、站内链接、404、sitemap 与 RSS 都从这份快照生成；构建不逐页读实时 Public API，不直连数据库。
 - 构建校验快照的 `generation`、schema 版本与完整性；快照读取或校验失败时停止，不回退到其他版本或空数据。没有内容或没有成功 AI 批次是有效快照，两者需与加载失败区分。
-- AI Trending 与 MCP 的筛选、分页及图表通过当前 Public API 获取。静态页面记录自身 generation；动态请求携带 `X-Expected-Generation`，遇到 `409 site_generation_changed` 时清空该页面缓存的旧数据并提示刷新，避免拼接两个版本。
+- AI Trending 的筛选、分页及图表通过当前 Public API 获取。静态页面记录自身 generation；动态请求携带 `X-Expected-Generation`，遇到 `409 site_generation_changed` 时清空该页面缓存的旧数据并提示刷新，避免拼接两个版本。
 - 显示 AI 榜单数据日期；`null` 增长渲染为「数据不足」，保留负值。将精选与自然排名分开展示；尚无成功批次显示「暂无数据」，不把采集失败渲染为零增长。
 
 ### 3.2 SEO
@@ -136,7 +134,6 @@ src/features/
 ├── projects/
 ├── tools/
 ├── profile/
-├── mcp/
 ├── ai-trending/
 │   ├── repositories/
 │   ├── snapshots/
@@ -173,16 +170,7 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - 隐藏/恢复项目、修正分类、精选标记；保存后与内容走同一上线流程。
 - Admin 可请求当日未成功批次；已运行或已完成时显示现有批次与状态，不创建重复批次。
 
-### 4.3 MCP 管理界面
-
-- Server CRUD。
-- 版本维护。
-- Transport、语言、License 和分类维护。
-- Repository/Homepage/Documentation 链接。
-- 验证状态和最后验证时间。
-- 不提供启动、停止或调用 MCP Server 的界面；一期也不提供标签或能力清单编辑。
-
-### 4.4 站点发布任务
+### 4.3 站点发布任务
 
 发布、取消发布和目录修改先显示「待上线」。根据返回的 job 或 generation 查询任务：`queued` / `building` 显示进度，`active` 表示已上线，`failed` 显示失败原因，`superseded` 表示被新的目标取代，`retired` 表示曾上线但已被替换。任务被取代不代表变更被撤销，应重新读取当前目标与线上状态。超过 5 分钟仍待上线时提示延迟；Admin 可重试仍为最新目标的失败 generation。发生构建失败时不要把编辑或保存状态标成失败。
 
@@ -230,6 +218,5 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 3. Posts 列表、编辑器、媒体确认、Revision、审核与发布任务。
 4. Website 首页、Blog、SEO。
 5. Projects、Tools、Profile 管理与展示。
-6. MCP 目录管理与展示。
-7. AI Trending 仪表盘、趋势页面和交互筛选。
-8. E2E、性能和可访问性优化。
+6. AI Trending 仪表盘、趋势页面和交互筛选。
+7. E2E、性能和可访问性优化。

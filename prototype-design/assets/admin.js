@@ -18,8 +18,6 @@
       { k: 'projects', label: '项目', href: 'projects.html', role: 'editor', icon: 'M3 7h18v13H3zM8 7V4h8v3' },
       { k: 'tools', label: '工具', href: 'tools.html', role: 'editor', icon: 'M14 6l4 4-9 9H5v-4zM12 8l4 4' },
       { k: 'profile', label: '个人资料', href: 'profile.html', role: 'editor', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0' },
-      { k: 'mcp', label: 'MCP 目录', href: 'mcp.html', role: 'editor', icon: 'M7 7h10v10H7zM12 2v5M12 17v5M2 12h5M17 12h5' },
-      { k: 'mcp-categories', label: 'MCP 分类', href: 'mcp-categories.html', role: 'editor', sub: true },
     ] },
     { label: '运行', items: [
       { k: 'ai-trending', label: 'AI 趋势', href: 'ai-trending.html', role: 'editor', icon: 'M3 17l6-6 4 4 8-8M15 7h6v6' },
@@ -89,10 +87,10 @@
         <div class="relative">
           <button type="button" data-toggle="account-menu" aria-expanded="false" aria-controls="account-menu" class="flex items-center gap-2 rounded-md pl-1 pr-2 py-1 hover:bg-ui-bg">
             <span class="grid place-items-center w-7 h-7 rounded-full bg-[#DCE3EE] text-accent text-[12px] font-semibold">周</span>
-            <span class="hidden sm:flex flex-col items-start leading-tight"><span class="text-[13px] text-ui-text">周屿</span><span class="text-[11px] text-ui-sub" data-current-role>Admin</span></span>
+            <span class="hidden sm:flex flex-col items-start leading-tight"><span class="text-[13px] text-ui-text">长林啊</span><span class="text-[11px] text-ui-sub" data-current-role>Admin</span></span>
           </button>
           <div id="account-menu" hidden class="absolute right-0 mt-2 w-52 rounded-lg border border-ui-line bg-white shadow-lg py-1 text-[14px]">
-            <div class="px-3 py-2 border-b border-ui-line"><div class="text-ui-text">周屿</div><div class="text-[12px] text-ui-sub">zhouyu@silva.dev · <span data-current-role>Admin</span></div></div>
+            <div class="px-3 py-2 border-b border-ui-line"><div class="text-ui-text">长林啊</div><div class="text-[12px] text-ui-sub">clin@silva.dev · <span data-current-role>Admin</span></div></div>
             <a href="profile.html" data-role="editor" class="block px-3 py-2 hover:bg-ui-bg">个人资料</a>
             <a href="login.html" class="block px-3 py-2 hover:bg-ui-bg text-bad">退出登录</a>
           </div>

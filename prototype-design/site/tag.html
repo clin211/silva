@@ -3,98 +3,103 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>标签：#PostgreSQL · Silva</title>
-  <meta name="description" content="标签「#PostgreSQL」下的文章。">
+  <title>标签：Docker · Silva</title>
+  <meta name="description" content="容器化、镜像构建与部署相关的文章。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
+  <style>
+    .ghost-mark { position: absolute; right: -0.04em; bottom: -0.22em; font-family: var(--mono); font-weight: 500; line-height: 1; letter-spacing: -.05em;
+      font-size: clamp(8rem, 22vw, 20rem); opacity: .12; pointer-events: none; z-index: -1; }
+  </style>
 </head>
 <body class="silva" data-nav="blog" data-proto-states="default:有文章;empty:标签下暂无文章">
 <div id="site-header"></div>
 
-<main id="main">
-  <div class="wrap">
-    <!-- ===== Header ===== -->
-    <header aria-labelledby="page-title" class="pt-8 sm:pt-12 pb-12 lg:pb-16 border-b border-[var(--line)]">
-      <nav aria-label="面包屑" class="t-small muted flex flex-wrap items-center gap-2">
-        <a class="hover-accent" href="home.html">首页</a><span aria-hidden="true">/</span><a class="hover-accent" href="blog.html">文章</a><span aria-hidden="true">/</span><span aria-current="page" class="ink-2">标签：#PostgreSQL</span>
-      </nav>
-      <div class="mt-8 grid gap-8 lg:grid-cols-12 lg:items-end" data-rise>
-        <div class="lg:col-span-7">
+<main id="main" class="!pt-0">
+  <section class="band-sun relative isolate overflow-hidden pt-36 pb-12 md:pt-40 md:pb-14" aria-labelledby="page-title">
+    <span class="ghost-mark" aria-hidden="true"></></span>
+    <div class="wrap" data-rise>
+      <nav aria-label="面包屑" class="t-small text-[#102523]/70 flex flex-wrap gap-2"><a class="link" href="blog.html">技术文章</a><span aria-hidden="true">/</span><span>标签</span></nav>
+      <div class="mt-6 flex flex-wrap items-end justify-between gap-6">
+        <div class="max-w-2xl">
           <span class="eyebrow">标签</span>
-          <h1 id="page-title" class="t-h1 mt-4 break-words"><span class="text-[var(--accent)]">#</span>PostgreSQL</h1>
-          <p class="t-lead mt-5 max-w-[30em]"><strong class="font-semibold">3 篇。</strong><span class="ink-2">涉及 PostgreSQL 的文章：迁移、事务、快照与发布数据。</span></p>
+          <h1 id="page-title" class="mt-4 text-5xl sm:text-6xl lg:text-7xl font-semibold leading-[.95]">#Docker</h1>
+          <p class="t-lead mt-5 text-[#102523]/70">容器化、镜像构建与部署相关的文章。</p>
         </div>
-        <div class="lg:col-span-5">
-          <div class="bezel"><div class="cover c-ink aspect-[16/7]"><span class="cover-tag">标签 · 3 篇</span><span class="cover-mark">pg</span></div></div>
-        </div>
+        <p class="text-right"><span class="block text-5xl font-semibold num">4</span><span class="t-small text-[#102523]/70">篇文章</span></p>
       </div>
-    </header>
+      <nav aria-label="其他标签" class="mt-10 flex gap-2 overflow-x-auto -mx-4 px-4 pb-1"><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#Go</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]" style="color:#fff" aria-current="page">#Docker</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#TypeScript</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#Next.js</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#React Native</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#RAG</a><a href="tag.html" class="inline-flex items-center h-9 px-4 rounded-full t-small font-medium whitespace-nowrap transition-colors bg-[#102523]/10 hover:bg-[#102523]/15" >#AI Agent</a></nav>
+    </div>
+  </section>
 
-    <!-- ===== List + aside ===== -->
-    <section aria-label="文章列表" class="py-12 lg:py-16">
-      <div class="grid gap-12 lg:grid-cols-12">
-        <div class="lg:col-span-8 min-w-0">
-          <ol id="post-list" data-state="default" class="rows list-none p-0" data-rise></ol>
-          <div data-state="empty" hidden class="bezel">
-            <div class="face p-8 md:p-10">
-              <p class="t-h3">这个标签下还没有已上线的文章。</p>
-              <p class="mt-3 ink-2">文章发布并完成站点构建后，会出现在这里。</p>
-              <div class="mt-6 flex flex-wrap gap-3"><a class="btn btn-dark btn-sm" href="projects.html">看看项目<span class="arrow">↗</span></a><a class="btn btn-ghost btn-sm" href="tools.html">我常用的工具</a></div>
-            </div>
+  <section data-state="default" class="wrap py-14 md:py-16" aria-label="文章列表">
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+      <p class="t-small muted">按发布时间倒序 · 共 4 篇</p>
+      <div class="choice" role="group" aria-label="排序"><button type="button" aria-pressed="true">最新</button><button type="button" aria-pressed="false">最早</button></div>
+    </div>
+    <div class="grid gap-5 lg:grid-cols-2" data-rise>
+        <article><a href="blog-detail.html" class="group bezel block h-full"><div class="face h-full grid sm:grid-cols-[11rem_minmax(0,1fr)] overflow-hidden lift">
+          <div class="cover small c-deep aspect-[16/9] sm:aspect-auto !rounded-none sm:min-h-[11rem]"><span class="cover-mark">ci/cd</span></div>
+          <div class="p-5 md:p-6 flex flex-col min-w-0">
+            <p class="t-xs muted"><time datetime="2026-11-18">2026-11-18</time> · 14 分钟</p>
+            <h2 class="t-h3 mt-2 hover-accent">基于 GitHub Actions 与 Docker 的 Go 项目部署实战</h2>
+            <p class="t-small ink-2 mt-2 line-clamp-2">多阶段构建、镜像推送、远程部署与一键回滚。</p>
+            <div class="mt-auto pt-4 flex flex-wrap gap-1.5"><span class="chip hash">Go</span><span class="chip hash">Docker</span></div>
           </div>
-          <a href="blog.html" class="mt-8 inline-flex items-center gap-2 font-medium hover-accent">回到全部 35 篇文章<span class="arrow arrow-r">→</span></a>
-        </div>
+        </div></a></article>
+        <article><a href="blog-detail.html" class="group bezel block h-full"><div class="face h-full grid sm:grid-cols-[11rem_minmax(0,1fr)] overflow-hidden lift">
+          <div class="cover small c-ink aspect-[16/9] sm:aspect-auto !rounded-none sm:min-h-[11rem]"><span class="cover-mark">next</span></div>
+          <div class="p-5 md:p-6 flex flex-col min-w-0">
+            <p class="t-xs muted"><time datetime="2026-10-21">2026-10-21</time> · 11 分钟</p>
+            <h2 class="t-h3 mt-2 hover-accent">Next.js 技术选型攻略：最佳实践与工具推荐</h2>
+            <p class="t-small ink-2 mt-2 line-clamp-2">App Router、数据获取、样式方案与部署平台怎么选。</p>
+            <div class="mt-auto pt-4 flex flex-wrap gap-1.5"><span class="chip hash">Next.js</span><span class="chip hash">Docker</span></div>
+          </div>
+        </div></a></article>
+        <article><a href="blog-detail.html" class="group bezel block h-full"><div class="face h-full grid sm:grid-cols-[11rem_minmax(0,1fr)] overflow-hidden lift">
+          <div class="cover small c-teal aspect-[16/9] sm:aspect-auto !rounded-none sm:min-h-[11rem]"><span class="cover-mark">yml</span></div>
+          <div class="p-5 md:p-6 flex flex-col min-w-0">
+            <p class="t-xs muted"><time datetime="2026-07-03">2026-07-03</time> · 7 分钟</p>
+            <h2 class="t-h3 mt-2 hover-accent">本地开发环境一键启动：docker compose 实践</h2>
+            <p class="t-small ink-2 mt-2 line-clamp-2">数据库、缓存和对象存储，一条命令拉起来。</p>
+            <div class="mt-auto pt-4 flex flex-wrap gap-1.5"><span class="chip hash">Docker</span></div>
+          </div>
+        </div></a></article>
+        <article><a href="blog-detail.html" class="group bezel block h-full"><div class="face h-full grid sm:grid-cols-[11rem_minmax(0,1fr)] overflow-hidden lift">
+          <div class="cover small c-coral aspect-[16/9] sm:aspect-auto !rounded-none sm:min-h-[11rem]"><span class="cover-mark">20mb</span></div>
+          <div class="p-5 md:p-6 flex flex-col min-w-0">
+            <p class="t-xs muted"><time datetime="2026-04-18">2026-04-18</time> · 6 分钟</p>
+            <h2 class="t-h3 mt-2 hover-accent">镜像从 900MB 到 20MB</h2>
+            <p class="t-small ink-2 mt-2 line-clamp-2">多阶段构建、distroless 与构建缓存。</p>
+            <div class="mt-auto pt-4 flex flex-wrap gap-1.5"><span class="chip hash">Docker</span><span class="chip hash">Go</span></div>
+          </div>
+        </div></a></article>
+    </div>
+    
+  </section>
 
-        <aside class="lg:col-span-4" aria-labelledby="more-title">
-          <div class="lg:sticky lg:top-28 grid gap-4">
-            <h2 id="more-title" class="t-h3">换个方向看看</h2>
-            <div class="lg:hidden"><button type="button" id="taxo-toggle" class="btn btn-ghost w-full justify-between" aria-expanded="false" aria-controls="taxo-panel">按分类或标签浏览<span aria-hidden="true" id="taxo-sign">＋</span></button></div>
-            <div id="taxo-panel" class="hidden lg:grid gap-4">
-              <div class="panel p-6"><p class="font-semibold">按分类</p><div class="mt-4 flex flex-wrap gap-2"><a href="category.html" class="chip">后端工程 14</a><a href="category.html" class="chip">Rust 9</a><a href="category.html" class="chip">前端 7</a><a href="category.html" class="chip">工程随笔 5</a></div></div>
-              <div class="panel p-6"><p class="font-semibold">按标签</p><div class="mt-4 flex flex-wrap gap-2"><a href="tag.html" class="chip hash chip-teal" aria-current="page">PostgreSQL</a><a href="tag.html" class="chip hash">Axum</a><a href="tag.html" class="chip hash">Astro</a><a href="tag.html" class="chip hash">CMS</a><a href="tag.html" class="chip hash">可观测性</a><a href="tag.html" class="chip hash">MCP</a><a href="tag.html" class="chip hash">CI/CD</a></div></div>
-              <div class="rounded-[1.25rem] bg-[var(--sun)] p-6">
-                <p class="font-semibold">订阅更新</p>
-                <p class="t-small mt-2 text-[#102523]/80">新文章上线后，RSS 会自动推送。</p>
-                <a class="btn btn-dark btn-sm mt-4" href="#rss">订阅 RSS<span class="arrow">↗</span></a>
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </section>
-  </div>
+  <section data-state="empty" hidden class="wrap py-24">
+    <div class="max-w-xl mx-auto text-center">
+      <h2 class="t-h2">这个标签下还没有文章</h2>
+      <p class="ink-2 mt-3">可以换一个标签看看，或者回到全部文章。</p>
+      <div class="mt-8 flex justify-center gap-3"><a class="btn btn-dark" href="blog.html">全部文章<span class="dot"><span class="arrow">↗</span></span></a><a class="btn btn-ghost" href="#rss">订阅 RSS</a></div>
+    </div>
+  </section>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-const POSTS = [{"c": "后端工程", "d": "2026-11-18", "r": 12, "t": "用不可变 revision 重写 CMS 的发布流程", "e": "把「保存」「批准」「上线」拆成三个独立状态。旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。", "tags": ["CMS", "PostgreSQL"], "k": "c-deep", "m": "rev:v2"}, {"c": "后端工程", "d": "2026-10-27", "r": 10, "t": "PostgreSQL 迁移里那些会悄悄锁表的语句", "e": "加列带默认值、建索引、改约束：哪些在新版本里已经安全，哪些仍要分步执行。", "tags": ["PostgreSQL", "CI/CD"], "k": "c-ink", "m": "pg"}, {"c": "Rust", "d": "2026-10-02", "r": 9, "t": "在 Worker 里安全地重试 GitHub API", "e": "每日采集只要有一次失败就不发布该批次，重试也不能生成重复的快照。", "tags": ["PostgreSQL", "MCP"], "k": "c-teal", "m": "429"}];
-document.getElementById('post-list').innerHTML = POSTS.map(p => `
-  <li>
-    <a href="blog-detail.html" class="group grid grid-cols-[1fr_88px] sm:grid-cols-[1fr_140px] gap-5 py-6">
-      <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-3 t-small muted"><span class="chip">${p.c}</span><time datetime="${p.d}">${p.d}</time><span class="hidden sm:inline">· ${p.r} 分钟</span></div>
-        <h2 class="t-h3 mt-3 line-clamp-2 hover-accent">${p.t}</h2>
-        <p class="t-small ink-2 mt-2 line-clamp-2 hidden sm:block">${p.e}</p>
-        <p class="t-xs muted mt-2">${p.tags.map(t => '#' + t).join('　')}</p>
-      </div>
-      <div class="cover small ${p.k} r-md aspect-[4/3] self-start"><span class="cover-mark">${p.m}</span></div>
-    </a>
-  </li>`).join('');
-
-// 手机/平板：分类标签折叠区（桌面始终展开，所以切换 class 而不是 hidden 属性）
-const tg = document.getElementById('taxo-toggle'), panel = document.getElementById('taxo-panel');
-tg.addEventListener('click', () => {
-  const open = panel.classList.toggle('hidden') === false;
-  panel.classList.toggle('grid', open);
-  tg.setAttribute('aria-expanded', open);
-  document.getElementById('taxo-sign').textContent = open ? '－' : '＋';
-});
+  document.querySelectorAll('.choice button').forEach(b => b.addEventListener('click', () => {
+    b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    const grid = document.querySelector('[data-state="default"] .grid');
+    [...grid.children].reverse().forEach(c => grid.appendChild(c));
+  }));
 </script>
 </body>
 </html>

@@ -3,142 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>文章 · Silva</title>
-  <meta name="description" content="周屿的技术文章：后端工程、Rust、前端构建与工程随笔。">
+  <title>技术文章 · Silva</title>
+  <meta name="description" content="长林啊的技术文章：后端、前端、跨端与 AI 工程实践，按时间归档。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <script src="../assets/tw-config.js"></script>
   <link rel="stylesheet" href="../assets/silva.css">
+  <style>
+    .search { position: relative; }
+    .search svg { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .search .input { padding-left: 44px; height: 52px; }
+    .choice .cnt { margin-left: 6px; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .year { font-size: clamp(3rem, 2rem + 3vw, 4.5rem); line-height: .9; font-weight: 600; letter-spacing: -.03em; color: rgba(16, 37, 35, .1); font-variant-numeric: tabular-nums; }
+    .month-label { position: sticky; top: 100px; }
+    .arch-row { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr); gap: 16px; padding-block: 18px; }
+    @media (min-width: 768px) { .arch-row { grid-template-columns: 4rem minmax(0, 1fr) 11rem; gap: 24px; align-items: baseline; } }
+    .arch-row .meta { grid-column: 2; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    @media (min-width: 768px) { .arch-row .meta { grid-column: 3; justify-content: flex-end; } }
+    .arch-row:hover .day { color: var(--accent); }
+  </style>
 </head>
 <body class="silva" data-nav="blog" data-proto-states="default:有文章;empty:暂无文章">
 <div id="site-header"></div>
 
-<main id="main">
-  <div class="wrap">
-    <!-- ===== Header ===== -->
-    <header aria-labelledby="page-title" class="grid gap-8 border-b border-[var(--line)] pt-10 pb-12 sm:pt-14 lg:grid-cols-[17rem_minmax(0,1fr)] lg:gap-14 lg:pb-16" data-rise>
-      <div>
-        <span class="eyebrow">技术文章</span>
-        <h1 id="page-title" class="t-h1 mt-4">文章</h1>
-      </div>
-      <div>
-        <p class="t-lead">35 篇，一圈一圈记下来的：<strong class="font-semibold">后端工程、Rust、前端构建</strong>，还有一些写给自己的随笔。</p>
-        <p class="ink-2 mt-3">大多来自真实踩过的坑，尽量把上下文和取舍讲清楚，而不是只给结论。</p>
-        <div class="mt-6 flex flex-wrap gap-2">
-          <a href="blog.html" class="chip chip-teal" aria-current="page">全部 35</a>
-          <a href="category.html" class="chip">后端工程 14</a><a href="category.html" class="chip">Rust 9</a><a href="category.html" class="chip">前端 7</a><a href="category.html" class="chip">工程随笔 5</a>
+<main id="main" class="!pt-0">
+  <!-- ===== Header band ===== -->
+  <section class="band-mist pt-36 pb-14 md:pt-40 md:pb-16" aria-labelledby="page-title">
+    <div class="wrap" data-rise>
+      <span class="eyebrow">Writing · 归档</span>
+      <div class="mt-5 grid gap-8 lg:grid-cols-12 lg:items-end">
+        <div class="lg:col-span-7">
+          <h1 id="page-title" class="text-5xl sm:text-6xl lg:text-7xl font-semibold leading-[.95]">技术文章</h1>
+          <p class="t-lead ink-2 mt-5 max-w-[34em]">工程实践、学习笔记和踩坑记录。写下判断与取舍，让一次解决问题的经验可以被再次使用。</p>
+        </div>
+        <div class="lg:col-span-5" data-state="default">
+          <label class="search block" for="q"><span class="sr-only">搜索文章</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="q" class="input" type="search" placeholder="搜索标题或摘要，如 Docker、RAG" autocomplete="off">
+          </label>
+          <p class="t-xs muted mt-2 pl-4">共 <span class="num">19</span> 篇 · 最近更新 2026-11-18</p>
         </div>
       </div>
-    </header>
+      <div class="mt-8 overflow-x-auto -mx-4 px-4" data-state="default">
+        <div class="choice" role="group" aria-label="按分类筛选" id="cats"></div>
+      </div>
+    </div>
+  </section>
 
-    <!-- ===== List + aside ===== -->
-    <section aria-label="文章列表" class="py-12 lg:py-16">
-      <div data-state="default" class="grid gap-12 lg:grid-cols-12">
-        <div class="lg:col-span-8 min-w-0">
-          <!-- featured (latest) -->
-          <article data-rise>
-            <a href="blog-detail.html" class="group block bezel">
-              <div class="face overflow-hidden lift grid md:grid-cols-[1.1fr_1fr]">
-                <div class="cover c-deep !rounded-none aspect-[16/10] md:aspect-auto md:min-h-[300px]"><span class="cover-tag">后端工程 · 最新</span><span class="cover-mark" style="font-size:clamp(3.5rem,6vw,5.5rem)">rev:v2</span></div>
-                <div class="p-6 md:p-8 flex flex-col">
-                  <div class="flex flex-wrap items-center gap-3 t-small muted"><span class="chip chip-teal">后端工程</span><time datetime="2026-11-18">2026-11-18</time><span>· 12 分钟</span></div>
-                  <h2 class="t-h2 mt-4 hover-accent">用不可变 revision 重写 CMS 的发布流程</h2>
-                  <p class="ink-2 mt-3 line-clamp-3">把「保存」「批准」「上线」拆成三个独立状态。旧版本在新草稿审核期间照常在线，构建失败也不会拖垮编辑。</p>
-                  <div class="mt-auto pt-6 flex items-center justify-between gap-3">
-                    <span class="flex flex-wrap gap-2"><span class="chip hash">CMS</span><span class="chip hash">PostgreSQL</span></span>
-                    <span class="arrow t-small font-medium">↗</span>
-                  </div>
-                </div>
-              </div>
-            </a>
-          </article>
-
-          <ol id="post-list" class="rows list-none p-0 mt-6" data-rise></ol>
-
-          <nav aria-label="分页" class="mt-10 flex flex-wrap items-center gap-3">
-            <div class="choice">
-              <span aria-disabled="true" class="opacity-40 !cursor-default">上一页</span>
-              <a href="blog.html" aria-current="page">1</a>
-              <a href="blog.html?page=2">2</a>
-              <a href="blog.html?page=3">3</a>
-              <a href="blog.html?page=4">4</a>
-              <a href="blog.html?page=5">5</a>
-              <a href="blog.html?page=2">下一页 →</a>
-            </div>
-            <span class="t-small muted md:ml-auto">第 1 页，共 5 页</span>
-          </nav>
-        </div>
-
-        <!-- aside: taxonomy -->
-        <aside class="lg:col-span-4" aria-label="分类与标签">
-          <div class="lg:sticky lg:top-28 grid gap-4">
-            <div class="lg:hidden"><button type="button" id="taxo-toggle" class="btn btn-ghost w-full justify-between" aria-expanded="false" aria-controls="taxo-panel">按分类或标签浏览<span aria-hidden="true" id="taxo-sign">＋</span></button></div>
-            <div id="taxo-panel" class="hidden lg:grid gap-4">
-              <div class="panel p-6">
-                <h2 class="font-semibold">按分类</h2>
-                <ul class="mt-4 grid gap-1 list-none p-0">
-                  <li><a href="category.html" class="group flex justify-between items-center rounded-xl px-3 py-2 -mx-3 hover:bg-[rgba(11,137,146,.06)]"><span class="hover-accent">后端工程</span><span class="t-small muted num">14</span></a></li>
-                  <li><a href="category.html" class="group flex justify-between items-center rounded-xl px-3 py-2 -mx-3 hover:bg-[rgba(11,137,146,.06)]"><span class="hover-accent">Rust</span><span class="t-small muted num">9</span></a></li>
-                  <li><a href="category.html" class="group flex justify-between items-center rounded-xl px-3 py-2 -mx-3 hover:bg-[rgba(11,137,146,.06)]"><span class="hover-accent">前端</span><span class="t-small muted num">7</span></a></li>
-                  <li><a href="category.html" class="group flex justify-between items-center rounded-xl px-3 py-2 -mx-3 hover:bg-[rgba(11,137,146,.06)]"><span class="hover-accent">工程随笔</span><span class="t-small muted num">5</span></a></li>
-                </ul>
-              </div>
-              <div class="panel p-6">
-                <h2 class="font-semibold">按标签</h2>
-                <div class="mt-4 flex flex-wrap gap-2">
-                  <a href="tag.html" class="chip hash">PostgreSQL</a><a href="tag.html" class="chip hash">Axum</a><a href="tag.html" class="chip hash">Astro</a><a href="tag.html" class="chip hash">CMS</a><a href="tag.html" class="chip hash">可观测性</a><a href="tag.html" class="chip hash">MCP</a><a href="tag.html" class="chip hash">CI/CD</a>
-                </div>
-              </div>
-              <div class="rounded-[1.25rem] bg-[var(--sun)] p-6">
-                <h2 class="font-semibold">订阅更新</h2>
-                <p class="t-small mt-2 text-[#102523]/80">新文章上线后，RSS 会自动推送。不收集邮箱。</p>
-                <a class="btn btn-dark btn-sm mt-4" href="#rss">订阅 RSS<span class="arrow">↗</span></a>
-              </div>
-            </div>
+  <!-- ===== Featured ===== -->
+  <section data-state="default" class="wrap pt-14 md:pt-16" aria-labelledby="feat-title">
+    <div class="flex items-end justify-between gap-4">
+      <h2 id="feat-title" class="t-h2">精选</h2>
+      <p class="t-small muted">写得最用心的三篇</p>
+    </div>
+    <div class="mt-6 grid gap-5 md:grid-cols-3" data-rise>
+      <a href="blog-detail.html" class="group bezel block">
+        <div class="face overflow-hidden h-full flex flex-col lift">
+          <div class="cover c-deep aspect-[4/3] !rounded-none"><span class="cover-tag">后端 · 部署</span><span class="cover-mark !text-[4.5rem]">CI/CD</span></div>
+          <div class="p-6 flex-1 flex flex-col">
+            <div class="flex items-center gap-2 t-xs muted"><span class="chip chip-teal">后端</span><time datetime="2026-11-18">2026-11-18</time></div>
+            <h3 class="t-h3 mt-3 hover-accent">基于 GitHub Actions 与 Docker 的 Go 项目部署实战</h3>
+            <p class="t-small ink-2 mt-2 line-clamp-2">从多阶段构建到镜像推送、远程部署与回滚，一套简单可靠的流水线。</p>
+            <span class="mt-auto pt-5 t-small font-medium inline-flex items-center gap-2">阅读<span class="arrow">↗</span></span>
           </div>
-        </aside>
-      </div>
-
-      <div data-state="empty" hidden class="bezel max-w-2xl">
-        <div class="face p-8 md:p-10">
-          <p class="t-h3">这里还没有已上线的文章。</p>
-          <p class="mt-3 ink-2">文章发布并完成站点构建后，会出现在这里。</p>
-          <div class="mt-6 flex flex-wrap gap-3"><a class="btn btn-dark btn-sm" href="projects.html">看看项目<span class="arrow">↗</span></a><a class="btn btn-ghost btn-sm" href="tools.html">我常用的工具</a></div>
         </div>
+      </a>
+      <a href="blog-detail.html" class="group bezel block">
+        <div class="face overflow-hidden h-full flex flex-col lift">
+          <div class="cover c-teal aspect-[4/3] !rounded-none"><span class="cover-tag">AI 工程 · 检索</span><span class="cover-mark !text-[4.5rem]">RAG</span></div>
+          <div class="p-6 flex-1 flex flex-col">
+            <div class="flex items-center gap-2 t-xs muted"><span class="chip chip-teal">AI 工程</span><time datetime="2026-11-02">2026-11-02</time></div>
+            <h3 class="t-h3 mt-3 hover-accent">RAG 检索增强生成：向量检索与重排序实践</h3>
+            <p class="t-small ink-2 mt-2 line-clamp-2">以文章作为知识库，比较切分策略、召回与重排序，对效果做可重复的评估。</p>
+            <span class="mt-auto pt-5 t-small font-medium inline-flex items-center gap-2">阅读<span class="arrow">↗</span></span>
+          </div>
+        </div>
+      </a>
+      <a href="blog-detail.html" class="group bezel block">
+        <div class="face overflow-hidden h-full flex flex-col lift">
+          <div class="cover c-sun aspect-[4/3] !rounded-none"><span class="cover-tag">跨端 · 上架</span><span class="cover-mark !text-[4.5rem]">RN</span></div>
+          <div class="p-6 flex-1 flex flex-col">
+            <div class="flex items-center gap-2 t-xs muted"><span class="chip chip-sun">跨端</span><time datetime="2026-09-12">2026-09-12</time></div>
+            <h3 class="t-h3 mt-3 hover-accent">React Native 跨端应用上架六个商店的踩坑记录</h3>
+            <p class="t-small ink-2 mt-2 line-clamp-2">Google Play、AppGallery、Galaxy Store 到 App Store，各家审核与签名的差异。</p>
+            <span class="mt-auto pt-5 t-small font-medium inline-flex items-center gap-2">阅读<span class="arrow">↗</span></span>
+          </div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ===== Archive timeline ===== -->
+  <section data-state="default" class="wrap pt-16 md:pt-20 pb-6" aria-labelledby="arch-title">
+    <div class="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--line)] pb-5">
+      <h2 id="arch-title" class="t-h2">全部文章</h2>
+      <p class="t-small muted" id="arch-count" aria-live="polite"></p>
+    </div>
+    <div id="archive"></div>
+    <div id="noresult" hidden class="panel mt-8 p-8 text-center">
+      <p class="t-h3">没有找到相关文章</p>
+      <p class="t-small muted mt-2">换个关键词，或者回到全部分类看看。</p>
+      <button type="button" class="btn btn-dark btn-sm mt-5" id="reset">清除筛选</button>
+    </div>
+    <div class="mt-12 text-center" id="pager">
+      <p class="t-small muted">已经到底了，所有文章都在这一页。</p>
+    </div>
+  </section>
+
+  <!-- ===== Tags + RSS strip ===== -->
+  <section data-state="default" class="wrap py-14" aria-label="标签与订阅">
+    <div class="bezel"><div class="face p-5 md:p-6 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="kicker mr-2">Tags</span>
+        <a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">TypeScript</a><a class="chip hash" href="tag.html">Next.js</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">React Native</a><a class="chip hash" href="tag.html">RAG</a><a class="chip hash" href="tag.html">AI Agent</a><a class="chip hash" href="tag.html">工程化</a><a class="chip hash" href="tag.html">性能优化</a>
       </div>
-    </section>
-  </div>
+      <a href="#rss" class="btn btn-dark btn-sm justify-self-start">订阅 RSS<span class="arrow">↗</span></a>
+    </div></div>
+  </section>
+
+  <!-- ===== Empty ===== -->
+  <section data-state="empty" hidden class="wrap py-24">
+    <div class="max-w-xl mx-auto text-center">
+      <div class="cover c-mist r-md w-28 h-28 mx-auto"><span class="cover-mark !text-5xl">0</span></div>
+      <h2 class="t-h2 mt-8">还没有发布的文章</h2>
+      <p class="ink-2 mt-3">第一篇正在写。可以先订阅 RSS，发布后会第一时间收到。</p>
+      <div class="mt-8 flex justify-center gap-3"><a class="btn btn-dark" href="#rss">订阅 RSS</a><a class="btn btn-ghost" href="projects.html">看看项目</a></div>
+    </div>
+  </section>
 </main>
 
 <div id="site-footer"></div>
 <script src="../assets/site.js"></script>
 <script src="../assets/proto.js"></script>
 <script>
-const POSTS = [{"c": "Rust", "d": "2026-11-12", "r": 8, "t": "Axum 中间件的执行顺序，一张图讲清楚", "e": "从 Layer 的包裹方向讲起，顺便整理 request ID 和 tracing 该放在哪一层。", "tags": ["Axum", "可观测性"], "k": "c-coral", "m": "fn"}, {"c": "前端", "d": "2026-11-03", "r": 6, "t": "静态优先的 Astro 站点，什么时候才需要 Island", "e": "筛选、分页和图表之外，几乎所有页面都可以在构建时生成好。", "tags": ["Astro"], "k": "c-sun", "m": "</>"}, {"c": "后端工程", "d": "2026-10-27", "r": 10, "t": "PostgreSQL 迁移里那些会悄悄锁表的语句", "e": "加列带默认值、建索引、改约束：哪些在新版本里已经安全，哪些仍要分步执行。", "tags": ["PostgreSQL", "CI/CD"], "k": "c-ink", "m": "pg"}, {"c": "工程随笔", "d": "2026-10-15", "r": 5, "t": "一个人维护一个站点：我怎样安排发布与回滚", "e": "没有整站回滚时，重新发布一个历史上批准过的版本，是最稳妥的恢复方式。", "tags": ["CMS"], "k": "c-mist", "m": "g-"}, {"c": "Rust", "d": "2026-10-02", "r": 9, "t": "在 Worker 里安全地重试 GitHub API", "e": "每日采集只要有一次失败就不发布该批次，重试也不能生成重复的快照。", "tags": ["PostgreSQL", "MCP"], "k": "c-teal", "m": "429"}, {"c": "前端", "d": "2026-09-21", "r": 7, "t": "给 MCP 目录做筛选：URL 即状态，后退即恢复", "e": "筛选项和页码写进查询参数，筛选变化回到第一页，浏览器后退可以完整还原。", "tags": ["MCP", "Astro"], "k": "c-deep", "m": "?q="}];
-const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-document.getElementById('post-list').innerHTML = POSTS.map(p => `
-  <li>
-    <a href="blog-detail.html" class="group grid grid-cols-[1fr_88px] sm:grid-cols-[1fr_140px] gap-5 py-6">
-      <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-3 t-small muted"><span class="chip">${p.c}</span><time datetime="${p.d}">${p.d}</time><span class="hidden sm:inline">· ${p.r} 分钟</span></div>
-        <h2 class="t-h3 mt-3 line-clamp-2 hover-accent">${p.t}</h2>
-        <p class="t-small ink-2 mt-2 line-clamp-2 hidden sm:block">${p.e}</p>
-        <p class="t-xs muted mt-2">${p.tags.map(t => '#' + t).join('　')}</p>
-      </div>
-      <div class="cover small ${p.k} r-md aspect-[4/3] self-start"><span class="cover-mark">${esc(p.m)}</span></div>
-    </a>
-  </li>`).join('');
+const POSTS = [
+  ['2026-11-18', '基于 GitHub Actions 与 Docker 的 Go 项目部署实战', '多阶段构建、镜像推送、远程部署与一键回滚。', '后端', 14],
+  ['2026-11-10', '用不可变 revision 重写 CMS 的发布流程', '把保存、批准、上线拆成三个互不干扰的状态。', '后端', 12],
+  ['2026-11-02', 'RAG 检索增强生成：向量检索与重排序实践', '切分策略、召回评估与重排序，一次可复现的对比。', 'AI 工程', 16],
+  ['2026-10-21', 'Next.js 技术选型攻略：最佳实践与工具推荐', 'App Router、数据获取、样式方案与部署平台怎么选。', '前端', 11],
+  ['2026-10-08', '函数调用与工具编排：让 Agent 稳定地做事', '工具描述、参数校验、失败重试与上下文裁剪。', 'AI 工程', 13],
+  ['2026-09-26', '你必须知道的 45 个强大的 JavaScript 代码段', '数组、对象、异步与 DOM 的常用写法，附注意事项。', '前端', 9],
+  ['2026-09-12', 'React Native 跨端应用上架六个商店的踩坑记录', '签名、隐私合规与各家审核规则的差异。', '跨端', 15],
+  ['2026-08-30', 'Go + Gin 常用工程实践：分层、错误与日志', '目录结构、错误包装、结构化日志与 request ID。', '后端', 10],
+  ['2026-08-15', 'TypeScript 高级类型体操：从条件类型到模板字面量', '用真实需求练类型推断，而不是为了炫技。', '前端', 12],
+  ['2026-07-28', '关于持续学习的思考', '从追逐新框架，到先理解它解决了什么问题。', '随笔', 5],
+  ['2026-07-09', 'UniApp 一套代码适配六端小程序的经验', '条件编译、分包加载与平台差异的处理方式。', '跨端', 8],
+  ['2026-07-03', '本地开发环境一键启动：docker compose 实践', '数据库、缓存与服务依赖一条命令拉起，新人当天就能跑起来。', '工程化', 8],
+  ['2026-06-14', 'PostgreSQL 迁移为什么会锁表', '加列、加索引、改类型分别拿什么锁，以及怎样拆成不阻塞线上的几步。', '后端', 11],
+  ['2026-05-02', '在 Worker 里安全地重试 GitHub API', '限流、退避与幂等：每日采集失败就不发布该批次，重试也不生成重复快照。', '后端', 10],
+  ['2026-04-18', '镜像从 900MB 到 20MB', '多阶段构建、静态编译与 distroless 基础镜像，一步步把 Go 服务镜像瘦下来。', '工程化', 7],
+  ['2026-03-20', '结构化日志与 request ID 贯穿全链路', '从网关到 Worker，让一次请求的日志能被一条 ID 串起来。', '后端', 9],
+  ['2025-12-20', '2025 年度回顾：从全栈到 AI 应用', '这一年做过的事、读过的书，以及没做成的部分。', '随笔', 7],
+  ['2025-11-30', 'Webpack 5 构建提速 40% 的几处改动', '缓存、Tree Shaking 与产物分析，构建时间和包体积都降了下来。', '前端', 9],
+  ['2025-11-06', '提示工程与输出对齐：减少幻觉的模板', '结构化输出、示例选择与自检步骤。', 'AI 工程', 10],
+];
+const CATS = ['全部', '后端', '前端', '跨端', 'AI 工程', '工程化', '随笔'];
+const CHIP = { '后端': 'chip-teal', '前端': '', '跨端': 'chip-sun', 'AI 工程': 'chip-coral', '工程化': 'chip-teal', '随笔': '' };
+let cat = '全部', q = '';
+const catsEl = document.getElementById('cats');
+catsEl.innerHTML = CATS.map(c => `<button type="button" data-cat="${c}" aria-pressed="${c === cat}">${c}<span class="cnt">${c === '全部' ? POSTS.length : POSTS.filter(p => p[3] === c).length}</span></button>`).join('');
 
-// 手机/平板：分类标签折叠区（桌面始终展开，所以切换 class 而不是 hidden 属性）
-const tg = document.getElementById('taxo-toggle'), panel = document.getElementById('taxo-panel');
-tg.addEventListener('click', () => {
-  const open = panel.classList.toggle('hidden') === false;
-  panel.classList.toggle('grid', open);
-  tg.setAttribute('aria-expanded', open);
-  document.getElementById('taxo-sign').textContent = open ? '－' : '＋';
+function render() {
+  const kw = q.trim().toLowerCase();
+  const list = POSTS.filter(p => (cat === '全部' || p[3] === cat) && (!kw || (p[1] + p[2]).toLowerCase().includes(kw)));
+  const byYear = {};
+  list.forEach(p => { const [y, m] = p[0].split('-'); ((byYear[y] ||= {})[m] ||= []).push(p); });
+  document.getElementById('archive').innerHTML = Object.keys(byYear).sort().reverse().map(y => `
+    <div class="grid gap-4 md:grid-cols-[11rem_minmax(0,1fr)] md:gap-8 pt-10">
+      <div><p class="year md:sticky md:top-28">${y}</p></div>
+      <div>${Object.keys(byYear[y]).sort().reverse().map(m => `
+        <div class="mb-6">
+          <p class="kicker mb-1">${+m} 月 · ${byYear[y][m].length} 篇</p>
+          <ol class="rows list-none p-0">${byYear[y][m].map(p => `
+            <li><a href="blog-detail.html" class="group arch-row">
+              <span class="day mono t-small muted num transition-colors">${p[0].slice(5)}</span>
+              <span class="min-w-0"><span class="block font-semibold text-[1.0625rem] leading-snug hover-accent">${p[1]}</span><span class="block t-small muted mt-1 truncate">${p[2]}</span></span>
+              <span class="meta"><span class="chip ${CHIP[p[3]]}">${p[3]}</span><span class="t-xs muted whitespace-nowrap">${p[4]} 分钟</span></span>
+            </a></li>`).join('')}
+          </ol>
+        </div>`).join('')}
+      </div>
+    </div>`).join('');
+  document.getElementById('arch-count').textContent = (cat === '全部' && !kw) ? `共 ${POSTS.length} 篇，按时间倒序` : `找到 ${list.length} 篇`;
+  document.getElementById('noresult').hidden = list.length > 0;
+  document.getElementById('pager').hidden = list.length === 0;
+}
+catsEl.addEventListener('click', e => {
+  const b = e.target.closest('[data-cat]'); if (!b) return;
+  cat = b.dataset.cat; catsEl.querySelectorAll('[data-cat]').forEach(x => x.setAttribute('aria-pressed', x === b)); render();
 });
+document.getElementById('q').addEventListener('input', e => { q = e.target.value; render(); });
+document.getElementById('reset').addEventListener('click', () => { q = ''; document.getElementById('q').value = ''; catsEl.querySelector('[data-cat="全部"]').click(); });
+render();
 </script>
 </body>
 </html>
