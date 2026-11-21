@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>角色 · Silva 后台</title>
-  <meta name="description" content="A25 角色原型：内置角色只读列表与权限摘要。">
+  <meta name="description" content="A17 角色原型：内置角色只读列表与权限摘要。">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
@@ -33,8 +33,8 @@
       <ul class="mt-4 space-y-2 text-[14px]">
         <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>管理所有文章和媒体</li>
         <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>审核指定修订，发布与取消发布</li>
-        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>维护分类标签、项目、工具、个人资料</li>
-        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>调整 AI 项目展示，查看相关任务</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>维护分类标签、个人资料</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>调整 AI 榜单展示，查看相关任务</li>
         <li class="flex gap-2 text-ui-sub"><span aria-hidden="true">✕</span>账户管理、触发采集、重试发布、审计与系统健康</li>
       </ul>
     </section>
@@ -61,7 +61,7 @@
           <tr><td>posts.write_any</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
           <tr><td>revisions.review</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
           <tr><td>posts.publish / unpublish</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
-          <tr><td>catalog.manage（分类、项目、工具、资料）</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>catalog.manage（分类、标签、资料）</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
           <tr><td>ai_trending.curate</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
           <tr><td>ai_trending.trigger_run</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>
           <tr><td>publishing.retry</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>

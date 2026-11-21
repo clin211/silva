@@ -17,11 +17,12 @@
     .toc a.sub { padding-left: 26px; font-size: .8125rem; }
     .toc a:hover { color: var(--ink); }
     .toc a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
-    .read-grid { display: grid; gap: 40px; grid-template-columns: minmax(0, 1fr); }
-    @media (min-width: 1024px) { .read-grid { grid-template-columns: 13rem minmax(0, 1fr); gap: 56px; } }
-    @media (min-width: 1280px) { .read-grid { grid-template-columns: 13rem minmax(0, 720px) 12rem; justify-content: space-between; } }
-    .read-grid.no-toc { grid-template-columns: minmax(0, 1fr); }
-    @media (min-width: 1280px) { .read-grid.no-toc { grid-template-columns: minmax(0, 720px) 12rem; justify-content: center; gap: 80px; } }
+    /* reading column on the left, one rail on the right: article info on top, "On this page" below */
+    .read-grid { display: grid; gap: 32px; grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1024px) { .read-grid { grid-template-columns: minmax(0, 720px) 15rem; justify-content: space-between; gap: 64px; } }
+    .rail-sec + .rail-sec { border-top: 1px solid var(--line); padding-top: 24px; }
+    .pn a { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .pn a:hover .pn-t { color: var(--accent); }
     .prose pre { position: relative; }
     .prose pre::before { content: attr(data-lang); position: absolute; right: 14px; top: 10px; font-size: 11px; letter-spacing: .06em; color: rgba(215, 238, 234, .45); text-transform: uppercase; }
   </style>
@@ -57,20 +58,10 @@
     <!-- ===== Body ===== -->
     <div class="wrap mt-12 md:mt-16">
       <div class="read-grid" id="read-grid">
-        <aside data-state="default nocover" class="toc-wrap" aria-label="本文目录">
-          <div class="lg:sticky lg:top-28">
-            <details class="lg:hidden panel p-4" open>
-              <summary class="font-medium cursor-pointer">目录</summary>
-              <nav class="toc mt-3" data-toc></nav>
-            </details>
-            <div class="hidden lg:block">
-              <p class="kicker mb-3">On this page</p>
-              <nav class="toc" data-toc></nav>
-              <div class="mt-6 bar"><i id="toc-bar" style="width:0%"></i></div>
-              <p class="t-xs muted mt-2"><span id="pct" class="num">0</span>% 已读</p>
-            </div>
-          </div>
-        </aside>
+        <details data-state="default nocover" class="lg:hidden panel p-4" open>
+          <summary class="font-medium cursor-pointer">目录</summary>
+          <nav class="toc mt-3" data-toc></nav>
+        </details>
 
         <div class="prose min-w-0" id="prose">
           <p>在现代软件开发中，自动化部署已经是提升团队效率和产品质量的关键环节。对 Go 开发者来说，静态编译让部署天然简单，但「简单」不等于「可靠」：镜像怎么打得小、密钥放在哪、出了问题怎么回滚，都需要提前想清楚。</p>
@@ -123,13 +114,21 @@ jobs:
           <p>这套流程没有用到任何复杂的编排工具，但覆盖了日常最需要的三件事：构建可复现、密钥不外泄、出了问题能马上回去。等服务多起来，再考虑引入更完整的平台也不迟。</p>
         </div>
 
-        <aside class="hidden xl:block" aria-label="本文信息">
-          <div class="sticky top-28 grid gap-5 t-small">
-            <p class="kicker">本文信息</p>
-            <div><p class="t-xs muted">分类</p><a class="link font-medium" href="category.html">后端</a></div>
-            <div><p class="t-xs muted">标签</p><div class="mt-1.5 flex flex-wrap gap-1.5"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div></div>
-            <div><p class="t-xs muted">更新于</p><p class="font-medium">2026-11-20</p></div>
-            <button type="button" class="btn btn-ghost btn-sm justify-self-start" data-toast="链接已复制">复制链接</button>
+        <aside class="hidden lg:block" aria-label="本文信息与目录">
+          <div class="sticky top-28 grid gap-6 t-small">
+            <section class="rail-sec grid gap-4" aria-labelledby="info-title">
+              <p id="info-title" class="kicker">本文信息</p>
+              <div><p class="t-xs muted">分类</p><a class="link font-medium" href="category.html">后端</a></div>
+              <div><p class="t-xs muted">标签</p><div class="mt-1.5 flex flex-wrap gap-1.5"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div></div>
+              <div><p class="t-xs muted">更新于</p><p class="font-medium">2026-11-20</p></div>
+              <button type="button" class="btn btn-ghost btn-sm justify-self-start" data-toast="链接已复制">复制链接</button>
+            </section>
+            <section data-state="default nocover" class="rail-sec" aria-labelledby="toc-title">
+              <p id="toc-title" class="kicker mb-3">On this page</p>
+              <nav class="toc" data-toc aria-label="本文目录"></nav>
+              <div class="mt-5 bar"><i id="toc-bar" style="width:0%"></i></div>
+              <p class="t-xs muted mt-2"><span id="pct" class="num">0</span>% 已读</p>
+            </section>
           </div>
         </aside>
       </div>
@@ -137,24 +136,18 @@ jobs:
 
     <!-- ===== After reading ===== -->
     <footer class="wrap mt-16">
-      <div class="max-w-[720px] mx-auto">
-        <div class="flex flex-wrap gap-2 xl:hidden"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div>
+      <div class="max-w-[720px]">
+        <div class="flex flex-wrap gap-2 lg:hidden"><a class="chip hash" href="tag.html">Go</a><a class="chip hash" href="tag.html">Docker</a><a class="chip hash" href="tag.html">CI/CD</a></div>
         <div class="bezel mt-8"><div class="face p-6 flex flex-col sm:flex-row gap-5 sm:items-center">
           <span class="grid place-items-center w-14 h-14 shrink-0 rounded-full bg-[var(--teal)] text-white text-xl font-semibold" aria-hidden="true">长</span>
           <div class="flex-1"><p class="font-semibold">长林啊</p><p class="t-small ink-2 mt-1">成都的全栈开发工程师，在探索 AI Agent 与智能工具的工程化。写工程实践，也写代码之外。</p></div>
           <a class="btn btn-dark btn-sm" href="about.html">关于作者<span class="arrow">↗</span></a>
         </div></div>
+        <nav aria-label="上一篇与下一篇" class="pn mt-10 pt-6 border-t border-[var(--line)] grid gap-5 sm:grid-cols-2 t-small">
+          <a href="blog-detail.html" rel="prev"><span class="t-xs muted">← 上一篇</span><span class="pn-t ink-2 truncate transition-colors">用不可变 revision 重写 CMS 的发布流程</span></a>
+          <a href="blog-detail.html" rel="next" class="sm:items-end sm:text-right"><span class="t-xs muted">下一篇 →</span><span class="pn-t ink-2 truncate transition-colors max-w-full">Next.js 技术选型攻略：最佳实践与工具推荐</span></a>
+        </nav>
       </div>
-      <nav aria-label="上一篇与下一篇" class="mt-12 grid gap-4 md:grid-cols-2">
-        <a href="blog-detail.html" class="group panel p-6 md:p-8 lift block">
-          <span class="t-xs muted">← 上一篇</span>
-          <span class="block t-h3 mt-3 hover-accent">用不可变 revision 重写 CMS 的发布流程</span>
-        </a>
-        <a href="blog-detail.html" class="group panel p-6 md:p-8 lift block md:text-right" style="background:var(--deep);color:#fff">
-          <span class="t-xs text-white/60">下一篇 →</span>
-          <span class="block t-h3 mt-3">Next.js 技术选型攻略：最佳实践与工具推荐</span>
-        </a>
-      </nav>
       <section class="mt-16 pb-6" aria-labelledby="rel-title">
         <h2 id="rel-title" class="t-h2">相关文章</h2>
         <div class="mt-6 grid gap-5 md:grid-cols-3">
@@ -186,9 +179,7 @@ function onScroll() {
   document.querySelectorAll('[data-for]').forEach(a => a.classList.toggle('on', a.dataset.for === cur.id));
 }
 addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true }); onScroll();
-document.addEventListener('proto:state', e => {
-  document.getElementById('read-grid').classList.toggle('no-toc', e.detail === 'notoc');
-});
+
 </script>
 </body>
 </html>

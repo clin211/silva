@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Silva 原型目录</title>
-  <meta name="description" content="Developer Hub 一期前端原型：公开站点 W01–W12 与管理后台 A01–A25。">
+  <meta name="description" content="Developer Hub 一期前端原型：公开站点 W01–W09 与管理后台 A01–A21。">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
@@ -32,7 +32,7 @@
   <section aria-labelledby="w-title" class="mt-12">
     <div class="flex items-baseline justify-between gap-4">
       <h2 id="w-title" class="font-display text-[28px] font-bold">公开站点</h2>
-      <span class="text-[14px] text-zinc-500">Astro · 12 页</span>
+      <span class="text-[14px] text-zinc-500">Astro · 9 页</span>
     </div>
     <ul id="w-list" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-3"></ul>
   </section>
@@ -40,7 +40,7 @@
   <section aria-labelledby="a-title" class="mt-16">
     <div class="flex items-baseline justify-between gap-4">
       <h2 id="a-title" class="font-display text-[28px] font-bold">管理后台</h2>
-      <span class="text-[14px] text-zinc-500">React SPA · 25 页</span>
+      <span class="text-[14px] text-zinc-500">React SPA · 21 页</span>
     </div>
     <div id="a-groups"></div>
   </section>
@@ -50,53 +50,46 @@
 <script>
 const W = [
   ['W01', '首页', '/', 'site/home.html', '个人首屏、最近更新、正在发生、关于与联络'],
-  ['W02', '文章列表', '/blog', 'site/blog.html', '文章列表＋分类/标签侧栏'],
-  ['W03', '文章详情', '/blog/[slug]', 'site/blog-detail.html', '居中正文＋右侧目录'],
-  ['W04', '分类归档', '/categories/[slug]', 'site/category.html', '分类名称与文章数'],
-  ['W05', '标签归档', '/tags/[slug]', 'site/tag.html', '标签名称与文章数'],
-  ['W06', '项目展览', '/projects', 'site/projects.html', '精选优先＋卡片网格'],
-  ['W07', '项目详情', '/projects/[slug]', 'site/project-detail.html', '链接按钮、说明与技术栈'],
-  ['W08', '工具导航', '/tools', 'site/tools.html', '分类锚点与分组卡片'],
-  ['W09', '公开 404', '未匹配路径', 'site/404.html', '回首页、浏览文章'],
-  ['W10', 'AI 趋势榜', '/ai-trending', 'site/ai-trending.html', '筛选、精选区、自然榜单与分页'],
-  ['W11', 'AI 项目详情', '/ai-trending/[slug]', 'site/ai-trending-detail.html', '摘要指标与历史趋势图'],
-  ['W12', '关于', '/about', 'site/about.html', '档案、简介、经历、技能、联络'],
+  ['W02', '关于', '/about', 'site/about.html', '档案、简介、经历、技能、联络'],
+  ['W03', '公开 404', '未匹配路径', 'site/404.html', '回首页、浏览文章'],
+  ['W04', '文章列表', '/blog', 'site/blog.html', '页标题与栏目说明、文章列表、分类与标签'],
+  ['W05', '文章详情', '/blog/[slug]', 'site/blog-detail.html', '居中正文＋右侧目录'],
+  ['W06', '分类归档', '/categories/[slug]', 'site/category.html', '分类名称与文章数'],
+  ['W07', '标签归档', '/tags/[slug]', 'site/tag.html', '标签名称与文章数'],
+  ['W08', 'AI 趋势榜', '/ai-trending', 'site/ai-trending.html', '筛选、精选区、自然榜单与分页'],
+  ['W09', 'AI 仓库详情', '/ai-trending/[slug]', 'site/ai-trending-detail.html', '摘要指标与历史趋势图'],
 ];
 const A = [
-  ['入口', [
+  ['后台入口', [
     ['A01', '登录', '/login', 'login.html'],
     ['A02', '工作台', '/', 'dashboard.html'],
   ]],
-  ['内容', [
+  ['内容编辑', [
     ['A03', '文章列表', '/posts', 'posts.html'],
     ['A04', '新建文章', '/posts/new', 'post-new.html'],
     ['A05', '编辑文章', '/posts/{id}/edit', 'post-edit.html'],
     ['A06', '修订历史', '/posts/{id}/revisions', 'post-revisions.html'],
     ['A07', '修订详情与审核', '/posts/{id}/revisions/{revisionId}', 'post-revision-detail.html'],
+  ]],
+  ['内容管理', [
     ['A08', '分类与标签', '/taxonomy', 'taxonomy.html'],
     ['A09', '媒体库', '/media', 'media.html'],
-  ]],
-  ['资源', [
-    ['A10', '工具维护', '/tools', 'tools.html'],
-    ['A11', '个人资料', '/profile', 'profile.html'],
-    ['A12', '项目列表', '/projects', 'projects.html'],
-    ['A13', '新建项目', '/projects/new', 'project-new.html'],
-    ['A14', '编辑项目', '/projects/{id}/edit', 'project-edit.html'],
+    ['A10', '个人资料', '/profile', 'profile.html'],
   ]],
   ['运行', [
-    ['A15', 'AI 项目管理', '/ai-trending', 'ai-trending.html'],
-    ['A16', 'AI 仓库详情', '/ai-trending/repositories/{id}', 'ai-repo-detail.html'],
-    ['A17', '采集批次', '/ai-trending/runs', 'ai-runs.html'],
-    ['A18', '发布任务列表', '/publishing', 'publishing.html'],
-    ['A19', '发布任务详情', '/publishing/{id}', 'publishing-detail.html'],
+    ['A11', 'AI 榜单管理', '/ai-trending', 'ai-trending.html'],
+    ['A12', 'AI 仓库详情', '/ai-trending/repositories/{id}', 'ai-repo-detail.html'],
+    ['A13', '采集批次', '/ai-trending/runs', 'ai-runs.html'],
+    ['A14', '发布任务列表', '/publishing', 'publishing.html'],
+    ['A15', '发布任务详情', '/publishing/{id}', 'publishing-detail.html'],
   ]],
   ['系统', [
-    ['A20', '账户', '/users', 'users.html'],
-    ['A21', '角色', '/roles', 'roles.html'],
-    ['A22', '审计日志', '/audit-logs', 'audit-logs.html'],
-    ['A23', '系统健康', '/system/health', 'system-health.html'],
-    ['A24', '后台 403', '无权访问', '403.html'],
-    ['A25', '后台 404', '未匹配路径', '404.html'],
+    ['A16', '账户', '/users', 'users.html'],
+    ['A17', '角色', '/roles', 'roles.html'],
+    ['A18', '审计日志', '/audit-logs', 'audit-logs.html'],
+    ['A19', '系统健康', '/system/health', 'system-health.html'],
+    ['A20', '后台 403', '无权访问', '403.html'],
+    ['A21', '后台 404', '未匹配路径', '404.html'],
   ]],
 ];
 const item = (id, name, route, href, note) => `

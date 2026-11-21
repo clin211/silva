@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>长林啊 · Silva</title>
-  <meta name="description" content="长林啊的个人技术门户：工程实践与学习笔记、做过的项目、顺手的工具，以及 AI 开源项目的每日趋势。">
+  <meta name="description" content="长林啊的个人技术门户：工程实践与学习笔记，以及 AI 开源项目的每日趋势。">
   <script>document.documentElement.classList.add('js')</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -28,7 +28,7 @@
     @media (prefers-reduced-motion: reduce) { .hero-reveal, .hero-sky img { animation: none; } }
   </style>
 </head>
-<body class="silva" data-nav="home" data-proto-states="default:完整资料;noprofile:未配置个人档案;sparse:无精选项目">
+<body class="silva" data-nav="home" data-proto-states="default:完整资料;noprofile:未配置个人档案;notrend:暂无榜单数据">
 <div id="site-header"></div>
 
 <main id="main" class="flush">
@@ -42,27 +42,27 @@
       <div class="lg:col-span-8">
         <div class="hero-reveal flex flex-wrap items-center gap-3" style="--d:0">
           <span class="eyebrow">Personal knowledge studio</span>
-          <span class="t-small text-white/75" data-state="default sparse">四川，成都 · 全栈开发工程师</span>
+          <span class="t-small text-white/75" data-state="default notrend">四川，成都 · 全栈开发工程师</span>
         </div>
 
-        <div data-state="default sparse">
+        <div data-state="default notrend">
           <h1 id="hero-title" class="hero-reveal t-hero mt-6" style="--d:1">长林啊</h1>
           <p class="hero-reveal t-h2 mt-8 max-w-[18em] !leading-snug" style="--d:2">把复杂的技术，<span class="text-white/60">写成可以抵达的路径。</span></p>
-          <p class="hero-reveal t-lead text-white/85 mt-5 max-w-[34em]" style="--d:2">这里记录工程实践、学习笔记，以及为真实问题做的小工具。写代码，也写代码之外。</p>
+          <p class="hero-reveal t-lead text-white/85 mt-5 max-w-[34em]" style="--d:2">这里记录工程实践、学习笔记，以及对 AI 开源生态的每日观察。写代码，也写代码之外。</p>
         </div>
         <div data-state="noprofile" hidden>
           <h1 class="hero-reveal t-hero mt-6" style="--d:1">Silva</h1>
           <p class="hero-reveal t-h2 mt-8 max-w-[18em] !leading-snug" style="--d:2">一个持续更新的<span class="text-white/60">个人技术门户。</span></p>
-          <p class="hero-reveal t-lead text-white/85 mt-5 max-w-[34em]" style="--d:2">文章、项目、工具导航与 AI 开源项目趋势。</p>
+          <p class="hero-reveal t-lead text-white/85 mt-5 max-w-[34em]" style="--d:2">技术文章与 AI 开源项目趋势。</p>
         </div>
 
         <div class="hero-reveal mt-10 flex flex-wrap gap-3" style="--d:3">
           <a href="blog.html" class="btn btn-light">阅读最新文章<span class="dot"><span class="arrow">↗</span></span></a>
-          <a href="about.html" class="btn btn-ghost" data-state="default sparse">关于长林<span class="arrow">↗</span></a>
+          <a href="about.html" class="btn btn-ghost" data-state="default notrend">关于长林<span class="arrow">↗</span></a>
         </div>
         <nav aria-label="继续探索" class="hero-reveal mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 t-small" style="--d:4">
           <span class="text-white/60">继续探索</span>
-          <a class="link" href="blog.html">文章</a><a class="link" href="projects.html">项目</a><a class="link" href="tools.html">工具</a><a class="link" href="ai-trending.html">AI 趋势</a>
+          <a class="link" href="blog.html">文章</a><a class="link" href="category.html">分类</a><a class="link" href="tag.html">标签</a><a class="link" href="ai-trending.html">AI 趋势</a>
         </nav>
       </div>
 
@@ -76,8 +76,8 @@
             </div>
             <dl class="mt-5 grid grid-cols-2 gap-x-4 gap-y-5">
               <div><dt class="t-xs text-white/60">文章</dt><dd class="m-0 text-3xl font-semibold num">19</dd></div>
-              <div><dt class="t-xs text-white/60">项目</dt><dd class="m-0 text-3xl font-semibold num">7</dd></div>
-              <div><dt class="t-xs text-white/60">收录工具</dt><dd class="m-0 text-3xl font-semibold num">48</dd></div>
+              <div><dt class="t-xs text-white/60">分类</dt><dd class="m-0 text-3xl font-semibold num">6</dd></div>
+              <div><dt class="t-xs text-white/60">标签</dt><dd class="m-0 text-3xl font-semibold num">24</dd></div>
               <div><dt class="t-xs text-white/60">AI 榜单收录</dt><dd class="m-0 text-3xl font-semibold num">412</dd></div>
             </dl>
             <a href="ai-trending-detail.html" class="mt-6 flex items-center justify-between gap-4 rounded-2xl bg-white/10 px-4 py-3 hover:bg-white/15 transition-colors">
@@ -157,8 +157,8 @@
             <a href="category.html" class="panel group p-5 flex items-center justify-between gap-3">
               <span><span class="block t-xs muted">最新随笔</span><span class="block font-medium mt-1 hover-accent">关于持续学习的思考</span></span><span class="arrow arrow-r">→</span>
             </a>
-            <a href="tools.html" class="panel group p-5 flex items-center justify-between gap-3">
-              <span><span class="block t-xs muted">顺手工具</span><span class="block font-medium mt-1 hover-accent">JSON 格式化</span></span><span class="arrow arrow-r">→</span>
+            <a href="tag.html" class="panel group p-5 flex items-center justify-between gap-3">
+              <span><span class="block t-xs muted">热门标签</span><span class="block font-medium mt-1 hover-accent">#Docker · 4 篇</span></span><span class="arrow arrow-r">→</span>
             </a>
           </div>
         </div>
@@ -174,79 +174,41 @@
           <span class="eyebrow">正在发生</span>
           <h2 id="now-title" class="t-h1 mt-5">此刻在做什么、<span class="soft block">在想什么？</span></h2>
         </div>
-        <p class="lg:col-span-5 ink-2">一份持续更新的工作切片：正在构建的产品、正在验证的技术，以及最近的输入。</p>
+        <p class="lg:col-span-5 ink-2">一份持续更新的切片：AI 开源生态每天的变化，以及最近在读、在练的东西。</p>
       </header>
 
       <div class="mt-12 grid gap-6 lg:grid-cols-12">
-        <article class="bezel lg:col-span-7">
-          <div class="face h-full p-6 md:p-8 flex flex-col">
-            <header class="flex items-start justify-between gap-6">
-              <div><p class="kicker">Build log</p><h3 class="t-h2 mt-2">正在构建</h3></div>
-              <span class="mono text-4xl font-medium text-white/20 num" data-state="default noprofile">03</span>
-            </header>
-            <ol class="rows mt-6 list-none p-0" data-state="default noprofile">
-              <li class="py-5 first:pt-0">
-                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
-                  <span class="mono t-small muted pt-1">01</span>
-                  <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">图片压缩工具优化（TinyPNG / 本地双引擎）</h4><span class="chip chip-sun">进行中</span></div>
-                    <p class="t-small ink-2 mt-2">完善分片上传、压缩质量预设、批量任务与历史记录体验。</p>
-                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">tools</span><span class="chip hash">image</span><span class="chip hash">upload</span></div>
-                  </div>
-                </a>
-              </li>
-              <li class="py-5">
-                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
-                  <span class="mono t-small muted pt-1">02</span>
-                  <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">JSON → TypeScript 转换体验升级</h4><span class="chip chip-sun">进行中</span></div>
-                    <p class="t-small ink-2 mt-2">优化类型推断、可选字段、泛型与注释生成；增加多语言导出。</p>
-                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">json</span><span class="chip hash">typescript</span></div>
-                  </div>
-                </a>
-              </li>
-              <li class="py-5 pb-0">
-                <a href="project-detail.html" class="group grid grid-cols-[2.5rem_1fr] gap-3">
-                  <span class="mono t-small muted pt-1">03</span>
-                  <div>
-                    <div class="flex flex-wrap items-center justify-between gap-3"><h4 class="font-semibold text-lg hover-accent">Silva Hub · 这个站点本身</h4><span class="chip chip-teal">维护中</span></div>
-                    <p class="t-small ink-2 mt-2">Astro 静态前台、React 后台和 Rust Axum API；内容按不可变修订发布。</p>
-                    <div class="mt-3 flex flex-wrap gap-2"><span class="chip hash">astro</span><span class="chip hash">rust</span><span class="chip hash">postgres</span></div>
-                  </div>
-                </a>
-              </li>
-            </ol>
-            <div data-state="sparse" hidden class="mt-6 rounded-2xl bg-white/5 p-6"><p class="ink-2">还没有设为精选的项目。</p></div>
-            <a href="projects.html" class="mt-auto pt-6 inline-flex items-center gap-2 t-small font-medium hover-accent">全部 7 个项目<span class="arrow arrow-r">→</span></a>
-          </div>
-        </article>
 
-        <article class="bezel lg:col-span-5">
+        <article class="bezel lg:col-span-7">
           <div class="face h-full p-6 md:p-8 flex flex-col">
             <header class="flex items-start justify-between gap-6">
               <div><p class="kicker">Field notes</p><h3 class="t-h2 mt-2">AI 开源趋势</h3></div>
               <span class="chip chip-teal">近 7 天</span>
             </header>
             <p class="t-small muted mt-2">Stars 净增长 · 数据日期 <time datetime="2026-11-20">2026-11-20</time>（UTC）</p>
-            <ol class="mt-5 list-none p-0 grid gap-1">
+            <ol class="mt-5 list-none p-0 grid gap-1" data-state="default noprofile">
               <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">1</span><span class="truncate hover-accent">openmind-labs/agentkit</span><span class="mono num t-small text-[#8FE6DE]">+4,812</span></a></li>
               <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">2</span><span class="truncate hover-accent">vecstore/lattice</span><span class="mono num t-small text-[#8FE6DE]">+3,207</span></a></li>
               <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">3</span><span class="truncate hover-accent">promptworks/evalkit</span><span class="mono num t-small text-[#8FE6DE]">+2,684</span></a></li>
               <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">4</span><span class="truncate hover-accent">rustml/candle-serve</span><span class="mono num t-small text-[#8FE6DE]">+1,955</span></a></li>
               <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">5</span><span class="truncate hover-accent">agentops/gateway</span><span class="mono num t-small text-[#8FE6DE]">+1,402</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">6</span><span class="truncate hover-accent">kite-ai/ragline</span><span class="mono num t-small text-[#8FE6DE]">+1,218</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">7</span><span class="truncate hover-accent">tinyllm/infer-rs</span><span class="mono num t-small text-[#8FE6DE]">+987</span></a></li>
+              <li><a href="ai-trending-detail.html" class="group grid grid-cols-[1.5rem_1fr_auto] items-center gap-3 rounded-xl px-2 py-2.5 -mx-2 hover:bg-white/5"><span class="mono t-small muted">8</span><span class="truncate hover-accent">oakbridge/promptbench</span><span class="mono num t-small text-[#8FE6DE]">+864</span></a></li>
             </ol>
+            <div data-state="notrend" hidden class="mt-5 rounded-2xl bg-white/5 p-6"><p class="font-medium">暂无榜单数据</p><p class="t-small muted mt-1">还没有完成过一次成功的采集批次，第一批上线后会出现在这里。</p></div>
             <p class="t-xs muted mt-4">只统计收录范围内的公开仓库；负增长照实显示。</p>
             <a href="ai-trending.html" class="mt-auto pt-6 inline-flex items-center gap-2 t-small font-medium hover-accent">看完整榜单<span class="arrow arrow-r">→</span></a>
           </div>
         </article>
 
-        <article class="bezel lg:col-span-12">
+        <article class="bezel lg:col-span-5">
           <div class="face p-6 md:p-8">
             <header class="flex flex-wrap items-end justify-between gap-4">
               <div><p class="kicker">Input stream</p><h3 class="t-h2 mt-2">正在输入</h3></div>
               <p class="t-small muted max-w-md">阅读建立坐标，练习形成手感。进度只是切片，不是终点。</p>
             </header>
-            <div class="mt-8 grid gap-10 md:grid-cols-2">
+            <div class="mt-8 grid gap-10">
               <div>
                 <p class="t-small font-medium muted">在读</p>
                 <ul class="mt-4 list-none p-0 grid gap-5">
@@ -271,7 +233,7 @@
   </section>
 
   <!-- ===== About ===== -->
-  <section data-state="default sparse" aria-labelledby="about-title" class="band band-mist">
+  <section data-state="default notrend" aria-labelledby="about-title" class="band band-mist">
     <div class="wrap grid gap-12 lg:grid-cols-12">
       <div class="lg:col-span-6" data-rise>
         <span class="eyebrow">关于长林</span>

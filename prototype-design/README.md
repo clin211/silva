@@ -8,7 +8,7 @@
 
 ```text
 prototype-design/
-├── index.html          原型目录（W01–W12、A01–A25）
+├── index.html          原型目录（W01–W09、A01–A21）
 ├── design-system/      公开站点设计系统（site.md）
 ├── assets/
 │   ├── tw-config.js    设计令牌：颜色、字体、宽度
@@ -18,8 +18,8 @@ prototype-design/
 │   ├── site.js         公开站点悬浮页头、页脚与入场动效
 │   ├── admin.js        后台外壳：分组侧栏、面包屑、账户菜单、手机抽屉
 │   └── proto.js        原型工具条、抽屉与弹窗、标签页、Toast
-├── site/               公开站点，12 个页面
-└── admin/              管理后台，25 个页面
+├── site/               公开站点，9 个页面
+└── admin/              管理后台，21 个页面
 ```
 
 ## 原型工具条

@@ -34,8 +34,6 @@
   const NAV = [
     ['home', '首页', 'home.html'],
     ['blog', '文章', 'blog.html'],
-    ['projects', '项目', 'projects.html'],
-    ['tools', '工具', 'tools.html'],
     ['ai-trending', 'AI 趋势', 'ai-trending.html'],
     ['about', '关于', 'about.html'],
   ];
@@ -91,14 +89,14 @@
         <div style="display:grid;gap:40px" class="foot-grid">
           <div style="max-width:22rem">
             <p style="font-weight:700;font-size:1.25rem;color:var(--accent);margin:0">Silva · 长林啊</p>
-            <p class="t-small muted" style="margin:12px 0 0">分享技术见解，记录学习心得。这里是文章、项目、工具和每天的开源观察，一点一点地长。</p>
+            <p class="t-small muted" style="margin:12px 0 0">分享技术见解，记录学习心得。这里是技术文章和每天的 AI 开源观察，一点一点地长。</p>
             <div style="display:flex;gap:8px;margin-top:20px">
               <a href="https://github.com/clin211" target="_blank" rel="noopener" aria-label="GitHub（新窗口打开）" class="foot-ico">${icon('github', '', 18)}</a>
               <a href="mailto:hello@example.com" aria-label="发邮件" class="foot-ico">${icon('mail', '', 18)}</a>
               <a href="#rss" aria-label="RSS 订阅" class="foot-ico">${icon('rss', '', 18)}</a>
             </div>
           </div>
-          ${col('内容', [['技术文章', 'blog.html'], ['项目', 'projects.html'], ['工具导航', 'tools.html'], ['AI 趋势', 'ai-trending.html']])}
+          ${col('内容', [['技术文章', 'blog.html'], ['后端', 'category.html'], ['AI 趋势', 'ai-trending.html']])}
           ${col('关于本站', [['关于长林啊', 'about.html'], ['RSS 订阅', '#rss'], ['站点地图', '#sitemap']])}
           <div>
             <h3 style="font-size:.9375rem;font-weight:600;margin:0 0 14px">联系方式</h3>

@@ -13,10 +13,6 @@
       { k: 'posts', label: '文章', href: 'posts.html', icon: 'M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h4' },
       { k: 'taxonomy', label: '分类与标签', href: 'taxonomy.html', role: 'editor', icon: 'M3 12l9-9h8v8l-9 9zM15.5 8.5h.01' },
       { k: 'media', label: '媒体库', href: 'media.html', icon: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9h.01' },
-    ] },
-    { label: '资源', role: 'editor', items: [
-      { k: 'projects', label: '项目', href: 'projects.html', role: 'editor', icon: 'M3 7h18v13H3zM8 7V4h8v3' },
-      { k: 'tools', label: '工具', href: 'tools.html', role: 'editor', icon: 'M14 6l4 4-9 9H5v-4zM12 8l4 4' },
       { k: 'profile', label: '个人资料', href: 'profile.html', role: 'editor', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0' },
     ] },
     { label: '运行', items: [
