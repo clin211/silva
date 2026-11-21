@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · Silva 后台</title>
+  <meta name="description" content="A01 登录原型：居中登录卡，无公开注册入口。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased min-h-screen grid place-items-center px-4 py-10"
+      data-proto-states="default:正常;error:凭证错误;locked:尝试过多;expired:会话已失效">
+<main id="main" class="w-full max-w-[400px]">
+  <div class="flex items-center justify-center gap-2.5 mb-8">
+    <span class="grid place-items-center w-9 h-9 rounded-lg bg-accent text-white font-serif font-bold text-[18px]">S</span>
+    <span class="text-[18px] font-semibold">Silva 后台</span>
+  </div>
+
+  <div class="bg-white border border-ui-line rounded-xl shadow-sm p-6 sm:p-8">
+    <h1 class="text-[20px] font-semibold">登录管理后台</h1>
+    <p class="mt-1.5 text-[14px] text-ui-sub">使用管理员分配的账户登录。</p>
+
+    <div data-state="expired" hidden class="mt-5 rounded-md border border-[#CBD5E6] bg-accent-tint px-3.5 py-3 text-[14px] text-accent" role="status">
+      会话已失效，请重新登录。登录后会回到刚才的页面。
+    </div>
+    <div data-state="error" hidden class="mt-5 rounded-md border border-[#E8C3BF] bg-bad-tint px-3.5 py-3 text-[14px] text-bad" role="alert">
+      <strong class="font-medium">登录失败：</strong>邮箱或密码不正确。请检查后重试。
+    </div>
+    <div data-state="locked" hidden class="mt-5 rounded-md border border-[#EBD7A9] bg-warn-tint px-3.5 py-3 text-[14px] text-warn" role="alert">
+      <strong class="font-medium">尝试次数过多：</strong>请在 15 分钟后再试，或联系管理员。
+    </div>
+
+    <form id="login-form" class="mt-6 space-y-4" novalidate>
+      <div>
+        <label for="email" class="block text-[14px] font-medium">邮箱</label>
+        <input id="email" name="email" type="email" autocomplete="username" required value="zhouyu@silva.dev"
+               class="mt-1.5 w-full h-10 rounded-md border border-ui-line px-3 text-[15px] focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20">
+      </div>
+      <div>
+        <div class="flex items-baseline justify-between">
+          <label for="password" class="block text-[14px] font-medium">密码</label>
+          <button type="button" id="toggle-pw" class="text-[13px] text-ui-sub hover:text-ui-text" aria-controls="password" aria-pressed="false">显示</button>
+        </div>
+        <input id="password" name="password" type="password" autocomplete="current-password" required
+               class="mt-1.5 w-full h-10 rounded-md border border-ui-line px-3 text-[15px] focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20">
+        <p id="pw-err" hidden class="mt-1.5 text-[13px] text-bad">请输入密码。</p>
+      </div>
+      <button type="submit" id="submit" class="w-full h-10 rounded-md bg-accent text-white text-[15px] font-medium hover:bg-accent-2 disabled:opacity-60">登录</button>
+    </form>
+  </div>
+  <p class="mt-5 text-center text-[13px] text-ui-sub">没有账户？请联系站点管理员开通。</p>
+</main>
+
+<script src="../assets/proto.js"></script>
+<script>
+  const f = document.getElementById('login-form');
+  const pw = document.getElementById('password');
+  document.getElementById('toggle-pw').addEventListener('click', e => {
+    const show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    e.target.textContent = show ? '隐藏' : '显示';
+    e.target.setAttribute('aria-pressed', show);
+  });
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    const err = document.getElementById('pw-err');
+    err.hidden = !!pw.value;
+    pw.setAttribute('aria-invalid', !pw.value);
+    if (!pw.value) { pw.focus(); return; }
+    if (Proto.state === 'locked') return;
+    const b = document.getElementById('submit');
+    b.disabled = true; b.textContent = '正在登录…';
+    setTimeout(() => {
+      if (Proto.state === 'error') { b.disabled = false; b.textContent = '登录'; return; }
+      location.href = 'dashboard.html';
+    }, 600);
+  });
+</script>
+</body>
+</html>

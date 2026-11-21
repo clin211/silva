@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工具维护 · Silva 后台</title>
+  <meta name="description" content="A10 工具维护：分类与排序列表，抽屉维护名称、简介、目标链接、图标与精选设置。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="tools" data-crumbs="资源|工具" data-proto-roles="editor"
+      data-proto-states="default:有数据;empty:暂无工具">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">工具</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">公开工具导航按这里的分组和顺序展示。工具直接打开目标链接，没有详情页。</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="pending" hidden class="chip chip-warn">待上线</span>
+      <a id="pending-link" hidden href="publishing-detail.html" class="text-[13px] text-accent">查看任务</a>
+      <button type="button" data-open="drawer-cat" class="h-9 px-3 rounded-md border border-ui-line bg-white text-[14px]">管理分类</button>
+      <button type="button" data-open="drawer-tool" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">新增工具</button>
+    </div>
+  </div>
+
+  <div class="mt-6 flex flex-wrap gap-2">
+    <label><span class="sr-only">搜索工具</span><input type="search" placeholder="搜索名称" class="h-9 w-56 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></label>
+    <label class="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-ui-line bg-white text-[14px]"><input type="checkbox"> 只看精选</label>
+  </div>
+
+  <div id="groups" data-state="default" class="mt-5 space-y-6"></div>
+
+  <div data-state="empty" hidden class="mt-5 bg-white border border-dashed border-ui-line rounded-lg p-12 text-center">
+    <p class="text-[15px]">还没有工具。</p>
+    <p class="mt-1 text-[13px] text-ui-sub">新增后会出现在公开站点的工具导航里。</p>
+    <button type="button" data-open="drawer-tool" class="mt-4 h-9 px-4 rounded-md bg-accent text-white text-[14px]">新增工具</button>
+  </div>
+</main>
+
+<!-- 工具抽屉 -->
+<div id="drawer-tool" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="dialog" aria-modal="true" aria-labelledby="dt-title" class="absolute right-0 top-0 h-full w-full sm:w-[460px] bg-white shadow-xl flex flex-col">
+    <header class="flex items-center justify-between px-5 h-14 border-b border-ui-line">
+      <h2 id="dt-title" class="text-[16px] font-semibold">编辑工具</h2>
+      <button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button>
+    </header>
+    <form class="flex-1 overflow-y-auto p-5 space-y-5" onsubmit="event.preventDefault()">
+      <div><label for="tl-name" class="block text-[13px] font-medium">名称</label>
+        <input id="tl-name" value="Excalidraw" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+      <div><label for="tl-intro" class="block text-[13px] font-medium">简介</label>
+        <textarea id="tl-intro" rows="2" maxlength="80" class="mt-1.5 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]">手绘风格的白板，画架构草图最快。</textarea>
+        <p class="mt-1 text-[12px] text-ui-sub text-right tnum">16 / 80</p></div>
+      <div><label for="tl-url" class="block text-[13px] font-medium">目标链接</label>
+        <input id="tl-url" type="url" value="https://excalidraw.com" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code">
+        <p class="mt-1 text-[12px] text-ui-sub">访客点击卡片后在新标签页打开。仅支持 https 链接。</p></div>
+      <div><label for="tl-cat" class="block text-[13px] font-medium">分类</label>
+        <select id="tl-cat" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-2 text-[14px]"><option>设计与绘图</option><option>开发</option><option>写作</option><option value="">不分类（显示在「其他」）</option></select></div>
+      <fieldset>
+        <legend class="block text-[13px] font-medium">图标</legend>
+        <div class="mt-1.5 flex items-center gap-3">
+          <span class="grid place-items-center w-12 h-12 rounded-lg bg-ui-bg border border-ui-line font-semibold text-accent">Ex</span>
+          <div class="text-[13px] space-x-2"><button type="button" class="text-accent">从媒体库选择</button><button type="button" class="text-ui-sub">使用名称首字母</button></div>
+        </div>
+        <p class="mt-1 text-[12px] text-ui-sub">只能选择状态为「就绪」的媒体。</p>
+      </fieldset>
+      <label class="flex items-start gap-3 p-3 rounded-md border border-ui-line">
+        <input type="checkbox" checked class="mt-1">
+        <span><span class="block text-[14px]">设为精选</span><span class="block text-[12px] text-ui-sub">出现在工具页顶部精选区，同时仍保留在所属分组。</span></span>
+      </label>
+    </form>
+    <footer class="px-5 py-3 border-t border-ui-line flex justify-between gap-2">
+      <button type="button" data-open="dlg-remove" class="h-9 px-3 rounded-md text-bad text-[14px]">删除</button>
+      <div class="flex gap-2">
+        <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+        <button type="button" data-close class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium" onclick="markPending()">保存</button>
+      </div>
+    </footer>
+  </section>
+</div>
+
+<!-- 分类抽屉 -->
+<div id="drawer-cat" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="dialog" aria-modal="true" aria-labelledby="dc-title" class="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-xl flex flex-col">
+    <header class="flex items-center justify-between px-5 h-14 border-b border-ui-line">
+      <h2 id="dc-title" class="text-[16px] font-semibold">工具分类</h2>
+      <button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button>
+    </header>
+    <div class="flex-1 overflow-y-auto p-5">
+      <ul class="divide-y divide-ui-line border border-ui-line rounded-md text-[14px]">
+        <li class="flex items-center gap-2 px-3 py-2"><input aria-label="分类名称" value="开发" class="flex-1 h-8 px-2 rounded border border-transparent hover:border-ui-line"><button class="p-1 text-ui-sub" aria-label="上移">↑</button><button class="p-1 text-ui-sub" aria-label="下移">↓</button></li>
+        <li class="flex items-center gap-2 px-3 py-2"><input aria-label="分类名称" value="设计与绘图" class="flex-1 h-8 px-2 rounded border border-transparent hover:border-ui-line"><button class="p-1 text-ui-sub" aria-label="上移">↑</button><button class="p-1 text-ui-sub" aria-label="下移">↓</button></li>
+        <li class="flex items-center gap-2 px-3 py-2"><input aria-label="分类名称" value="写作" class="flex-1 h-8 px-2 rounded border border-transparent hover:border-ui-line"><button class="p-1 text-ui-sub" aria-label="上移">↑</button><button class="p-1 text-ui-sub" aria-label="下移">↓</button></li>
+      </ul>
+      <button type="button" class="mt-3 text-[14px] text-accent">新增分类</button>
+      <p class="mt-4 text-[12px] text-ui-sub">删除分类后，其中的工具会显示在「其他」分组。</p>
+    </div>
+    <footer class="px-5 py-3 border-t border-ui-line flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" data-close class="h-9 px-4 rounded-md bg-accent text-white text-[14px]" onclick="markPending()">保存</button>
+    </footer>
+  </section>
+</div>
+
+<div id="dlg-remove" data-overlay hidden class="fixed inset-0 z-[60] grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="alertdialog" aria-modal="true" aria-labelledby="dr-title" class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+    <h2 id="dr-title" class="text-[16px] font-semibold">删除「Excalidraw」？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub">工具会在下一个站点版本上线后从工具导航中移除。</p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" class="h-9 px-4 rounded-md bg-bad text-white text-[14px]" onclick="Proto.close('dlg-remove');Proto.close('drawer-tool');markPending('已删除，待上线')">删除</button>
+    </div>
+  </section>
+</div>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  const data = [
+    ['开发', [['Bruno', '离线优先的 API 调试客户端', 'bruno.app', 1], ['regex101', '带解释的正则测试器', 'regex101.com', 0], ['crontab.guru', '把 cron 表达式翻成人话', 'crontab.guru', 0]]],
+    ['设计与绘图', [['Excalidraw', '手绘风格的白板，画架构草图最快。', 'excalidraw.com', 1], ['Mermaid Live', '在线编辑 Mermaid 图', 'mermaid.live', 0]]],
+    ['写作', [['LanguageTool', '中英文语法检查', 'languagetool.org', 0]]],
+    ['其他（未分类）', [['Squoosh', '浏览器里压缩图片', 'squoosh.app', 0]]],
+  ];
+  function render() {
+    document.getElementById('groups').innerHTML = data.map(([cat, tools], gi) => `
+      <section class="bg-white border border-ui-line rounded-lg" aria-labelledby="g${gi}">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-ui-line">
+          <h2 id="g${gi}" class="text-[15px] font-medium">${cat} <span class="text-ui-sub tnum text-[13px] font-normal">${tools.length}</span></h2>
+          ${gi === data.length - 1 ? '<span class="text-[12px] text-ui-sub">无分类的工具归入此组</span>' : ''}
+        </header>
+        <ol class="divide-y divide-ui-line">
+          ${tools.map(([n, d, u, f], i) => `
+          <li class="flex items-center gap-3 px-4 py-3">
+            <span class="w-6 text-[13px] text-ui-sub tnum">${i + 1}</span>
+            <span class="grid place-items-center w-9 h-9 rounded-md bg-ui-bg border border-ui-line text-[12px] font-semibold text-accent shrink-0">${n.slice(0, 2)}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2"><span class="font-medium text-[14px] truncate">${n}</span>${f ? '<span class="chip chip-info">精选</span>' : ''}</div>
+              <div class="text-[13px] text-ui-sub truncate">${d} <span class="font-code text-[12px]">${u}</span></div>
+            </div>
+            <div class="flex items-center shrink-0">
+              <button type="button" class="p-1.5 text-ui-sub hover:text-ui-text disabled:opacity-30" aria-label="上移 ${n}" data-move="${gi},${i},-1" ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button type="button" class="p-1.5 text-ui-sub hover:text-ui-text disabled:opacity-30" aria-label="下移 ${n}" data-move="${gi},${i},1" ${i === tools.length - 1 ? 'disabled' : ''}>↓</button>
+              <button type="button" class="ml-1 px-2 text-[13px] text-accent" data-open="drawer-tool">编辑</button>
+            </div>
+          </li>`).join('')}
+        </ol>
+      </section>`).join('');
+  }
+  render();
+  document.getElementById('groups').addEventListener('click', e => {
+    const b = e.target.closest('[data-move]'); if (!b) return;
+    const [g, i, d] = b.dataset.move.split(',').map(Number);
+    const arr = data[g][1]; [arr[i], arr[i + d]] = [arr[i + d], arr[i]];
+    render(); markPending('顺序已保存，待上线');
+    document.querySelector(`[data-move="${g},${i + d},${d}"]`)?.focus();
+  });
+  function markPending(msg) {
+    document.getElementById('pending').hidden = false;
+    document.getElementById('pending-link').hidden = false;
+    Proto.toast(msg || '已保存，待上线');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>openmind-labs/agentkit · AI 开源项目趋势 · Silva</title>
+  <meta name="description" content="W11 AI 项目详情原型：仓库信息、摘要指标、历史趋势图与快照数据表。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="ai-trending"
+      data-proto-states="default:样本充足;insufficient:样本不足">
+<div id="site-header"></div>
+
+<main id="main" class="max-w-site mx-auto px-4 md:px-8">
+  <nav aria-label="面包屑" class="pt-8 text-[13px] text-ink-soft">
+    <ol class="flex flex-wrap items-center gap-1.5">
+      <li><a href="home.html" class="hover:text-ink">首页</a></li>
+      <li aria-hidden="true">/</li>
+      <li><a href="ai-trending.html" class="hover:text-ink">AI 趋势</a></li>
+      <li aria-hidden="true">/</li>
+      <li aria-current="page" class="text-ink-2 truncate max-w-[60vw]">openmind-labs/agentkit</li>
+    </ol>
+  </nav>
+
+  <!-- 仓库名称、说明、语言/主题、GitHub 链接 -->
+  <header class="pt-6 pb-8 border-b border-ink grid md:grid-cols-12 gap-6 items-end">
+    <div class="md:col-span-8 min-w-0">
+      <p class="text-[14px] text-ink-soft">openmind-labs /</p>
+      <h1 class="font-serif text-[34px] md:text-[48px] font-black leading-tight break-words">agentkit</h1>
+      <p class="mt-3 text-[16px] leading-8 text-ink-2 max-w-[38em]">面向生产环境的多智能体编排框架，提供任务分解、工具调用重试与可观测的执行轨迹。</p>
+      <ul class="mt-4 flex flex-wrap gap-2 text-[13px]" aria-label="语言与主题">
+        <li class="px-2.5 py-1 rounded-full bg-ink text-paper">Python</li>
+        <li class="px-2.5 py-1 rounded-full border border-ink/20 text-ink-2">#agents</li>
+        <li class="px-2.5 py-1 rounded-full border border-ink/20 text-ink-2">#llm</li>
+        <li class="px-2.5 py-1 rounded-full border border-ink/20 text-ink-2">#tool-use</li>
+      </ul>
+    </div>
+    <div class="md:col-span-4 md:text-right">
+      <a href="https://github.com/" target="_blank" rel="noopener" class="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-ink text-paper text-[15px] font-medium hover:bg-accent">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.7 1.7.3 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+        在 GitHub 查看<span class="sr-only">（外部链接）</span> ↗</a>
+      <p class="mt-3 text-[13px] text-ink-soft">最近快照 <time class="tnum" datetime="2026-11-20">2026-11-20</time> UTC</p>
+    </div>
+  </header>
+
+  <!-- 摘要指标 -->
+  <section aria-labelledby="metrics-title" class="pt-8">
+    <h2 id="metrics-title" class="sr-only">摘要指标</h2>
+    <dl class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 border-t border-l border-rule">
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">Stars</dt><dd class="mt-1 font-serif text-[26px] font-bold tnum">28,416</dd></div>
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">Forks</dt><dd class="mt-1 font-serif text-[26px] font-bold tnum">2,903</dd></div>
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">Open Issues</dt><dd class="mt-1 font-serif text-[26px] font-bold tnum">187</dd></div>
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">近 7 天 Stars</dt>
+        <dd class="mt-1 font-serif text-[26px] font-bold tnum text-ok" data-state="default">+4,812</dd>
+        <dd class="mt-2 text-[15px] text-ink-soft" data-state="insufficient" hidden>数据不足</dd></div>
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">近 30 天 Stars</dt>
+        <dd class="mt-1 font-serif text-[26px] font-bold tnum text-ok" data-state="default">+12,960</dd>
+        <dd class="mt-2 text-[15px] text-ink-soft" data-state="insufficient" hidden>数据不足</dd></div>
+      <div class="border-r border-b border-rule p-4"><dt class="text-[13px] text-ink-soft">最新 Release</dt><dd class="mt-1 text-[18px] font-medium tnum">v0.14.2</dd><dd class="text-[12px] text-ink-soft tnum">2026-11-15 发布</dd></div>
+    </dl>
+    <p class="mt-3 text-[13px] text-ink-soft">增长由每日快照相减得出，可能为负；首次收录不足对应天数时显示「数据不足」。</p>
+  </section>
+
+  <!-- 历史趋势 -->
+  <section aria-labelledby="trend-title" class="pt-14">
+    <div class="flex flex-wrap items-end justify-between gap-3 border-b border-ink pb-3">
+      <h2 id="trend-title" class="font-serif text-[24px] font-bold">历史趋势</h2>
+      <div data-state="default" class="inline-flex rounded-full border border-ink/20 bg-white p-0.5 text-[14px]" role="group" aria-label="切换指标">
+        <button type="button" data-metric="stars" aria-pressed="true" class="px-4 py-1.5 rounded-full aria-pressed:bg-ink aria-pressed:text-paper">Stars</button>
+        <button type="button" data-metric="forks" aria-pressed="false" class="px-4 py-1.5 rounded-full aria-pressed:bg-ink aria-pressed:text-paper">Forks</button>
+      </div>
+    </div>
+
+    <div data-state="default">
+      <figure class="pt-6">
+        <div class="relative">
+          <svg id="chart" class="w-full h-[260px] md:h-[340px] block" role="img" tabindex="0" aria-describedby="chart-help"></svg>
+          <div id="tip" hidden class="pointer-events-none absolute z-10 rounded-md bg-ink text-paper text-[13px] px-3 py-2 shadow-lg whitespace-nowrap"></div>
+        </div>
+        <figcaption id="chart-help" class="mt-2 text-[13px] text-ink-soft">近 60 天每日快照（UTC）。鼠标悬停或聚焦图表后用左右方向键查看每一天的数值；完整数值见下方数据表。</figcaption>
+      </figure>
+
+      <details class="mt-8 group" open>
+        <summary class="cursor-pointer text-[15px] font-medium list-none flex items-center gap-2"><span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">▸</span>快照数据表（最近 14 天）</summary>
+        <div class="mt-3 overflow-x-auto">
+          <table class="w-full text-[14px] min-w-[520px]">
+            <thead><tr class="text-left text-ink-soft border-b border-rule">
+              <th scope="col" class="py-2.5 pr-3 font-normal">快照日期（UTC）</th>
+              <th scope="col" class="py-2.5 pr-3 font-normal text-right">Stars</th>
+              <th scope="col" class="py-2.5 pr-3 font-normal text-right">较前一日</th>
+              <th scope="col" class="py-2.5 pr-3 font-normal text-right">Forks</th>
+              <th scope="col" class="py-2.5 font-normal text-right">Open Issues</th>
+            </tr></thead>
+            <tbody id="snap-rows" class="divide-y divide-rule"></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <!-- 样本不足 -->
+    <div data-state="insufficient" hidden class="mt-6 grid md:grid-cols-12 gap-6 items-center border border-dashed border-ink/30 rounded-md p-6 md:p-8">
+      <div class="md:col-span-8">
+        <h3 class="font-serif text-[20px] font-bold">历史样本还不够画出趋势</h3>
+        <p class="mt-2 text-[15px] leading-7 text-ink-2">这个仓库 <time datetime="2026-11-18" class="tnum">2026-11-18</time> 才进入收录范围，目前只有 3 份每日快照。至少需要 7 份快照才能计算近 7 天增长并绘制曲线。</p>
+      </div>
+      <table class="md:col-span-4 text-[14px] w-full">
+        <caption class="text-left text-[13px] text-ink-soft mb-1">已有快照</caption>
+        <tbody class="divide-y divide-rule tnum">
+          <tr><td class="py-1.5">2026-11-18</td><td class="py-1.5 text-right">27,102</td></tr>
+          <tr><td class="py-1.5">2026-11-19</td><td class="py-1.5 text-right">27,780</td></tr>
+          <tr><td class="py-1.5">2026-11-20</td><td class="py-1.5 text-right">28,416</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="pt-12"><a href="ai-trending.html" class="text-[15px] text-accent underline underline-offset-4">返回 AI 趋势榜</a></p>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+(function () {
+  // mock 60 days of snapshots ending 2026-11-20
+  const N = 60, end = Date.UTC(2026, 10, 20);
+  const snaps = [];
+  let s = 15420, f = 1710;
+  for (let i = 0; i < N; i++) {
+    const t = new Date(end - (N - 1 - i) * 864e5);
+    const boost = i > 44 ? 520 : i > 30 ? 260 : 150;
+    s += Math.round(boost * (0.6 + Math.abs(Math.sin(i * 1.7)) * 0.8)) - (i === 22 ? 380 : 0);
+    f += Math.round(boost * 0.09 * (0.5 + Math.abs(Math.cos(i))));
+    snaps.push({ d: t.toISOString().slice(0, 10), stars: s, forks: f, issues: 120 + Math.round(60 * Math.abs(Math.sin(i / 6))) });
+  }
+  // align last value with header metrics
+  const k = 28416 - snaps[N - 1].stars; snaps.forEach(x => x.stars += k);
+  const kf = 2903 - snaps[N - 1].forks; snaps.forEach(x => x.forks += kf);
+  snaps[N - 1].issues = 187;
+
+  const fmt = n => n.toLocaleString('en-US');
+  const svg = document.getElementById('chart');
+  const tip = document.getElementById('tip');
+  let metric = 'stars', idx = N - 1, geo = null;
+
+  function draw() {
+    const W = svg.clientWidth || 800, H = svg.clientHeight || 300;
+    const m = { l: 56, r: 16, t: 16, b: 28 };
+    const vals = snaps.map(x => x[metric]);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+    const X = i => m.l + (i / (N - 1)) * (W - m.l - m.r);
+    const Y = v => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+    geo = { X, Y, W, H, m };
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const ticks = 4;
+    let grid = '';
+    for (let i = 0; i <= ticks; i++) {
+      const v = lo + (hi - lo) * i / ticks, y = Y(v);
+      grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="#DCD6CB" stroke-width="1"/>
+               <text x="${m.l - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="#6A6F79" class="tnum">${fmt(Math.round(v))}</text>`;
+    }
+    const xl = [0, 15, 30, 45, N - 1].map(i => `<text x="${X(i)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === N - 1 ? 'end' : 'middle'}" font-size="11" fill="#6A6F79">${snaps[i].d.slice(5)}</text>`).join('');
+    const line = vals.map((v, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1)).join(' ');
+    const area = line + ` L${X(N - 1)} ${H - m.b} L${X(0)} ${H - m.b} Z`;
+    svg.innerHTML = `${grid}${xl}
+      <path d="${area}" fill="#27467A" fill-opacity="0.07"/>
+      <path d="${line}" fill="none" stroke="#27467A" stroke-width="2" stroke-linejoin="round"/>
+      <line id="cur-line" y1="${m.t}" y2="${H - m.b}" stroke="#1D2330" stroke-opacity=".35" stroke-dasharray="3 3"/>
+      <circle id="cur-dot" r="4.5" fill="#fff" stroke="#27467A" stroke-width="2"/>`;
+    const first = vals[0], last = vals[N - 1];
+    svg.setAttribute('aria-label', `${metric === 'stars' ? 'Stars' : 'Forks'} 近 60 天趋势：从 ${snaps[0].d} 的 ${fmt(first)} 到 ${snaps[N - 1].d} 的 ${fmt(last)}。`);
+    focus(idx, false);
+  }
+  function focus(i, show = true) {
+    idx = Math.max(0, Math.min(N - 1, i));
+    const { X, Y } = geo, x = X(idx), y = Y(snaps[idx][metric]);
+    svg.querySelector('#cur-line').setAttribute('x1', x); svg.querySelector('#cur-line').setAttribute('x2', x);
+    const dot = svg.querySelector('#cur-dot'); dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    if (!show) { tip.hidden = true; return; }
+    const prev = idx ? snaps[idx][metric] - snaps[idx - 1][metric] : null;
+    tip.innerHTML = `<div class="opacity-70 tnum">${snaps[idx].d}</div><div class="tnum font-medium">${metric === 'stars' ? 'Stars' : 'Forks'} ${fmt(snaps[idx][metric])}</div>${prev === null ? '' : `<div class="tnum opacity-80">较前一日 ${prev >= 0 ? '+' : '−'}${fmt(Math.abs(prev))}</div>`}`;
+    tip.hidden = false;
+    const r = svg.getBoundingClientRect(), sx = r.width / geo.W;
+    let left = x * sx + 12; if (left + tip.offsetWidth > r.width) left = x * sx - tip.offsetWidth - 12;
+    tip.style.left = left + 'px'; tip.style.top = Math.max(0, y * (r.height / geo.H) - 30) + 'px';
+  }
+  svg.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * (geo.W / r.width);
+    focus(Math.round((x - geo.m.l) / (geo.W - geo.m.l - geo.m.r) * (N - 1)));
+  });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; });
+  svg.addEventListener('blur', () => { tip.hidden = true; });
+  svg.addEventListener('focus', () => focus(idx));
+  svg.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); focus(idx - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); focus(idx + 1); }
+    if (e.key === 'Home') { e.preventDefault(); focus(0); }
+    if (e.key === 'End') { e.preventDefault(); focus(N - 1); }
+  });
+  document.querySelectorAll('[data-metric]').forEach(b => b.addEventListener('click', () => {
+    metric = b.dataset.metric;
+    document.querySelectorAll('[data-metric]').forEach(x => x.setAttribute('aria-pressed', x === b));
+    draw();
+  }));
+  addEventListener('resize', draw);
+  document.addEventListener('proto:state', e => { if (e.detail === 'default') requestAnimationFrame(draw); });
+
+  document.getElementById('snap-rows').innerHTML = snaps.slice(-14).reverse().map((x, i, arr) => {
+    const p = arr[i + 1] || snaps[N - 15];
+    const d = x.stars - p.stars;
+    return `<tr><td class="py-2 pr-3 tnum">${x.d}</td><td class="py-2 pr-3 text-right tnum">${fmt(x.stars)}</td>
+      <td class="py-2 pr-3 text-right tnum ${d < 0 ? 'text-bad' : 'text-ok'}">${d < 0 ? '−' : '+'}${fmt(Math.abs(d))}</td>
+      <td class="py-2 pr-3 text-right tnum">${fmt(x.forks)}</td><td class="py-2 text-right tnum">${x.issues}</td></tr>`;
+  }).join('');
+  draw();
+})();
+</script>
+</body>
+</html>

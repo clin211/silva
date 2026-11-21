@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>postgres-mcp · MCP Server 目录 · Silva</title>
+  <meta name="description" content="W13 MCP 条目详情原型：名称、摘要与外部链接，详情正文与版本列表，元数据右栏。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="mcp"
+      data-proto-states="default:已核对;unverified:尚未核对">
+<div id="site-header"></div>
+
+<main id="main" class="max-w-site mx-auto px-4 md:px-8">
+  <nav aria-label="面包屑" class="pt-8 text-[13px] text-ink-soft">
+    <ol class="flex flex-wrap items-center gap-1.5">
+      <li><a href="home.html" class="hover:text-ink">首页</a></li>
+      <li aria-hidden="true">/</li>
+      <li><a href="mcp.html" class="hover:text-ink">MCP 目录</a></li>
+      <li aria-hidden="true">/</li>
+      <li aria-current="page" class="text-ink-2">postgres-mcp</li>
+    </ol>
+  </nav>
+
+  <!-- 名称、摘要与外部链接 -->
+  <header class="pt-6 pb-8 border-b border-ink">
+    <p class="text-[14px] text-ink-soft"><a href="mcp.html?cat=%E6%95%B0%E6%8D%AE%E5%BA%93" class="hover:text-accent">数据库</a></p>
+    <h1 class="mt-1 font-serif text-[34px] md:text-[48px] font-black leading-tight break-all">postgres-mcp</h1>
+    <p class="mt-3 text-[17px] leading-8 text-ink-2 max-w-[40em]">让模型以只读方式查询 PostgreSQL：列出 schema 与表结构，执行受限的 SELECT 并返回结果。</p>
+    <ul class="mt-6 flex flex-wrap gap-3 text-[14px]" aria-label="外部链接">
+      <li><a href="https://github.com/" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 h-10 px-4 rounded-full bg-ink text-paper hover:bg-accent">Repository<span class="sr-only">（外部链接）</span> ↗</a></li>
+      <li><a href="https://example.com/" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 h-10 px-4 rounded-full border border-ink/25 hover:border-ink">Homepage<span class="sr-only">（外部链接）</span> ↗</a></li>
+      <li><a href="https://example.com/docs" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 h-10 px-4 rounded-full border border-ink/25 hover:border-ink">Documentation<span class="sr-only">（外部链接）</span> ↗</a></li>
+    </ul>
+  </header>
+
+  <div class="pt-10 grid lg:grid-cols-12 gap-10 lg:gap-16">
+    <!-- 元数据：桌面右栏，手机在正文前按顺序叠放 -->
+    <aside class="lg:col-span-4 lg:order-2" aria-labelledby="meta-title">
+      <div class="lg:sticky lg:top-24 rounded-md border border-rule bg-white/60 p-5">
+        <h2 id="meta-title" class="text-[15px] font-medium">条目信息</h2>
+        <dl class="mt-4 grid grid-cols-[6.5rem_1fr] gap-y-3 text-[14px]">
+          <dt class="text-ink-soft">传输方式</dt>
+          <dd class="flex flex-wrap gap-1.5"><span class="px-1.5 py-0.5 rounded bg-paper-2 font-code text-[12px]">stdio</span><span class="px-1.5 py-0.5 rounded bg-paper-2 font-code text-[12px]">streamable-http</span></dd>
+          <dt class="text-ink-soft">实现语言</dt><dd>TypeScript</dd>
+          <dt class="text-ink-soft">License</dt><dd>MIT</dd>
+          <dt class="text-ink-soft">最新版本</dt><dd class="tnum">v1.4.0</dd>
+          <dt class="text-ink-soft">来源</dt><dd>社区维护，作者自述于仓库 README</dd>
+          <dt class="text-ink-soft">核验</dt>
+          <dd data-state="default">元数据已核对<br><time class="tnum text-ink-soft" datetime="2026-10-02">2026-10-02</time></dd>
+          <dd data-state="unverified" hidden class="text-ink-soft">元数据尚未核对</dd>
+        </dl>
+        <p class="mt-5 pt-4 border-t border-rule text-[12px] leading-6 text-ink-soft">核验只表示维护者核对过名称、链接、许可证等目录信息，不代表安全认证、运行测试或服务可用。传输方式为项目自行声明。</p>
+      </div>
+    </aside>
+
+    <div class="lg:col-span-8 lg:order-1 min-w-0">
+      <article aria-labelledby="detail-title">
+        <h2 id="detail-title" class="font-serif text-[24px] font-bold">详情</h2>
+        <div class="prose-ink mt-4 max-w-prose">
+          <p>postgres-mcp 通过一个只读数据库账号连接 PostgreSQL，向客户端暴露三个工具：列出 schema、读取表结构、执行 SELECT。写语句在解析阶段被拒绝，单次查询默认限制返回 500 行。</p>
+          <h3>适合的场景</h3>
+          <ul>
+            <li>让模型在回答前先查看真实的表结构，减少臆造的列名。</li>
+            <li>在本地开发库上做探索性查询与数据核对。</li>
+          </ul>
+          <h3>配置示例</h3>
+<pre><code>{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "postgres-mcp", "postgresql://readonly@localhost/app"]
+    }
+  }
+}</code></pre>
+          <p>连接串由使用者自行在本地客户端配置，本站不保存任何密钥，也不代为调用。</p>
+        </div>
+      </article>
+
+      <section aria-labelledby="versions-title" class="mt-14">
+        <h2 id="versions-title" class="font-serif text-[24px] font-bold border-b border-ink pb-3">版本</h2>
+        <ol class="divide-y divide-rule">
+          <li class="py-4 grid sm:grid-cols-[7rem_8rem_1fr] gap-x-4 gap-y-1">
+            <span class="font-medium tnum">v1.4.0</span><time class="text-[14px] text-ink-soft tnum" datetime="2026-09-28">2026-09-28</time>
+            <span class="text-[14px] text-ink-2">新增 streamable-http 传输；查询结果默认上限改为 500 行。</span></li>
+          <li class="py-4 grid sm:grid-cols-[7rem_8rem_1fr] gap-x-4 gap-y-1">
+            <span class="font-medium tnum">v1.3.2</span><time class="text-[14px] text-ink-soft tnum" datetime="2026-07-11">2026-07-11</time>
+            <span class="text-[14px] text-ink-2">修复带引号的 schema 名称无法读取的问题。</span></li>
+          <li class="py-4 grid sm:grid-cols-[7rem_8rem_1fr] gap-x-4 gap-y-1">
+            <span class="font-medium tnum">v1.0.0</span><time class="text-[14px] text-ink-soft tnum" datetime="2026-03-02">2026-03-02</time>
+            <span class="text-[14px] text-ink-2">首个稳定版本，提供 stdio 传输。</span></li>
+        </ol>
+      </section>
+
+      <p class="mt-12"><a href="mcp.html" class="text-[15px] text-accent underline underline-offset-4">返回 MCP 目录</a></p>
+    </div>
+  </div>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

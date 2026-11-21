@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>项目 · Silva 后台</title>
+  <meta name="description" content="A12 项目列表：项目状态、站点上线状态、精选与排序。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="projects" data-crumbs="资源|项目" data-proto-roles="editor"
+      data-proto-states="default:有数据;empty:暂无项目;noresult:筛选无结果">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">项目</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">「项目状态」描述项目本身的进展；「站点状态」表示这条记录是否已随站点版本上线。</p>
+    </div>
+    <a href="project-new.html" class="inline-flex items-center h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">新建项目</a>
+  </div>
+
+  <div class="mt-6 flex flex-wrap gap-2" role="search">
+    <label><span class="sr-only">搜索项目</span><input type="search" placeholder="搜索名称或 slug" class="h-9 w-56 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></label>
+    <label><span class="sr-only">项目状态</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部项目状态</option><option>开发中</option><option>维护中</option><option>已归档</option></select></label>
+    <label><span class="sr-only">站点状态</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部站点状态</option><option>已上线</option><option>待上线</option><option>已下架</option></select></label>
+    <label class="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-ui-line bg-white text-[14px]"><input type="checkbox"> 只看精选</label>
+  </div>
+
+  <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-x-auto">
+    <table class="tbl min-w-[860px]">
+      <thead><tr><th class="w-16">排序</th><th>项目</th><th>项目状态</th><th>站点状态</th><th>精选</th><th>更新时间</th><th class="text-right">操作</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="flex items-center gap-1"><span class="tnum w-4">1</span><button class="text-ui-sub px-1 disabled:opacity-30" aria-label="上移" disabled>↑</button><button class="text-ui-sub px-1" aria-label="下移" data-toast="排序已保存，待上线">↓</button></div></td>
+          <td><a href="project-edit.html" class="font-medium hover:text-accent">Silva Hub</a><div class="text-[12px] text-ui-sub font-code">silva-hub</div></td>
+          <td><span class="chip chip-ok">维护中</span></td>
+          <td><span class="chip chip-warn">待上线</span> <a href="publishing-detail.html" class="text-[12px] text-accent ml-1">任务</a></td>
+          <td><span class="text-[13px]">★ 精选</span></td>
+          <td class="tnum text-[13px] text-ui-sub">2026-11-20 10:12</td>
+          <td class="text-right"><a href="project-edit.html" class="text-accent text-[13px]">编辑</a></td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-1"><span class="tnum w-4">2</span><button class="text-ui-sub px-1" aria-label="上移" data-toast="排序已保存，待上线">↑</button><button class="text-ui-sub px-1" aria-label="下移" data-toast="排序已保存，待上线">↓</button></div></td>
+          <td><a href="project-edit.html" class="font-medium hover:text-accent">tidewatch</a><div class="text-[12px] text-ui-sub font-code">tidewatch</div></td>
+          <td><span class="chip chip-info">开发中</span></td>
+          <td><span class="chip chip-ok">已上线</span></td>
+          <td><span class="text-[13px]">★ 精选</span></td>
+          <td class="tnum text-[13px] text-ui-sub">2026-11-08 22:40</td>
+          <td class="text-right"><a href="project-edit.html" class="text-accent text-[13px]">编辑</a></td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-1"><span class="tnum w-4">3</span><button class="text-ui-sub px-1" aria-label="上移" data-toast="排序已保存，待上线">↑</button><button class="text-ui-sub px-1" aria-label="下移" data-toast="排序已保存，待上线">↓</button></div></td>
+          <td><a href="project-edit.html" class="font-medium hover:text-accent">pgmigrate-lint</a><div class="text-[12px] text-ui-sub font-code">pgmigrate-lint</div></td>
+          <td><span class="chip chip-mute">已归档</span></td>
+          <td><span class="chip chip-ok">已上线</span></td>
+          <td><span class="text-[13px]">★ 精选</span></td>
+          <td class="tnum text-[13px] text-ui-sub">2026-06-02 09:15</td>
+          <td class="text-right"><a href="project-edit.html" class="text-accent text-[13px]">编辑</a></td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-1"><span class="tnum w-4">4</span><button class="text-ui-sub px-1" aria-label="上移" data-toast="排序已保存，待上线">↑</button><button class="text-ui-sub px-1" aria-label="下移" data-toast="排序已保存，待上线">↓</button></div></td>
+          <td><a href="project-edit.html" class="font-medium hover:text-accent">cargo-feature-matrix</a><div class="text-[12px] text-ui-sub font-code">cargo-feature-matrix</div></td>
+          <td><span class="chip chip-ok">维护中</span></td>
+          <td><span class="chip chip-ok">已上线</span></td>
+          <td class="text-[13px] text-ui-sub">否</td>
+          <td class="tnum text-[13px] text-ui-sub">2026-04-19 18:02</td>
+          <td class="text-right"><a href="project-edit.html" class="text-accent text-[13px]">编辑</a></td>
+        </tr>
+        <tr>
+          <td><div class="flex items-center gap-1"><span class="tnum w-4">5</span><button class="text-ui-sub px-1" aria-label="上移" data-toast="排序已保存，待上线">↑</button><button class="text-ui-sub px-1 disabled:opacity-30" aria-label="下移" disabled>↓</button></div></td>
+          <td><a href="project-edit.html" class="font-medium hover:text-accent">markdown-safe-render</a><div class="text-[12px] text-ui-sub font-code">markdown-safe-render</div></td>
+          <td><span class="chip chip-info">开发中</span></td>
+          <td><span class="chip chip-mute">已下架</span></td>
+          <td class="text-[13px] text-ui-sub">否</td>
+          <td class="tnum text-[13px] text-ui-sub">2026-03-01 14:30</td>
+          <td class="text-right"><a href="project-edit.html" class="text-accent text-[13px]">编辑</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div data-state="default" class="mt-4 flex items-center justify-between text-[13px] text-ui-sub">
+    <span>共 <span class="tnum">5</span> 个项目</span>
+    <span>首页最多展示 3 个精选项目，按排序取前 3 个。</span>
+  </div>
+
+  <div data-state="empty" hidden class="mt-4 bg-white border border-dashed border-ui-line rounded-lg p-12 text-center">
+    <p class="text-[15px]">还没有项目。</p>
+    <p class="mt-1 text-[13px] text-ui-sub">新建项目并保存后，会随下一个站点版本出现在项目展览。</p>
+    <a href="project-new.html" class="mt-4 inline-flex items-center h-9 px-4 rounded-md bg-accent text-white text-[14px]">新建项目</a>
+  </div>
+  <div data-state="noresult" hidden class="mt-4 bg-white border border-ui-line rounded-lg p-10 text-center">
+    <p class="text-[15px]">没有符合条件的项目。</p>
+    <button type="button" class="mt-3 text-[14px] text-accent">清除筛选</button>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

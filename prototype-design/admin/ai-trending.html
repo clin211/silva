@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 项目管理 · Silva 后台</title>
+  <meta name="description" content="A19 AI 项目管理原型：仓库列表、分类、精选与隐藏状态，限于隐藏/恢复、精选与分类修正。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+  <style>
+    .fld { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#5E6470; }
+    .inp { height:38px; border:1px solid #E2E4E9; border-radius:6px; padding:0 12px; font-size:14px; color:#1D2330; background:#fff; width:100%; }
+    textarea.inp { height:auto; padding:10px 12px; line-height:1.7; }
+  </style>
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="ai-trending" data-crumbs="运行|AI 趋势" data-proto-roles="editor"
+      data-proto-states="default:有数据;nobatch:尚无成功批次;error:请求失败">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">AI 项目管理</h1>
+      <p class="mt-1 text-[14px] text-ui-sub max-w-[50em]">仓库与指标由每日采集自动生成，不在这里录入或修改 Stars、Forks 等数据。人工操作仅限隐藏/恢复、精选与分类修正，保存后随站点发布流程上线。</p>
+    </div>
+    <a href="ai-runs.html" class="h-9 inline-flex items-center px-3.5 rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">采集批次</a>
+  </div>
+
+  <!-- 采集摘要 -->
+  <div data-state="default error" class="mt-5 grid sm:grid-cols-3 gap-3">
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><div class="text-[12px] text-ui-sub">当前公开榜单日期</div><div class="mt-1 text-[18px] font-semibold tnum">2026-11-20 <span class="text-[13px] font-normal text-ui-sub">UTC</span></div></div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><div class="text-[12px] text-ui-sub">最近一次成功采集</div><div class="mt-1 text-[18px] font-semibold tnum">11-21 01:12 <span class="text-[13px] font-normal text-ui-sub">UTC</span></div><a href="ai-runs.html" class="text-[12px] text-accent hover:underline">批次 2026-11-21</a></div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><div class="text-[12px] text-ui-sub">收录仓库</div><div class="mt-1 text-[18px] font-semibold tnum">1,284 <span class="text-[13px] font-normal text-ui-sub">其中隐藏 7、精选 4</span></div></div>
+  </div>
+  <div data-state="nobatch" hidden class="mt-5 border border-warn/30 bg-warn-tint rounded-lg px-4 py-3 text-[14px] text-warn">尚无成功的采集批次，公开榜单显示「暂无榜单数据」。<a href="ai-runs.html" class="underline">查看采集批次</a></div>
+
+  <!-- 筛选 -->
+  <form class="mt-5 bg-white border border-ui-line rounded-lg p-3 flex flex-wrap items-end gap-3" onsubmit="event.preventDefault()" aria-label="筛选仓库">
+    <label class="flex flex-col gap-1 text-[12px] text-ui-sub grow sm:grow-0">仓库<input type="search" placeholder="owner/name" class="h-9 w-full sm:w-56 rounded-md border border-ui-line px-3 text-[14px] text-ui-text"></label>
+    <label class="flex flex-col gap-1 text-[12px] text-ui-sub">分类<select class="h-9 rounded-md border border-ui-line px-2 text-[14px] text-ui-text bg-white"><option>全部</option><option>Agent 框架</option><option>推理与部署</option><option>向量数据库</option><option>未分类</option></select></label>
+    <label class="flex flex-col gap-1 text-[12px] text-ui-sub">展示<select class="h-9 rounded-md border border-ui-line px-2 text-[14px] text-ui-text bg-white"><option>全部</option><option>公开</option><option>已隐藏</option><option>精选</option></select></label>
+    <label class="flex flex-col gap-1 text-[12px] text-ui-sub">排序<select class="h-9 rounded-md border border-ui-line px-2 text-[14px] text-ui-text bg-white"><option>近 7 天 Stars 增长</option><option>近 30 天 Stars 增长</option><option>Stars 总数</option><option>最近快照</option></select></label>
+  </form>
+
+  <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tbl min-w-[960px]">
+        <thead><tr><th>仓库</th><th>分类</th><th class="text-right">近 7 天 Stars</th><th class="text-right">Stars</th><th>最近快照</th><th>展示</th><th class="text-right">操作</th></tr></thead>
+        <tbody id="repo-body">
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">openmind-labs/agentkit</a><div class="text-[12px] text-ui-sub">Python</div></td><td>Agent 框架</td><td class="text-right tnum text-ok">+4,812</td><td class="text-right tnum">38,402</td><td class="tnum text-ui-sub">11-21 01:08</td>
+            <td><span class="chip chip-info">精选</span> <span class="chip chip-ok">公开</span></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-accent hover:underline" data-on="1">取消精选</button><button class="hd ml-3 text-accent hover:underline">隐藏</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">vecstore/lancet</a><div class="text-[12px] text-ui-sub">Rust</div></td><td>向量数据库</td><td class="text-right tnum text-ok">+3,207</td><td class="text-right tnum">21,930</td><td class="tnum text-ui-sub">11-21 01:08</td>
+            <td><span class="chip chip-ok">公开</span></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-accent hover:underline">设为精选</button><button class="hd ml-3 text-accent hover:underline">隐藏</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">tinyllm/infer-rs</a><div class="text-[12px] text-ui-sub">Rust</div></td><td>推理与部署 <span class="text-[12px] text-ui-sub">（人工修正）</span></td><td class="text-right tnum text-ok">+2,960</td><td class="text-right tnum">12,118</td><td class="tnum text-ui-sub">11-21 01:09</td>
+            <td><span class="chip chip-ok">公开</span></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-accent hover:underline">设为精选</button><button class="hd ml-3 text-accent hover:underline">隐藏</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">promptcraft/awesome-prompts</a><div class="text-[12px] text-ui-sub">—</div></td><td>未分类</td><td class="text-right tnum text-ok">+1,044</td><td class="text-right tnum">9,870</td><td class="tnum text-ui-sub">11-21 01:10</td>
+            <td><span class="chip chip-mute">已隐藏</span><div class="mt-1 text-[12px] text-ui-sub">非软件项目</div></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-ui-sub opacity-60 cursor-not-allowed" disabled title="已隐藏的仓库不能设为精选">设为精选</button><button class="hd ml-3 text-accent hover:underline" data-hidden="1">恢复</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">ragflow-lite/ragx</a><div class="text-[12px] text-ui-sub">TypeScript</div></td><td>RAG</td><td class="text-right tnum text-bad">−312</td><td class="text-right tnum">6,204</td><td class="tnum text-ui-sub">11-21 01:10</td>
+            <td><span class="chip chip-ok">公开</span></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-accent hover:underline">设为精选</button><button class="hd ml-3 text-accent hover:underline">隐藏</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+          <tr><td><a href="ai-repo-detail.html" class="font-medium text-accent hover:underline">newcomer/mini-agent</a><div class="text-[12px] text-ui-sub">Go</div></td><td>Agent 框架</td><td class="text-right tnum text-ui-sub">数据不足</td><td class="text-right tnum">1,502</td><td class="tnum text-ui-sub">11-21 01:11</td>
+            <td><span class="chip chip-ok">公开</span></td>
+            <td class="text-right whitespace-nowrap"><button class="ft text-accent hover:underline">设为精选</button><button class="hd ml-3 text-accent hover:underline">隐藏</button><button class="ct ml-3 text-accent hover:underline" data-open="drawer-cat">修正分类</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-ui-line text-[13px] text-ui-sub">
+      <span class="tnum">共 1,284 个仓库，第 1 / 65 页</span>
+      <nav aria-label="分页" class="flex gap-1"><button class="h-8 px-3 rounded-md border border-ui-line bg-white disabled:opacity-50" disabled>上一页</button><button class="h-8 px-3 rounded-md border border-ui-line bg-white hover:bg-ui-bg">下一页</button></nav>
+    </div>
+  </div>
+  <p data-state="default" class="mt-3 text-[12px] text-ui-sub">精选单独展示在公开榜单的精选区，不改变自然排名。增长为负时保留负值；样本不足显示「数据不足」。</p>
+
+  <div data-state="nobatch" hidden class="mt-4 bg-white border border-ui-line rounded-lg px-6 py-14 text-center">
+    <p class="text-[16px] font-medium">暂无仓库数据</p>
+    <p class="mt-1 text-[14px] text-ui-sub">首个采集批次成功后，收录范围内的仓库会出现在这里。</p>
+  </div>
+  <div data-state="error" hidden role="alert" class="mt-4 border border-bad/30 bg-bad-tint rounded-lg px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+    <p class="text-[14px] text-bad">仓库列表加载失败（服务端返回 500）。</p>
+    <button type="button" class="h-9 px-3.5 rounded-md bg-white border border-ui-line text-[14px]" data-toast="正在重新加载">重试</button>
+  </div>
+
+  <!-- 修正分类抽屉 -->
+  <div id="drawer-cat" data-overlay hidden class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-cat-t">
+    <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+    <aside class="absolute right-0 top-0 h-full w-[420px] max-w-full bg-white shadow-xl flex flex-col">
+      <div class="flex items-center justify-between px-5 h-14 border-b border-ui-line"><h2 id="drawer-cat-t" class="text-[16px] font-semibold">修正分类</h2><button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button></div>
+      <form class="flex-1 overflow-y-auto p-5 space-y-4" onsubmit="event.preventDefault()">
+        <div class="text-[14px]"><div class="text-ui-sub text-[12px]">仓库</div><div class="font-medium" id="cat-repo">vecstore/lancet</div></div>
+        <div class="text-[14px]"><div class="text-ui-sub text-[12px]">自动分类（来自 topics）</div><div>向量数据库</div></div>
+        <label class="fld">人工分类
+          <select class="inp"><option>沿用自动分类</option><option>Agent 框架</option><option>推理与部署</option><option selected>向量数据库</option><option>RAG</option></select>
+        </label>
+        <label class="fld">修正原因（记入审计）<textarea rows="3" class="inp" placeholder="例如：topics 标注不准确"></textarea></label>
+        <p class="text-[12px] text-ui-sub">只影响分类筛选与展示，不修改采集数据，也不改变自然排名。</p>
+      </form>
+      <div class="px-5 py-3 border-t border-ui-line flex justify-end gap-2">
+        <button type="button" data-close class="h-9 px-3.5 rounded-md border border-ui-line text-[14px]">取消</button>
+        <button type="button" data-close data-toast="分类已保存，待上线" data-toast-tone="ok" class="h-9 px-3.5 rounded-md bg-accent text-white text-[14px]">保存</button>
+      </div>
+    </aside>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  document.getElementById('repo-body').addEventListener('click', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const name = tr.querySelector('a').textContent;
+    if (e.target.closest('.ct')) document.getElementById('cat-repo').textContent = name;
+    const hd = e.target.closest('.hd');
+    if (hd) { const hidden = hd.dataset.hidden === '1'; hd.dataset.hidden = hidden ? '0' : '1'; hd.textContent = hidden ? '隐藏' : '恢复'; Proto.toast(`${name} 已${hidden ? '恢复' : '隐藏'}，待上线`); }
+    const ft = e.target.closest('.ft');
+    if (ft && !ft.disabled) { const on = ft.dataset.on === '1'; ft.dataset.on = on ? '0' : '1'; ft.textContent = on ? '设为精选' : '取消精选'; Proto.toast(`${name} 已${on ? '取消精选' : '设为精选'}，待上线`); }
+  });
+</script>
+</body>
+</html>

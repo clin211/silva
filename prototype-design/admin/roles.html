@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>角色 · Silva 后台</title>
+  <meta name="description" content="A25 角色原型：内置角色只读列表与权限摘要。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="roles" data-crumbs="系统|账户@users.html|角色" data-proto-roles="admin">
+<main id="admin-main" class="max-w-[1100px]">
+  <h1 class="text-[22px] font-semibold">角色</h1>
+  <p class="mt-1 text-[14px] text-ui-sub">一期只有三个内置角色，权限定义不可编辑。给账户分配角色请到 <a href="users.html" class="text-accent underline">账户</a>。</p>
+
+  <div class="mt-5 grid gap-4 lg:grid-cols-3">
+    <section aria-labelledby="r-author" class="rounded-lg border border-ui-line bg-white p-5">
+      <div class="flex items-baseline justify-between"><h2 id="r-author" class="text-[16px] font-semibold">Author</h2><span class="text-[13px] text-ui-sub tnum">2 个账户</span></div>
+      <p class="mt-1 text-[13px] text-ui-sub">作者，只处理自己的内容。</p>
+      <ul class="mt-4 space-y-2 text-[14px]">
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>创建文章，读取和编辑自己的文章与修订</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>上传并引用自己已校验的媒体</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>提交指定修订审核</li>
+        <li class="flex gap-2 text-ui-sub"><span aria-hidden="true">✕</span>审核、发布或取消发布</li>
+      </ul>
+    </section>
+    <section aria-labelledby="r-editor" class="rounded-lg border border-ui-line bg-white p-5">
+      <div class="flex items-baseline justify-between"><h2 id="r-editor" class="text-[16px] font-semibold">Editor</h2><span class="text-[13px] text-ui-sub tnum">1 个账户</span></div>
+      <p class="mt-1 text-[13px] text-ui-sub">编辑，负责审核、发布与目录维护。</p>
+      <ul class="mt-4 space-y-2 text-[14px]">
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>管理所有文章和媒体</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>审核指定修订，发布与取消发布</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>维护分类标签、项目、工具、个人资料、MCP 目录</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>调整 AI 项目展示，查看相关任务</li>
+        <li class="flex gap-2 text-ui-sub"><span aria-hidden="true">✕</span>账户管理、触发采集、重试发布、审计与系统健康</li>
+      </ul>
+    </section>
+    <section aria-labelledby="r-admin" class="rounded-lg border border-ui-line bg-white p-5">
+      <div class="flex items-baseline justify-between"><h2 id="r-admin" class="text-[16px] font-semibold">Admin</h2><span class="text-[13px] text-ui-sub tnum">1 个账户</span></div>
+      <p class="mt-1 text-[13px] text-ui-sub">管理员，包含 Editor 的全部权限。</p>
+      <ul class="mt-4 space-y-2 text-[14px]">
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>Editor 的全部权限</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>创建、停用账户，分配内置角色</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>请求当日未成功的采集批次</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>重试仍为最新目标的失败发布</li>
+        <li class="flex gap-2"><span class="text-ok" aria-hidden="true">✓</span>查看审计日志与系统健康</li>
+      </ul>
+    </section>
+  </div>
+
+  <section aria-labelledby="matrix-h" class="mt-6 rounded-lg border border-ui-line bg-white">
+    <h2 id="matrix-h" class="px-5 pt-5 text-[15px] font-semibold">权限明细</h2>
+    <div class="relative mt-3 overflow-x-auto">
+      <table class="tbl min-w-[620px]">
+        <thead><tr><th>权限</th><th class="text-center">Author</th><th class="text-center">Editor</th><th class="text-center">Admin</th></tr></thead>
+        <tbody class="[&_td:not(:first-child)]:text-center">
+          <tr><td>posts.write_own</td><td>可以</td><td>可以</td><td>可以</td></tr>
+          <tr><td>posts.write_any</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>revisions.review</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>posts.publish / unpublish</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>catalog.manage（分类、项目、工具、资料、MCP）</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>ai_trending.curate</td><td class="text-ui-sub">—</td><td>可以</td><td>可以</td></tr>
+          <tr><td>ai_trending.trigger_run</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>
+          <tr><td>publishing.retry</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>
+          <tr><td>users.manage</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>
+          <tr><td>audit.read / system.health</td><td class="text-ui-sub">—</td><td class="text-ui-sub">—</td><td>可以</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="px-5 py-3 text-[12px] text-ui-sub border-t border-ui-line">导航与按钮按此显示；真正的授权由服务端执行。自定义角色与权限编辑不在一期范围。</p>
+  </section>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

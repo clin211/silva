@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分类与标签 · Silva 后台</title>
+  <meta name="description" content="A08 分类与标签：分类/标签两个标签页，列表＋新增/编辑抽屉，删除前确认。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="taxonomy" data-crumbs="内容|分类与标签" data-proto-roles="editor"
+      data-proto-states="default:有数据;empty:暂无条目">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">分类与标签</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">名称修改会作为独立的站点更新排队上线，不属于任何文章草稿。</p>
+    </div>
+  </div>
+
+  <div data-tabs class="mt-6">
+    <div role="tablist" aria-label="分类或标签" class="flex gap-1 border-b border-ui-line">
+      <button type="button" role="tab" data-tab="cat" aria-selected="true" class="px-4 py-2.5 text-[14px] -mb-px border-b-2 border-transparent aria-selected:border-accent aria-selected:text-accent aria-selected:font-medium text-ui-sub">分类 <span class="tnum text-ui-sub">6</span></button>
+      <button type="button" role="tab" data-tab="tag" aria-selected="false" class="px-4 py-2.5 text-[14px] -mb-px border-b-2 border-transparent aria-selected:border-accent aria-selected:text-accent aria-selected:font-medium text-ui-sub">标签 <span class="tnum text-ui-sub">24</span></button>
+    </div>
+
+    <!-- 分类 -->
+    <section data-panel="cat" class="mt-4" aria-label="分类列表">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <label class="relative"><span class="sr-only">搜索分类</span>
+          <input type="search" placeholder="搜索名称或 slug" class="h-9 w-64 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]">
+        </label>
+        <button type="button" data-open="drawer-term" data-term-mode="new-cat" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">新增分类</button>
+      </div>
+      <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-x-auto">
+        <table class="tbl min-w-[640px]">
+          <thead><tr><th>名称</th><th>Slug</th><th class="text-right">文章数</th><th>上线状态</th><th class="text-right">操作</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">后端工程</td><td class="font-code text-[13px] text-ui-sub">backend</td><td class="text-right tnum">18</td><td><span class="chip chip-ok">已上线</span></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">Rust</td><td class="font-code text-[13px] text-ui-sub">rust</td><td class="text-right tnum">11</td><td><span class="chip chip-warn">待上线</span> <a href="publishing-detail.html" class="text-[12px] text-accent ml-1">任务</a></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">前端</td><td class="font-code text-[13px] text-ui-sub">frontend</td><td class="text-right tnum">7</td><td><span class="chip chip-ok">已上线</span></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">工程管理</td><td class="font-code text-[13px] text-ui-sub">engineering-management</td><td class="text-right tnum">3</td><td><span class="chip chip-ok">已上线</span></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">数据库</td><td class="font-code text-[13px] text-ui-sub">database</td><td class="text-right tnum">5</td><td><span class="chip chip-ok">已上线</span></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">随笔</td><td class="font-code text-[13px] text-ui-sub">notes</td><td class="text-right tnum">0</td><td><span class="chip chip-ok">已上线</span></td>
+              <td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-delete">删除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div data-state="empty" hidden class="mt-4 bg-white border border-dashed border-ui-line rounded-lg p-10 text-center">
+        <p class="text-[15px]">还没有分类。</p>
+        <p class="mt-1 text-[13px] text-ui-sub">新增分类后，作者可以在文章设置里选择它。</p>
+        <button type="button" data-open="drawer-term" class="mt-4 h-9 px-4 rounded-md bg-accent text-white text-[14px]">新增分类</button>
+      </div>
+    </section>
+
+    <!-- 标签 -->
+    <section data-panel="tag" hidden class="mt-4" aria-label="标签列表">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <label><span class="sr-only">搜索标签</span>
+          <input type="search" placeholder="搜索名称或 slug" class="h-9 w-64 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]">
+        </label>
+        <button type="button" data-open="drawer-term" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">新增标签</button>
+      </div>
+      <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-x-auto">
+        <table class="tbl min-w-[640px]">
+          <thead><tr><th>名称</th><th>Slug</th><th class="text-right">文章数</th><th>上线状态</th><th class="text-right">操作</th></tr></thead>
+          <tbody>
+            <tr><td class="font-medium">axum</td><td class="font-code text-[13px] text-ui-sub">axum</td><td class="text-right tnum">9</td><td><span class="chip chip-ok">已上线</span></td><td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">PostgreSQL</td><td class="font-code text-[13px] text-ui-sub">postgresql</td><td class="text-right tnum">6</td><td><span class="chip chip-ok">已上线</span></td><td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">Astro</td><td class="font-code text-[13px] text-ui-sub">astro</td><td class="text-right tnum">4</td><td><span class="chip chip-ok">已上线</span></td><td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">发布流程</td><td class="font-code text-[13px] text-ui-sub">release-flow</td><td class="text-right tnum">2</td><td><span class="chip chip-ok">已上线</span></td><td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-cant-delete">删除</button></td></tr>
+            <tr><td class="font-medium">tracing</td><td class="font-code text-[13px] text-ui-sub">tracing</td><td class="text-right tnum">0</td><td><span class="chip chip-ok">已上线</span></td><td class="text-right whitespace-nowrap"><button class="text-accent text-[13px] px-2" data-open="drawer-term">编辑</button><button class="text-bad text-[13px] px-2" data-open="dlg-delete">删除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div data-state="default" class="mt-4 flex items-center justify-between text-[13px] text-ui-sub">
+        <span>共 <span class="tnum">24</span> 个标签，第 1 / 5 页</span>
+        <div class="flex gap-1"><button class="h-8 px-3 rounded border border-ui-line bg-white disabled:opacity-50" disabled>上一页</button><button class="h-8 px-3 rounded border border-ui-line bg-white">下一页</button></div>
+      </div>
+      <div data-state="empty" hidden class="mt-4 bg-white border border-dashed border-ui-line rounded-lg p-10 text-center">
+        <p class="text-[15px]">还没有标签。</p>
+        <button type="button" data-open="drawer-term" class="mt-4 h-9 px-4 rounded-md bg-accent text-white text-[14px]">新增标签</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- 新增/编辑抽屉 -->
+<div id="drawer-term" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="dialog" aria-modal="true" aria-labelledby="drawer-term-title" class="absolute right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-xl flex flex-col">
+    <header class="flex items-center justify-between px-5 h-14 border-b border-ui-line">
+      <h2 id="drawer-term-title" class="text-[16px] font-semibold">编辑分类</h2>
+      <button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button>
+    </header>
+    <form class="flex-1 overflow-y-auto p-5 space-y-5" onsubmit="event.preventDefault()">
+      <div><label for="t-name" class="block text-[13px] font-medium">名称</label>
+        <input id="t-name" value="Rust" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+      <div><label for="t-slug" class="block text-[13px] font-medium">Slug</label>
+        <input id="t-slug" value="rust" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code">
+        <p class="mt-1 text-[12px] text-ui-sub">用于公开地址 /categories/rust。只能包含小写字母、数字和连字符。</p></div>
+      <div><label for="t-desc" class="block text-[13px] font-medium">说明 <span class="text-ui-sub font-normal">（可选）</span></label>
+        <textarea id="t-desc" rows="3" class="mt-1.5 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]">Rust 语言与生态相关的文章。</textarea></div>
+      <p class="text-[13px] text-ui-sub bg-ui-bg rounded-md p-3">保存后，名称变更会进入站点发布队列，上线前访客仍看到旧名称。</p>
+    </form>
+    <footer class="px-5 py-3 border-t border-ui-line flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" data-close data-toast="已保存，待上线" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium">保存</button>
+    </footer>
+  </section>
+</div>
+
+<!-- 删除确认 -->
+<div id="dlg-delete" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="alertdialog" aria-modal="true" aria-labelledby="dlg-delete-title" class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+    <h2 id="dlg-delete-title" class="text-[16px] font-semibold">删除「随笔」？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub">没有文章引用这个分类。删除后无法恢复，公开站点会在下一个站点版本上线后移除该分类页。</p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" data-close data-toast="已删除，待上线" class="h-9 px-4 rounded-md bg-bad text-white text-[14px] font-medium">删除</button>
+    </div>
+  </section>
+</div>
+
+<!-- 存在引用，不能删除 -->
+<div id="dlg-cant-delete" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="alertdialog" aria-modal="true" aria-labelledby="dlg-cant-title" class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+    <h2 id="dlg-cant-title" class="text-[16px] font-semibold">无法删除「后端工程」</h2>
+    <p class="mt-2 text-[14px] text-ui-sub">有 <span class="tnum text-ui-text">18</span> 篇文章的修订引用了这个分类（包括未上线的草稿修订）。先在这些文章中改用其他分类，再删除。</p>
+    <ul class="mt-3 text-[13px] space-y-1">
+      <li><a href="post-edit.html" class="text-accent">用不可变 revision 重写 CMS 的发布流程</a></li>
+      <li><a href="post-edit.html" class="text-accent">Axum 中间件的执行顺序</a></li>
+      <li class="text-ui-sub">以及其他 16 篇</li>
+    </ul>
+    <div class="mt-5 flex justify-end gap-2">
+      <a href="posts.html" class="h-9 px-4 inline-flex items-center rounded-md border border-ui-line text-[14px]">查看相关文章</a>
+      <button type="button" data-close class="h-9 px-4 rounded-md bg-accent text-white text-[14px]">知道了</button>
+    </div>
+  </section>
+</div>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP 分类 · Silva 后台</title>
+  <meta name="description" content="A18 MCP 分类原型：独立分类列表、排序、新增/编辑抽屉、被引用时不可删除。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+  <style>
+    .fld { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#5E6470; }
+    .inp { height:38px; border:1px solid #E2E4E9; border-radius:6px; padding:0 12px; font-size:14px; color:#1D2330; background:#fff; width:100%; }
+    textarea.inp { height:auto; padding:10px 12px; line-height:1.7; }
+  </style>
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="mcp-categories" data-crumbs="资源|MCP 目录@mcp.html|分类" data-proto-roles="editor"
+      data-proto-states="default:有分类;empty:暂无分类">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">MCP 分类</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">公开目录按这里的顺序显示分类筛选。修改名称或顺序后进入站点发布队列。</p>
+    </div>
+    <button type="button" data-open="drawer-cat" onclick="setDrawer('新建分类','','')" class="h-9 px-3.5 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">新建分类</button>
+  </div>
+
+  <div data-state="default" class="mt-6 bg-white border border-ui-line rounded-lg overflow-hidden max-w-[880px]">
+    <div class="overflow-x-auto">
+      <table class="tbl min-w-[620px]">
+        <thead><tr><th class="w-[90px]">顺序</th><th>名称</th><th>Slug</th><th class="text-right">条目数</th><th class="text-right">操作</th></tr></thead>
+        <tbody id="cat-body">
+          <tr data-name="数据库" data-slug="database" data-count="6"><td class="tnum"><span class="inline-flex gap-1"><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="-1" aria-label="上移">↑</button><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="1" aria-label="下移">↓</button></span></td><td class="font-medium">数据库</td><td class="text-ui-sub">database</td><td class="text-right tnum">6</td><td class="text-right whitespace-nowrap"><button class="ed text-accent hover:underline">编辑</button><button class="del ml-3 text-bad hover:underline">删除</button></td></tr>
+          <tr data-name="开发工具" data-slug="dev-tools" data-count="9"><td class="tnum"><span class="inline-flex gap-1"><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="-1" aria-label="上移">↑</button><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="1" aria-label="下移">↓</button></span></td><td class="font-medium">开发工具</td><td class="text-ui-sub">dev-tools</td><td class="text-right tnum">9</td><td class="text-right whitespace-nowrap"><button class="ed text-accent hover:underline">编辑</button><button class="del ml-3 text-bad hover:underline">删除</button></td></tr>
+          <tr data-name="文件与存储" data-slug="storage" data-count="4"><td class="tnum"><span class="inline-flex gap-1"><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="-1" aria-label="上移">↑</button><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="1" aria-label="下移">↓</button></span></td><td class="font-medium">文件与存储</td><td class="text-ui-sub">storage</td><td class="text-right tnum">4</td><td class="text-right whitespace-nowrap"><button class="ed text-accent hover:underline">编辑</button><button class="del ml-3 text-bad hover:underline">删除</button></td></tr>
+          <tr data-name="浏览器自动化" data-slug="browser" data-count="3"><td class="tnum"><span class="inline-flex gap-1"><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="-1" aria-label="上移">↑</button><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="1" aria-label="下移">↓</button></span></td><td class="font-medium">浏览器自动化</td><td class="text-ui-sub">browser</td><td class="text-right tnum">3</td><td class="text-right whitespace-nowrap"><button class="ed text-accent hover:underline">编辑</button><button class="del ml-3 text-bad hover:underline">删除</button></td></tr>
+          <tr data-name="知识库" data-slug="knowledge" data-count="0"><td class="tnum"><span class="inline-flex gap-1"><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="-1" aria-label="上移">↑</button><button class="mv px-1.5 rounded hover:bg-ui-bg" data-dir="1" aria-label="下移">↓</button></span></td><td class="font-medium">知识库</td><td class="text-ui-sub">knowledge</td><td class="text-right tnum">0</td><td class="text-right whitespace-nowrap"><button class="ed text-accent hover:underline">编辑</button><button class="del ml-3 text-bad hover:underline">删除</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-ui-line">
+      <p class="text-[13px] text-ui-sub">无分类的条目在公开目录归入「其他」。</p>
+      <button type="button" data-toast="排序已保存，待上线" data-toast-tone="ok" class="h-8 px-3 rounded-md border border-ui-line text-[13px] hover:bg-ui-bg">保存排序</button>
+    </div>
+  </div>
+
+  <div data-state="empty" hidden class="mt-6 max-w-[880px] bg-white border border-ui-line rounded-lg px-6 py-14 text-center">
+    <p class="text-[16px] font-medium">还没有 MCP 分类</p>
+    <p class="mt-1 text-[14px] text-ui-sub">没有分类时，公开目录不显示分类筛选，所有条目归入「其他」。</p>
+  </div>
+
+  <!-- 新增/编辑抽屉 -->
+  <div id="drawer-cat" data-overlay hidden class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="drawer-cat-t">
+    <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+    <aside class="absolute right-0 top-0 h-full w-[420px] max-w-full bg-white shadow-xl flex flex-col">
+      <div class="flex items-center justify-between px-5 h-14 border-b border-ui-line"><h2 id="drawer-cat-t" class="text-[16px] font-semibold">编辑分类</h2><button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button></div>
+      <form class="flex-1 overflow-y-auto p-5 space-y-4" onsubmit="event.preventDefault()">
+        <label class="fld">名称<input id="cat-name" class="inp"></label>
+        <label class="fld">Slug<input id="cat-slug" class="inp"><span class="text-[12px]">用于公开目录的筛选参数 ?category=…</span></label>
+        <label class="fld">说明（可选）<textarea rows="3" class="inp"></textarea></label>
+      </form>
+      <div class="px-5 py-3 border-t border-ui-line flex justify-end gap-2">
+        <button type="button" data-close class="h-9 px-3.5 rounded-md border border-ui-line text-[14px]">取消</button>
+        <button type="button" data-close data-toast="已保存，待上线" data-toast-tone="ok" class="h-9 px-3.5 rounded-md bg-accent text-white text-[14px]">保存</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 删除：可删 / 不可删 -->
+  <div id="dlg-del" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="dlg-del-t">
+    <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+    <div class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+      <h2 id="dlg-del-t" class="text-[17px] font-semibold">删除分类</h2>
+      <p id="dlg-del-msg" class="mt-2 text-[14px] text-ui-sub leading-6"></p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button type="button" data-close class="h-9 px-3.5 rounded-md border border-ui-line text-[14px]">关闭</button>
+        <button type="button" id="dlg-del-ok" data-close data-toast="已删除，待上线" class="h-9 px-3.5 rounded-md bg-bad text-white text-[14px]">删除分类</button>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  function setDrawer(t, n, s) { document.getElementById('drawer-cat-t').textContent = t; document.getElementById('cat-name').value = n; document.getElementById('cat-slug').value = s; }
+  const tb = document.getElementById('cat-body');
+  tb.addEventListener('click', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    if (e.target.closest('.mv')) {
+      const d = +e.target.closest('.mv').dataset.dir;
+      if (d < 0 && tr.previousElementSibling) tb.insertBefore(tr, tr.previousElementSibling);
+      if (d > 0 && tr.nextElementSibling) tb.insertBefore(tr.nextElementSibling, tr);
+      e.target.closest('.mv').focus();
+    }
+    if (e.target.closest('.ed')) { setDrawer('编辑分类', tr.dataset.name, tr.dataset.slug); Proto.open('drawer-cat', e.target); }
+    if (e.target.closest('.del')) {
+      const n = +tr.dataset.count, msg = document.getElementById('dlg-del-msg'), ok = document.getElementById('dlg-del-ok');
+      if (n > 0) { msg.innerHTML = `「${tr.dataset.name}」仍被 <strong class="text-ui-text">${n} 个条目</strong>引用，不能删除。请先在<a class="text-accent underline" href="mcp.html">条目列表</a>中把这些条目改到其他分类。`; ok.hidden = true; }
+      else { msg.textContent = `「${tr.dataset.name}」没有被任何条目引用。删除后进入站点发布队列。`; ok.hidden = false; }
+      Proto.open('dlg-del', e.target);
+    }
+  });
+</script>
+</body>
+</html>

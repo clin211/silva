@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>站点发布 · Silva 后台</title>
+  <meta name="description" content="A22 站点发布任务列表原型。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="publishing" data-crumbs="运行|站点发布"
+      data-proto-roles="admin" data-proto-states="default:正常;delayed:待上线超过 5 分钟;empty:暂无任务;error:请求失败">
+<main id="admin-main">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-[22px] font-semibold">站点发布</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">文章发布、取消发布、目录修改和 AI 采集批次都会排队生成新的站点版本（generation），激活后才算上线。</p>
+    </div>
+  </div>
+
+  <!-- 线上与目标摘要 -->
+  <section aria-label="线上与目标" class="mt-5 grid gap-3 md:grid-cols-3" data-state="default delayed">
+    <div class="rounded-lg border border-ui-line bg-white p-4">
+      <div class="text-[13px] text-ui-sub">当前线上版本</div>
+      <div class="mt-1 flex items-center gap-2"><span class="text-[20px] font-semibold tnum">g-0142</span><span class="chip chip-ok">已上线</span></div>
+      <div class="mt-1 text-[12px] text-ui-sub tnum">激活于 2026-11-21 09:42（UTC+8）</div>
+    </div>
+    <div class="rounded-lg border border-ui-line bg-white p-4">
+      <div class="text-[13px] text-ui-sub">当前目标</div>
+      <div class="mt-1 flex items-center gap-2"><span class="text-[20px] font-semibold tnum">g-0144</span><span class="chip chip-info">构建中</span></div>
+      <div class="mt-1 text-[12px] text-ui-sub">包含 2 项待上线变更</div>
+    </div>
+    <div class="rounded-lg border border-ui-line bg-white p-4">
+      <div class="text-[13px] text-ui-sub">最近 24 小时</div>
+      <div class="mt-1 text-[20px] font-semibold tnum">9 次构建</div>
+      <div class="mt-1 text-[12px] text-ui-sub">7 次上线 · 1 次失败 · 1 次被替代</div>
+    </div>
+  </section>
+
+  <div data-state="delayed" hidden role="alert" class="mt-4 rounded-lg border border-warn/30 bg-warn-tint px-4 py-3 text-[14px] text-warn">
+    <strong class="font-medium">上线延迟：</strong>g-0144 已待上线 7 分钟，超过 5 分钟预期。线上仍为 g-0142，编辑与保存不受影响。<a href="publishing-detail.html?state=delayed" class="underline underline-offset-2">查看任务详情</a>
+  </div>
+
+  <!-- 筛选 -->
+  <form class="mt-5 flex flex-wrap gap-2" data-state="default delayed" onsubmit="return false">
+    <label class="sr-only" for="f-status">状态</label>
+    <select id="f-status" class="h-9 rounded-md border border-ui-line bg-white px-3 text-[14px]">
+      <option>全部状态</option><option>排队中</option><option>构建中</option><option>已上线</option><option>构建失败</option><option>已被更新的目标替代</option><option>已被新版替换</option>
+    </select>
+    <label class="sr-only" for="f-trigger">触发来源</label>
+    <select id="f-trigger" class="h-9 rounded-md border border-ui-line bg-white px-3 text-[14px]">
+      <option>全部来源</option><option>文章发布</option><option>取消发布</option><option>目录修改</option><option>AI 批次</option>
+    </select>
+  </form>
+
+  <!-- 列表 -->
+  <section data-state="default delayed" class="mt-3 rounded-lg border border-ui-line bg-white">
+    <div class="relative overflow-x-auto">
+      <table class="tbl min-w-[860px]">
+        <thead><tr><th>Generation</th><th>触发来源</th><th>状态</th><th>创建时间</th><th>完成时间</th><th>发起人</th><th><span class="sr-only">操作</span></th></tr></thead>
+        <tbody>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=building">g-0144</a></td><td>文章发布：《用不可变 revision 重写 CMS 的发布流程》r12</td>
+            <td><span class="chip chip-info" data-state="default">构建中</span><span class="chip chip-warn" data-state="delayed" hidden>构建中 · 已延迟</span></td><td class="tnum">11-21 10:05</td><td class="text-ui-sub">—</td><td>周屿</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=building">详情</a></td></tr>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=superseded">g-0143</a></td><td>目录修改：MCP 条目「pg-mcp」更新</td>
+            <td><span class="chip chip-mute">已被更新的目标替代</span></td><td class="tnum">11-21 10:01</td><td class="text-ui-sub tnum">11-21 10:05</td><td>林晓</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=superseded">详情</a></td></tr>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=active">g-0142</a></td><td>AI 批次：2026-11-20（UTC）</td>
+            <td><span class="chip chip-ok">已上线</span></td><td class="tnum">11-21 09:38</td><td class="tnum">11-21 09:42</td><td class="text-ui-sub">系统</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=active">详情</a></td></tr>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=failed">g-0141</a></td><td>取消发布：《Docker 镜像瘦身笔记》</td>
+            <td><span class="chip chip-bad">构建失败</span></td><td class="tnum">11-21 09:20</td><td class="tnum">11-21 09:23</td><td>周屿</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=failed">详情</a></td></tr>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=active">g-0140</a></td><td>目录修改：个人资料</td>
+            <td><span class="chip chip-mute">已被新版替换</span></td><td class="tnum">11-20 21:14</td><td class="tnum">11-20 21:17</td><td>周屿</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=active">详情</a></td></tr>
+          <tr><td class="tnum font-medium"><a class="text-accent hover:underline" href="publishing-detail.html?state=building">g-0145</a></td><td>文章发布：《Axum 中间件的执行顺序》r4</td>
+            <td><span class="chip chip-warn">排队中</span></td><td class="tnum">11-21 10:06</td><td class="text-ui-sub">—</td><td>林晓</td><td><a class="text-accent text-[13px]" href="publishing-detail.html?state=building">详情</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 text-[13px] text-ui-sub border-t border-ui-line">
+      <span>共 145 条</span>
+      <div class="flex gap-1"><button class="h-8 px-3 rounded border border-ui-line" disabled>上一页</button><button class="h-8 px-3 rounded border border-ui-line bg-white hover:bg-ui-bg">下一页</button></div>
+    </div>
+  </section>
+
+  <div data-state="empty" hidden class="mt-6 rounded-lg border border-dashed border-ui-line bg-white px-6 py-12 text-center">
+    <p class="text-[15px]">还没有发布任务</p>
+    <p class="mt-1 text-[13px] text-ui-sub">发布文章或保存目录修改后，构建任务会出现在这里。</p>
+    <a href="posts.html" class="mt-4 inline-flex h-9 items-center rounded-md bg-accent px-4 text-[14px] text-white">去文章列表</a>
+  </div>
+  <div data-state="error" hidden role="alert" class="mt-6 rounded-lg border border-bad/30 bg-bad-tint px-4 py-4 text-[14px] text-bad">
+    无法读取发布任务（503 service_unavailable）。线上站点不受影响。<button type="button" class="ml-2 underline" data-toast="正在重新读取…">重试</button>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

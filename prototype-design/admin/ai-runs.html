@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 采集批次 · Silva 后台</title>
+  <meta name="description" content="A21 AI 采集批次原型：最近一次成功时间、UTC 批次列表、状态、限流与错误，Admin 请求当日未成功批次。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="ai-runs" data-crumbs="运行|AI 趋势@ai-trending.html|采集批次" data-proto-roles="admin"
+      data-proto-states="default:今日失败;running:今日运行中;ratelimited:限流等待">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">AI 采集批次</h1>
+      <p class="mt-1 text-[14px] text-ui-sub max-w-[50em]">每天按 UTC 日期采集一次收录范围内的 GitHub 仓库。只有完整成功的批次会发布到公开榜单；失败或部分成功时保留上一份完整榜单。</p>
+    </div>
+    <!-- Admin 专属：请求今日批次 -->
+    <div data-role="admin" class="flex flex-col items-end gap-1">
+      <button type="button" id="req-btn" class="h-9 px-3.5 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">请求今日批次</button>
+      <span class="text-[12px] text-ui-sub">今日已有成功或运行中的批次时，不会重复创建</span>
+    </div>
+  </div>
+
+  <!-- 顶部摘要 -->
+  <div class="mt-5 grid sm:grid-cols-3 gap-3">
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3">
+      <div class="text-[12px] text-ui-sub">最近一次成功采集</div>
+      <div class="mt-1 text-[18px] font-semibold tnum">2026-11-20 01:14 <span class="text-[13px] font-normal text-ui-sub">UTC</span></div>
+      <div class="text-[12px] text-ui-sub">批次 2026-11-20，已发布到榜单</div>
+    </div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3">
+      <div class="text-[12px] text-ui-sub">今日批次（2026-11-21）</div>
+      <div class="mt-1" data-state="default"><span class="chip chip-bad">失败</span> <span class="text-[13px] text-ui-sub">01:22 结束</span></div>
+      <div class="mt-1" data-state="running" hidden><span class="chip chip-info">运行中</span> <span class="text-[13px] text-ui-sub tnum">已处理 812 / 1,284</span></div>
+      <div class="mt-1" data-state="ratelimited" hidden><span class="chip chip-warn">限流等待</span> <span class="text-[13px] text-ui-sub tnum">03:00 UTC 恢复</span></div>
+    </div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3">
+      <div class="text-[12px] text-ui-sub">GitHub API 配额</div>
+      <div class="mt-1 text-[18px] font-semibold tnum" data-state="default running">3,912 <span class="text-[13px] font-normal text-ui-sub">/ 5,000 剩余</span></div>
+      <div class="mt-1 text-[18px] font-semibold tnum text-warn" data-state="ratelimited" hidden>0 <span class="text-[13px] font-normal text-ui-sub">/ 5,000 剩余</span></div>
+      <div class="text-[12px] text-ui-sub tnum">重置于 02:00 UTC</div>
+    </div>
+  </div>
+
+  <div data-state="ratelimited" hidden role="status" class="mt-4 border border-warn/30 bg-warn-tint rounded-lg px-4 py-3 text-[14px] text-warn">今日批次触发 GitHub 二级限流，已暂停 41 分钟后自动续跑。期间公开榜单仍为 2026-11-20 的数据。</div>
+
+  <!-- 批次列表 -->
+  <div class="mt-5 bg-white border border-ui-line rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tbl min-w-[860px]">
+        <thead><tr><th class="w-8"><span class="sr-only">展开</span></th><th>批次（UTC）</th><th>状态</th><th>开始 / 结束</th><th class="text-right">仓库</th><th>限流</th><th>错误</th><th>触发方式</th></tr></thead>
+        <tbody id="runs">
+          <!-- 今日：三种原型状态 -->
+          <tr data-state="default" class="cursor-pointer" data-row="r1"><td><button type="button" class="exp w-6 h-6 rounded hover:bg-ui-bg" aria-expanded="false" aria-controls="r1" aria-label="展开 2026-11-21 详情">▸</button></td><td class="tnum font-medium">2026-11-21</td><td><span class="chip chip-bad">失败</span></td><td class="tnum text-ui-sub">00:30 / 01:22</td><td class="text-right tnum">640 / 1,284</td><td class="text-ui-sub">2 次</td><td class="text-bad">GitHub API 502 连续 5 次</td><td>定时</td></tr>
+          <tr id="r1" hidden class="bg-[#FAFBFC]"><td></td><td colspan="7" class="!py-4">
+            <dl class="grid sm:grid-cols-3 gap-4 text-[13px]">
+              <div><dt class="text-ui-sub">失败阶段</dt><dd class="mt-1">拉取仓库指标（第 33 页）</dd></div>
+              <div><dt class="text-ui-sub">是否发布</dt><dd class="mt-1">未发布，公开榜单保留 2026-11-20</dd></div>
+              <div><dt class="text-ui-sub">Request ID</dt><dd class="mt-1 font-code text-[12px]">req_01JD8Z4K7Q3M</dd></div>
+            </dl>
+            <pre class="mt-3 bg-ui-bg rounded-md p-3 text-[12px] font-code overflow-x-auto">01:21:58 fetch page=33 status=502 attempt=5/5
+01:22:03 batch 2026-11-21 marked failed; snapshots discarded</pre>
+          </td></tr>
+          <tr data-state="running" hidden><td></td><td class="tnum font-medium">2026-11-21</td><td><span class="chip chip-info">运行中</span></td><td class="tnum text-ui-sub">00:30 / —</td><td class="text-right tnum">812 / 1,284</td><td class="text-ui-sub">无</td><td class="text-ui-sub">—</td><td>定时</td></tr>
+          <tr data-state="ratelimited" hidden><td></td><td class="tnum font-medium">2026-11-21</td><td><span class="chip chip-warn">限流等待</span></td><td class="tnum text-ui-sub">00:30 / —</td><td class="text-right tnum">931 / 1,284</td><td class="text-warn">二级限流，03:00 续跑</td><td class="text-ui-sub">—</td><td>定时</td></tr>
+
+          <tr><td><button type="button" class="exp w-6 h-6 rounded hover:bg-ui-bg" aria-expanded="false" aria-controls="r2" aria-label="展开 2026-11-20 详情">▸</button></td><td class="tnum font-medium">2026-11-20</td><td><span class="chip chip-ok">成功，已发布</span></td><td class="tnum text-ui-sub">00:30 / 01:14</td><td class="text-right tnum">1,284 / 1,284</td><td class="text-ui-sub">1 次</td><td class="text-ui-sub">—</td><td>定时</td></tr>
+          <tr id="r2" hidden class="bg-[#FAFBFC]"><td></td><td colspan="7" class="!py-4">
+            <dl class="grid sm:grid-cols-3 gap-4 text-[13px]">
+              <div><dt class="text-ui-sub">新增仓库</dt><dd class="mt-1 tnum">12</dd></div>
+              <div><dt class="text-ui-sub">榜单发布</dt><dd class="mt-1"><a href="publishing-detail.html" class="text-accent hover:underline">站点版本 g-0142</a> · <span class="chip chip-ok">已上线</span></dd></div>
+              <div><dt class="text-ui-sub">限流</dt><dd class="mt-1">00:52 触发一次，等待 6 分钟后续跑</dd></div>
+            </dl>
+          </td></tr>
+          <tr><td><button type="button" class="exp w-6 h-6 rounded hover:bg-ui-bg" aria-expanded="false" aria-controls="r3" aria-label="展开 2026-11-19 详情">▸</button></td><td class="tnum font-medium">2026-11-19</td><td><span class="chip chip-warn">部分成功，未发布</span></td><td class="tnum text-ui-sub">00:30 / 02:40</td><td class="text-right tnum">1,190 / 1,281</td><td class="text-warn">5 次</td><td class="text-warn">91 个仓库超时</td><td>Admin 请求</td></tr>
+          <tr id="r3" hidden class="bg-[#FAFBFC]"><td></td><td colspan="7" class="!py-4 text-[13px]">
+            <p>部分成功的批次不会发布，公开榜单保留 2026-11-18 的数据。该日之后已由 <span class="tnum">2026-11-20</span> 的成功批次替代。</p>
+            <p class="mt-2 text-ui-sub">请求人：周屿（2026-11-19 00:28 UTC）</p>
+          </td></tr>
+          <tr><td></td><td class="tnum font-medium">2026-11-18</td><td><span class="chip chip-ok">成功，已发布</span></td><td class="tnum text-ui-sub">00:30 / 01:09</td><td class="text-right tnum">1,281 / 1,281</td><td class="text-ui-sub">无</td><td class="text-ui-sub">—</td><td>定时</td></tr>
+          <tr><td></td><td class="tnum font-medium">2026-11-17</td><td><span class="chip chip-ok">成功，已发布</span></td><td class="tnum text-ui-sub">00:30 / 01:11</td><td class="text-right tnum">1,276 / 1,276</td><td class="text-ui-sub">无</td><td class="text-ui-sub">—</td><td>定时</td></tr>
+          <tr><td></td><td class="tnum font-medium">2026-11-16</td><td><span class="chip chip-mute">排队中 → 已跳过</span></td><td class="tnum text-ui-sub">— / —</td><td class="text-right tnum">—</td><td class="text-ui-sub">—</td><td class="text-ui-sub">Worker 维护窗口</td><td>定时</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-ui-line text-[13px] text-ui-sub">
+      <span>状态：排队中、运行中、限流等待、成功（已发布）、部分成功（未发布）、失败</span>
+      <nav aria-label="分页" class="flex gap-1"><button class="h-8 px-3 rounded-md border border-ui-line bg-white disabled:opacity-50" disabled>较新</button><button class="h-8 px-3 rounded-md border border-ui-line bg-white hover:bg-ui-bg">较早</button></nav>
+    </div>
+  </div>
+
+  <!-- 请求今日批次：可创建 -->
+  <div id="dlg-req" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="dlg-req-t">
+    <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+    <div class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+      <h2 id="dlg-req-t" class="text-[17px] font-semibold">请求 2026-11-21 的采集批次</h2>
+      <p class="mt-2 text-[14px] text-ui-sub leading-6">今日批次已失败。重新请求会对同一 UTC 日期重跑采集，不会生成重复快照；完整成功后才发布到公开榜单。</p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button type="button" data-close class="h-9 px-3.5 rounded-md border border-ui-line text-[14px]">取消</button>
+        <button type="button" data-close data-toast="已请求，批次排队中" data-toast-tone="ok" class="h-9 px-3.5 rounded-md bg-accent text-white text-[14px]">请求批次</button>
+      </div>
+    </div>
+  </div>
+  <!-- 请求今日批次：已有运行中/成功批次 -->
+  <div id="dlg-exists" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="dlg-exists-t">
+    <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+    <div class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+      <h2 id="dlg-exists-t" class="text-[17px] font-semibold">今日已有批次</h2>
+      <p class="mt-2 text-[14px] text-ui-sub leading-6"><span id="exists-msg">2026-11-21 的批次正在运行</span>，没有创建新的批次。</p>
+      <div class="mt-3 rounded-md bg-ui-bg px-3 py-2 text-[13px] flex flex-wrap items-center gap-2"><span class="tnum font-medium">2026-11-21</span><span id="exists-chip" class="chip chip-info">运行中</span><span class="tnum text-ui-sub" id="exists-prog">812 / 1,284</span></div>
+      <div class="mt-5 flex justify-end"><button type="button" data-close class="h-9 px-3.5 rounded-md border border-ui-line text-[14px]">知道了</button></div>
+    </div>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  document.getElementById('req-btn').addEventListener('click', e => {
+    if (Proto.state === 'default') return Proto.open('dlg-req', e.currentTarget);
+    const rl = Proto.state === 'ratelimited';
+    document.getElementById('exists-msg').textContent = rl ? '2026-11-21 的批次正在等待限流恢复' : '2026-11-21 的批次正在运行';
+    const c = document.getElementById('exists-chip'); c.textContent = rl ? '限流等待' : '运行中'; c.className = 'chip ' + (rl ? 'chip-warn' : 'chip-info');
+    document.getElementById('exists-prog').textContent = rl ? '931 / 1,284' : '812 / 1,284';
+    Proto.open('dlg-exists', e.currentTarget);
+  });
+  document.getElementById('runs').addEventListener('click', e => {
+    const b = e.target.closest('.exp') || e.target.closest('tr')?.querySelector('.exp');
+    if (!b) return;
+    const row = document.getElementById(b.getAttribute('aria-controls'));
+    const open = b.getAttribute('aria-expanded') === 'true';
+    b.setAttribute('aria-expanded', !open); b.textContent = open ? '▸' : '▾'; row.hidden = open;
+  });
+  // 切换原型状态时收起今日展开行，避免状态混用
+  document.addEventListener('proto:state', () => { const b = document.querySelector('[aria-controls="r1"]'); b.setAttribute('aria-expanded', 'false'); b.textContent = '▸'; document.getElementById('r1').hidden = true; });
+</script>
+</body>
+</html>

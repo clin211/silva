@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>修订 r13 · Silva 后台</title>
+  <meta name="description" content="A07 修订详情与审核原型：修订信息、安全预览、按权限提交、批准或拒绝。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="posts"
+      data-crumbs="内容|文章@posts.html|修订历史@post-revisions.html|r13" data-proto-roles="editor"
+      data-proto-states="review:审核中;draft:未提交;approved:已批准;rejected:已拒绝">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <div class="flex flex-wrap items-center gap-2">
+        <h1 class="text-[22px] font-semibold">修订 <span class="tnum">r13</span></h1>
+        <span data-state="review" class="chip chip-info">审核中</span>
+        <span data-state="draft" hidden class="chip chip-mute">未提交</span>
+        <span data-state="approved" hidden class="chip chip-ok">已批准</span>
+        <span data-state="rejected" hidden class="chip chip-bad">已拒绝</span>
+      </div>
+      <p class="mt-1 text-[14px] text-ui-sub">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</p>
+    </div>
+    <a href="post-revisions.html" class="h-9 px-4 inline-flex items-center rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">返回修订历史</a>
+  </div>
+
+  <div class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+    <!-- 安全预览 -->
+    <section class="bg-white border border-ui-line rounded-lg overflow-hidden" aria-labelledby="pv-h">
+      <div class="flex flex-wrap items-center justify-between gap-2 px-4 h-11 border-b border-ui-line">
+        <h2 id="pv-h" class="text-[14px] font-semibold">预览</h2>
+        <span class="text-[12px] text-ui-sub">仅后台可访问，没有公开预览地址</span>
+      </div>
+      <div class="bg-paper px-5 sm:px-10 py-8">
+        <div class="max-w-prose mx-auto">
+          <div class="aspect-[16/7] rounded bg-[repeating-linear-gradient(135deg,#EEEAE2_0_10px,#E5E0D5_10px_20px)] grid place-items-center text-[13px] text-ink-soft">封面：cover-revision-flow.png</div>
+          <p class="mt-6 text-[13px] text-ink-soft"><span class="text-accent">后端工程</span> · CMS · 发布流程 · 架构</p>
+          <h2 class="mt-2 font-serif text-[28px] leading-tight font-bold text-ink">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</h2>
+          <article class="prose-ink mt-6 !text-[16px]">
+            <h2>为什么要拆开</h2>
+            <p>一篇文章同时存在三种「版本」：<strong>正在编辑的</strong>、<strong>已接受发布、等待上线的</strong>，以及<strong>访客正在看到的</strong>。把它们混成一个 <code>status</code> 字段，迟早会出事。</p>
+            <h2>不可变修订</h2>
+            <p>每次保存都创建新的 revision，旧的永不覆盖。保存请求带上 <code>expected_revision_id</code>：</p>
+            <pre><code>PUT /api/v1/admin/posts/{id}
+{ "expected_revision_id": "0193…", "body": "…" }</code></pre>
+            <p>收到 <code>409 revision_conflict</code> 时停止自动保存，保留本地草稿。</p>
+            <h2>发布不是上线</h2>
+            <ul><li>发布：把一个已批准的修订设为期望公开版本</li><li>上线：包含它的站点 generation 激活</li><li>构建失败：线上保持原样</li></ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 修订信息 ＋ 审核操作 -->
+    <div class="space-y-4 lg:sticky lg:top-20">
+      <section class="bg-white border border-ui-line rounded-lg" aria-labelledby="info-h">
+        <h2 id="info-h" class="px-4 h-11 flex items-center border-b border-ui-line text-[14px] font-semibold">修订信息</h2>
+        <dl class="px-4 py-3 text-[13px] grid grid-cols-[88px_1fr] gap-y-2">
+          <dt class="text-ui-sub">修订号</dt><dd class="tnum">r13（基于 r12）</dd>
+          <dt class="text-ui-sub">保存时间</dt><dd class="tnum">2026-11-21 09:18</dd>
+          <dt class="text-ui-sub">作者</dt><dd>周屿</dd>
+          <dt class="text-ui-sub">提交审核</dt><dd><span data-state="review approved rejected">2026-11-21 09:20</span><span data-state="draft" hidden class="text-ui-sub">未提交</span></dd>
+          <dt class="text-ui-sub">分类</dt><dd>后端工程</dd>
+          <dt class="text-ui-sub">标签</dt><dd>CMS、发布流程、架构</dd>
+          <dt class="text-ui-sub">首页精选</dt><dd>是</dd>
+          <dt class="text-ui-sub">SEO 描述</dt><dd class="text-ui-sub">把保存、批准、上线拆成三个独立状态之后……</dd>
+        </dl>
+        <p class="px-4 py-3 border-t border-ui-line text-[12px] text-ui-sub">正文、分类标签、封面与 SEO 都随这一修订冻结，审核结果只作用于 r13。</p>
+      </section>
+
+      <section class="bg-white border border-ui-line rounded-lg p-4" aria-labelledby="act-h">
+        <h2 id="act-h" class="text-[14px] font-semibold">审核</h2>
+
+        <!-- 未提交：作者或编辑都可以提交 -->
+        <div data-state="draft" hidden class="mt-3">
+          <p class="text-[13px] text-ui-sub">这个修订还没有提交审核。</p>
+          <button type="button" class="mt-3 w-full h-9 rounded-md bg-accent text-white text-[14px]" data-open="dlg-submit">提交 r13 审核</button>
+        </div>
+
+        <!-- 审核中 -->
+        <div data-state="review" class="mt-3">
+          <div data-role="editor">
+            <p class="text-[13px] text-ui-sub">批准后它可以被选为发布版本；拒绝不会影响当前线上的 r9。</p>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" class="h-9 rounded-md border border-[#E8C3BF] text-bad bg-white text-[14px] hover:bg-bad-tint" data-open="dlg-reject">拒绝</button>
+              <button type="button" class="h-9 rounded-md bg-ok text-white text-[14px] hover:opacity-90" data-open="dlg-approve">批准 r13</button>
+            </div>
+          </div>
+          <p data-role-only="author" class="text-[13px] text-ui-sub">已提交，等待 Editor 审核。你可以继续编辑，新的保存会生成新修订，不影响 r13 的审核。</p>
+        </div>
+
+        <div data-state="approved" hidden class="mt-3 text-[13px]">
+          <p class="text-ok">林夏于 11-21 10:05 批准。</p>
+          <div data-role="editor" class="mt-3"><a href="post-edit.html" class="w-full h-9 inline-flex items-center justify-center rounded-md bg-accent text-white text-[14px]">去编辑页发布 r13</a></div>
+        </div>
+
+        <div data-state="rejected" hidden class="mt-3 text-[13px]">
+          <p class="text-bad">林夏于 11-21 10:05 拒绝。</p>
+          <blockquote class="mt-2 border-l-2 border-bad/40 pl-3 text-ui-sub">第二节的请求示例缺少错误响应，补充 409 的返回体后再提交。</blockquote>
+          <a href="post-edit.html" class="mt-3 w-full h-9 inline-flex items-center justify-center rounded-md border border-ui-line text-[14px] hover:bg-ui-bg">回到编辑</a>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- 提交审核 -->
+<div id="dlg-submit" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="dsub-t" class="relative w-full max-w-[420px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="dsub-t" class="text-[17px] font-semibold">提交 r13 审核？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub">审核只作用于 r13，之后的修改不会继承这次审核结果。</p>
+    <div class="mt-5 flex justify-end gap-2"><button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button><button type="button" class="h-9 px-4 rounded-md bg-accent text-white text-[14px]" data-close data-toast="已提交 r13 审核" data-toast-tone="ok">提交 r13 审核</button></div>
+  </div>
+</div>
+<!-- 批准 -->
+<div id="dlg-approve" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="dap-t" class="relative w-full max-w-[420px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="dap-t" class="text-[17px] font-semibold">批准修订 r13？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub leading-6">批准不会自动发布。之后可在编辑页的「发布」中选择 r13，进入站点构建后才会上线。</p>
+    <label for="ap-note" class="block mt-4 text-[13px] text-ui-sub">审核意见（可选）</label>
+    <textarea id="ap-note" rows="2" class="mt-1 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]"></textarea>
+    <div class="mt-5 flex justify-end gap-2"><button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button><button type="button" id="ap-ok" class="h-9 px-4 rounded-md bg-ok text-white text-[14px]">批准 r13</button></div>
+  </div>
+</div>
+<!-- 拒绝 -->
+<div id="dlg-reject" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="drj-t" class="relative w-full max-w-[420px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="drj-t" class="text-[17px] font-semibold">拒绝修订 r13？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub leading-6">作者会看到你的意见。当前线上的 r9 不受影响。</p>
+    <label for="rj-note" class="block mt-4 text-[13px] font-medium">拒绝原因（必填）</label>
+    <textarea id="rj-note" rows="3" class="mt-1 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]" aria-describedby="rj-err"></textarea>
+    <p id="rj-err" hidden class="mt-1 text-[13px] text-bad">请写明需要修改的地方。</p>
+    <div class="mt-5 flex justify-end gap-2"><button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button><button type="button" id="rj-ok" class="h-9 px-4 rounded-md bg-bad text-white text-[14px]">拒绝 r13</button></div>
+  </div>
+</div>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  // 原型：审核动作完成后切到对应状态（保留当前角色）
+  const go = state => { location.search = '?state=' + state + '&role=' + Proto.role; };
+  document.getElementById('ap-ok').onclick = () => { Proto.toast('已批准 r13', 'ok'); setTimeout(() => go('approved'), 500); };
+  document.getElementById('rj-ok').onclick = () => {
+    const n = document.getElementById('rj-note'), err = document.getElementById('rj-err');
+    err.hidden = !!n.value.trim(); n.setAttribute('aria-invalid', !n.value.trim());
+    if (!n.value.trim()) { n.focus(); return; }
+    Proto.toast('已拒绝 r13'); setTimeout(() => go('rejected'), 500);
+  };
+</script>
+</body>
+</html>

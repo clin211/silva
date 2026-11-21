@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系统健康 · Silva 后台</title>
+  <meta name="description" content="A27 系统健康原型：检查项与最近结果。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="system-health" data-crumbs="系统|系统健康"
+      data-proto-roles="admin" data-proto-states="default:全部正常;degraded:部分异常;error:请求失败">
+<main id="admin-main" class="max-w-[1100px]">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-[22px] font-semibold">系统健康</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">各组件最近一次检查结果，每分钟自动检查。本页只读，不提供运维操作。</p>
+    </div>
+    <p class="text-[13px] text-ui-sub">上次刷新 <time class="tnum">10:12:30</time> <button type="button" class="ml-2 text-accent underline" data-toast="已刷新检查结果">刷新</button></p>
+  </div>
+
+  <div data-state="default" class="mt-5 rounded-lg border border-ok/25 bg-ok-tint px-4 py-3 text-[14px] text-ok">全部 6 项检查正常。</div>
+  <div data-state="degraded" hidden role="alert" class="mt-5 rounded-lg border border-warn/30 bg-warn-tint px-4 py-3 text-[14px] text-warn">2 项需要关注：Worker 心跳延迟，GitHub 采集限流余量低。线上站点不受影响。</div>
+  <div data-state="error" hidden role="alert" class="mt-5 rounded-lg border border-bad/30 bg-bad-tint px-4 py-3 text-[14px] text-bad">无法读取健康检查结果（502 bad_gateway）。这可能意味着 API 本身不可用。<button type="button" class="ml-2 underline" data-toast="正在重新读取…">重试</button></div>
+
+  <section data-state="default degraded" class="mt-4 rounded-lg border border-ui-line bg-white">
+    <div class="relative overflow-x-auto">
+      <table class="tbl min-w-[760px]">
+        <thead><tr><th>检查项</th><th>状态</th><th>最近结果</th><th>检查时间</th></tr></thead>
+        <tbody>
+          <tr><td><div class="font-medium">API 服务</div><div class="text-[12px] text-ui-sub">Axum /healthz</div></td><td><span class="chip chip-ok">正常</span></td><td class="tnum">响应 18 ms，版本 0.9.3</td><td class="tnum">10:12:30</td></tr>
+          <tr><td><div class="font-medium">PostgreSQL</div><div class="text-[12px] text-ui-sub">主库连接与迁移版本</div></td><td><span class="chip chip-ok">正常</span></td><td class="tnum">连接池 6 / 20，迁移 0042 已应用</td><td class="tnum">10:12:30</td></tr>
+          <tr><td><div class="font-medium">对象存储</div><div class="text-[12px] text-ui-sub">私有媒体桶读写</div></td><td><span class="chip chip-ok">正常</span></td><td class="tnum">签名上传与读取探针通过，41 ms</td><td class="tnum">10:12:30</td></tr>
+          <tr><td><div class="font-medium">Worker</div><div class="text-[12px] text-ui-sub">后台任务进程心跳</div></td>
+            <td><span data-state="default" class="chip chip-ok">正常</span><span data-state="degraded" hidden class="chip chip-warn">延迟</span></td>
+            <td class="tnum"><span data-state="default">最近心跳 12 秒前</span><span data-state="degraded" hidden>最近心跳 3 分 40 秒前（阈值 2 分钟）</span></td><td class="tnum">10:12:30</td></tr>
+          <tr><td><div class="font-medium">发布队列</div><div class="text-[12px] text-ui-sub">站点构建与激活</div></td><td><span class="chip chip-ok">正常</span></td><td class="tnum">排队 1，构建中 1，最早排队 1 分钟前 · <a href="publishing.html" class="text-accent underline">查看任务</a></td><td class="tnum">10:12:30</td></tr>
+          <tr><td><div class="font-medium">GitHub 采集限流</div><div class="text-[12px] text-ui-sub">API 剩余配额</div></td>
+            <td><span data-state="default" class="chip chip-ok">正常</span><span data-state="degraded" hidden class="chip chip-warn">余量低</span></td>
+            <td class="tnum"><span data-state="default">剩余 4,612 / 5,000，重置于 10:58</span><span data-state="degraded" hidden>剩余 182 / 5,000，重置于 10:58</span> · <a href="ai-runs.html" class="text-accent underline">采集批次</a></td><td class="tnum">10:12:00</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section data-state="default degraded" aria-labelledby="hist-h" class="mt-5 rounded-lg border border-ui-line bg-white p-5">
+    <h2 id="hist-h" class="text-[15px] font-semibold">最近 24 小时</h2>
+    <p class="mt-1 text-[12px] text-ui-sub">每格为 1 小时内的最差结果。</p>
+    <div class="mt-4 space-y-2 text-[13px]" id="hist"></div>
+    <div class="mt-3 flex flex-wrap gap-4 text-[12px] text-ui-sub">
+      <span class="inline-flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-ok"></span>正常</span>
+      <span class="inline-flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-[#C9A042]"></span>延迟或余量低</span>
+      <span class="inline-flex items-center gap-1.5"><span class="h-3 w-3 rounded-sm bg-bad"></span>失败</span>
+    </div>
+  </section>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  const rows = [['API 服务', []], ['PostgreSQL', []], ['对象存储', [14]], ['Worker', [6, 23]], ['发布队列', [9]], ['GitHub 限流', [20, 21, 23]]];
+  document.getElementById('hist').innerHTML = rows.map(([n, warn]) => `
+    <div class="grid grid-cols-[88px_1fr] items-center gap-3"><span class="text-ui-sub">${n}</span>
+      <div class="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-[2px]" role="img" aria-label="${n}：24 小时内 ${warn.length ? warn.length + ' 小时异常' : '全部正常'}">
+        ${Array.from({ length: 24 }, (_, i) => `<span class="h-4 rounded-[2px] ${n === '对象存储' && i === 14 ? 'bg-bad' : warn.includes(i) ? 'bg-[#C9A042]' : 'bg-ok/80'}"></span>`).join('')}
+      </div></div>`).join('');
+</script>
+</body>
+</html>

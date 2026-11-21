@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>编辑项目 · Silva 后台</title>
+  <meta name="description" content="A14 编辑项目：基本资料、Markdown 说明、封面、技术栈与链接；项目状态与站点上线状态分开显示，可下架。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="projects" data-crumbs="资源|项目@projects.html|Silva Hub" data-proto-roles="editor"
+      data-proto-states="default:已上线;pending:待上线;offline:已下架">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold">Silva Hub</h1>
+      <div class="mt-2">
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
+        <span class="flex items-center gap-2"><span class="text-ui-sub">项目状态</span><span class="chip chip-ok">维护中</span></span>
+        <span class="flex items-center gap-2"><span class="text-ui-sub">站点状态</span>
+          <span data-state="default" class="chip chip-ok">已上线</span>
+          <span data-state="pending" hidden class="chip chip-warn">待上线</span>
+          <span data-state="offline" hidden class="chip chip-mute">已下架</span>
+          <a data-state="pending" hidden href="publishing-detail.html" class="text-accent">查看任务</a></span>
+        <span class="text-ui-sub">最后保存 <span class="tnum">2026-11-20 10:12</span> · 公开地址 <a href="../site/project-detail.html" target="_blank" rel="noopener" class="text-accent font-code">/projects/silva-hub ↗</a></span>
+      </div></div>
+    </div>
+    <div class="flex gap-2">
+          <button type="button" data-state="default pending" data-open="dlg-offline" class="h-9 px-3 rounded-md border border-bad/40 text-bad text-[14px] bg-white">下架项目</button>
+          <button type="button" data-state="offline" hidden data-toast="已重新上架，待上线" class="h-9 px-3 rounded-md border border-ui-line text-[14px] bg-white">重新上架</button>
+      <a href="projects.html" class="h-9 px-3 inline-flex items-center rounded-md border border-ui-line bg-white text-[14px]">返回列表</a>
+    </div>
+  </div>
+  
+
+  <div class="mt-6 lg:grid lg:grid-cols-[160px_1fr] lg:gap-8">
+    <nav aria-label="表单分区" class="hidden lg:block"><ul class="sticky top-20 space-y-0.5"><li><a href="#sec-basic" class="block px-3 py-1.5 rounded text-[14px] text-ui-sub hover:text-ui-text hover:bg-white">基本资料</a></li><li><a href="#sec-body" class="block px-3 py-1.5 rounded text-[14px] text-ui-sub hover:text-ui-text hover:bg-white">项目说明</a></li><li><a href="#sec-cover" class="block px-3 py-1.5 rounded text-[14px] text-ui-sub hover:text-ui-text hover:bg-white">封面</a></li><li><a href="#sec-stack" class="block px-3 py-1.5 rounded text-[14px] text-ui-sub hover:text-ui-text hover:bg-white">技术栈</a></li><li><a href="#sec-links" class="block px-3 py-1.5 rounded text-[14px] text-ui-sub hover:text-ui-text hover:bg-white">链接</a></li></ul></nav>
+    <form id="project-form" class="space-y-6 max-w-[820px] min-w-0" onsubmit="event.preventDefault()">
+      <section id="sec-basic" class="scroll-mt-20 bg-white border border-ui-line rounded-lg p-5" aria-labelledby="h-basic">
+        <h2 id="h-basic" class="text-[16px] font-semibold">基本资料</h2>
+        <div class="mt-4 grid sm:grid-cols-2 gap-4">
+          <div><label for="p-name" class="block text-[13px] font-medium">名称</label><input id="p-name" value="Silva Hub" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]" >
+            </div>
+          <div><label for="p-slug" class="block text-[13px] font-medium">Slug</label><input id="p-slug" value="silva-hub" placeholder="根据名称生成" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code">
+            <p class="mt-1 text-[12px] text-ui-sub">公开地址 /projects/&lt;slug&gt;。</p></div>
+          <div class="sm:col-span-2"><label for="p-intro" class="block text-[13px] font-medium">简介</label><input id="p-intro" value="本站：Astro 前台、React 后台与 Axum API" placeholder="一句话说明项目做什么" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+          <div><label for="p-status" class="block text-[13px] font-medium">项目状态</label>
+            <select id="p-status" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] px-2"><option >开发中</option><option selected>维护中</option><option>已归档</option></select>
+            <p class="mt-1 text-[12px] text-ui-sub">描述项目本身，与是否上线无关。</p></div>
+          <div><label for="p-date" class="block text-[13px] font-medium">开始日期 <span class="text-ui-sub font-normal">（可选）</span></label><input id="p-date" type="month" value="2026-05" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+          <label class="sm:col-span-2 flex items-start gap-3 p-3 rounded-md border border-ui-line">
+            <input type="checkbox" class="mt-1" checked>
+            <span><span class="block text-[14px]">设为精选</span><span class="block text-[12px] text-ui-sub">在项目页优先展示；首页最多展示排序靠前的 3 个精选项目。</span></span>
+          </label>
+        </div>
+      </section>
+
+      <section id="sec-body" data-tabs class="scroll-mt-20 bg-white border border-ui-line rounded-lg p-5" aria-labelledby="h-body">
+        <div class="flex items-center justify-between">
+          <h2 id="h-body" class="text-[16px] font-semibold">项目说明</h2>
+          <div role="tablist" aria-label="说明编辑模式" class="flex text-[13px] bg-ui-bg rounded-md p-0.5">
+            <button type="button" role="tab" data-tab="src" aria-selected="true" class="px-3 py-1 rounded aria-selected:bg-white aria-selected:shadow-sm">Markdown</button>
+            <button type="button" role="tab" data-tab="pre" aria-selected="false" class="px-3 py-1 rounded aria-selected:bg-white aria-selected:shadow-sm">预览</button>
+          </div>
+        </div>
+        <textarea data-panel="src" aria-labelledby="h-body" rows="10" placeholder="介绍项目背景、功能和使用方式。支持 Markdown。" class="mt-3 w-full rounded-md border border-ui-line px-3 py-2 text-[14px] font-code leading-6">## 为什么做
+
+想要一个自己能完全掌控的技术主页：文章有修订和审核，项目、工具和 MCP 目录各有独立的数据模型。
+
+## 架构
+
+- Astro 静态站点，从不可变快照构建
+- React 管理后台
+- Axum API + PostgreSQL，Worker 负责构建与采集</textarea>
+        <div data-panel="pre" hidden class="mt-3 prose-ink rounded-md border border-ui-line p-4 !text-[15px]"><h2>为什么做</h2><p>想要一个自己能完全掌控的技术主页：文章有修订和审核，项目、工具和 MCP 目录各有独立的数据模型。</p><h2>架构</h2><ul><li>Astro 静态站点，从不可变快照构建</li><li>React 管理后台</li><li>Axum API + PostgreSQL，Worker 负责构建与采集</li></ul></div>
+      </section>
+
+      <section id="sec-cover" class="scroll-mt-20 bg-white border border-ui-line rounded-lg p-5" aria-labelledby="h-cover">
+        <h2 id="h-cover" class="text-[16px] font-semibold">封面 <span class="text-ui-sub text-[13px] font-normal">（可选）</span></h2>
+        <div class="mt-4 flex flex-col sm:flex-row gap-4 items-start">
+          <div class="w-full sm:w-[240px] aspect-[16/9] rounded-md border border-ui-line bg-[#C9D3E3] grid place-items-center text-[12px] text-ink-2">silva-cover.png</div>
+          <div class="text-[13px] space-y-2">
+            <button type="button" class="h-9 px-3 rounded-md border border-ui-line">从媒体库选择</button>
+            <button type="button" class="block text-ui-sub">移除封面</button>
+            <p class="text-[12px] text-ui-sub">只能选择状态为「就绪」的媒体。没有封面时，公开卡片只显示文字。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="sec-stack" class="scroll-mt-20 bg-white border border-ui-line rounded-lg p-5" aria-labelledby="h-stack">
+        <h2 id="h-stack" class="text-[16px] font-semibold">技术栈</h2>
+        <label for="tag-input" class="sr-only">添加技术栈</label>
+        <div class="mt-3 flex flex-wrap items-center gap-1.5 min-h-[40px] rounded-md border border-ui-line px-2 py-1.5 focus-within:border-accent">
+          <span id="tags" class="contents"><span class="tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]">Rust<button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" aria-label="移除 Rust" data-rm-tag>×</button></span><span class="tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]">Axum<button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" aria-label="移除 Axum" data-rm-tag>×</button></span><span class="tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]">PostgreSQL<button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" aria-label="移除 PostgreSQL" data-rm-tag>×</button></span><span class="tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]">Astro<button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" aria-label="移除 Astro" data-rm-tag>×</button></span><span class="tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]">React<button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" aria-label="移除 React" data-rm-tag>×</button></span></span>
+          <input id="tag-input" placeholder="输入后按回车添加" class="flex-1 min-w-[140px] h-7 px-1 text-[14px] outline-none">
+        </div>
+        <p class="mt-1 text-[12px] text-ui-sub">按添加顺序展示。退格键可删除最后一个。</p>
+      </section>
+
+      <section id="sec-links" class="scroll-mt-20 bg-white border border-ui-line rounded-lg p-5" aria-labelledby="h-links">
+        <h2 id="h-links" class="text-[16px] font-semibold">链接</h2>
+        <p class="mt-1 text-[12px] text-ui-sub">只有填写的链接会在详情页显示为按钮。</p>
+        <div class="mt-4 grid gap-4">
+          <div><label for="p-repo" class="block text-[13px] font-medium">仓库</label><input id="p-repo" type="url" value="https://github.com/zhouyu/silva" placeholder="https://github.com/…" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code">
+            </div>
+          <div><label for="p-demo" class="block text-[13px] font-medium">演示</label><input id="p-demo" type="url" value="" placeholder="https://" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code"></div>
+          <div><label for="p-home" class="block text-[13px] font-medium">主页</label><input id="p-home" type="url" value="https://silva.dev" placeholder="https://" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] font-code"></div>
+        </div>
+      </section>
+
+      <div class="sticky bottom-0 -mx-4 md:mx-0 px-4 md:px-5 py-3 bg-white/95 backdrop-blur border-t md:border border-ui-line md:rounded-lg flex flex-wrap items-center justify-between gap-3">
+        <span id="save-state" class="text-[13px] text-ui-sub" aria-live="polite">有未保存的修改</span>
+        <div class="flex gap-2">
+          <a href="projects.html" class="h-9 px-4 inline-flex items-center rounded-md border border-ui-line text-[14px]">取消</a>
+          <button type="button" id="btn-save" class="h-9 px-5 rounded-md bg-accent text-white text-[14px] font-medium">保存</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div id="dlg-offline" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="alertdialog" aria-modal="true" aria-labelledby="off-title" class="relative w-full max-w-md bg-white rounded-lg shadow-xl p-5">
+    <h2 id="off-title" class="text-[16px] font-semibold">下架「Silva Hub」？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub">下架会进入站点发布队列。包含这次变更的站点版本上线后，项目详情页返回 404，并从项目列表和首页精选中移除；上线前访客仍能看到它。项目数据会保留，可以随时重新上架。</p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" class="h-9 px-4 rounded-md bg-bad text-white text-[14px]" onclick="Proto.close('dlg-offline');Proto.toast('已下架，待上线');">下架</button>
+    </div>
+  </section>
+</div>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  // 技术栈 tag input
+  const tagBox = document.getElementById('tags'), ti = document.getElementById('tag-input');
+  const addTag = t => {
+    const s = document.createElement('span');
+    s.className = 'tag inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-accent-tint text-accent text-[13px]';
+    s.innerHTML = '<span></span><button type="button" class="w-5 h-5 rounded-full hover:bg-white/70" data-rm-tag>×</button>';
+    s.firstChild.textContent = t; s.lastChild.setAttribute('aria-label', '移除 ' + t);
+    tagBox.appendChild(s);
+  };
+  ti.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && ti.value.trim()) { e.preventDefault(); addTag(ti.value.trim()); ti.value = ''; }
+    if (e.key === 'Backspace' && !ti.value) tagBox.lastElementChild?.remove();
+  });
+  tagBox.addEventListener('click', e => { if (e.target.matches('[data-rm-tag]')) { e.target.parentElement.remove(); ti.focus(); } });
+  // 保存
+  document.getElementById('btn-save').addEventListener('click', () => {
+    const s = document.getElementById('save-state');
+    s.textContent = '保存中…';
+    setTimeout(() => { s.innerHTML = '已保存，待上线 · <a class="text-accent" href="publishing-detail.html">查看任务</a>'; Proto.toast('项目已保存，待上线', 'ok'); document.querySelector('[data-proto-state-btn="pending"]')?.click(); }, 600);
+  });
+</script>
+</body>
+</html>

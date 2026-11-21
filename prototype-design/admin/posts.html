@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文章 · Silva 后台</title>
+  <meta name="description" content="A03 文章列表原型：区分编辑/审核状态、期望公开与当前线上状态。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="posts" data-crumbs="内容|文章" data-proto-roles="editor"
+      data-proto-states="default:正常;empty:无结果;error:加载失败">
+<main id="admin-main">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">文章</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">「编辑状态」是最新修订的进度；「期望公开」是已接受发布、等待上线的修订；「当前线上」是访客正在看到的修订。</p>
+    </div>
+    <a href="post-new.html" class="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新建文章</a>
+  </div>
+
+  <!-- 筛选区 -->
+  <form class="mt-5 bg-white border border-ui-line rounded-lg p-3 flex flex-wrap items-center gap-3" role="search" aria-label="筛选文章" onsubmit="return false">
+    <div data-role="editor" class="inline-flex rounded-md border border-ui-line p-0.5 text-[13px]" role="group" aria-label="范围">
+      <button type="button" class="scope px-3 h-7 rounded aria-pressed:bg-accent-tint aria-pressed:text-accent" aria-pressed="false" data-scope="mine">我的文章</button>
+      <button type="button" class="scope px-3 h-7 rounded aria-pressed:bg-accent-tint aria-pressed:text-accent" aria-pressed="true" data-scope="all">全部文章</button>
+    </div>
+    <span data-role-only="author" class="text-[13px] text-ui-sub">仅显示你自己的文章</span>
+    <label class="sr-only" for="q">标题</label>
+    <input id="q" type="search" placeholder="按标题筛选" class="h-8 w-full sm:w-56 rounded-md border border-ui-line px-3 text-[14px] focus:border-accent focus:outline-none">
+    <label class="sr-only" for="st">编辑状态</label>
+    <select id="st" class="h-8 rounded-md border border-ui-line px-2 text-[14px] bg-white">
+      <option>全部编辑状态</option><option>草稿</option><option>审核中（待审核）</option><option>已批准</option><option>已拒绝</option>
+    </select>
+    <label class="sr-only" for="ol">线上状态</label>
+    <select id="ol" class="h-8 rounded-md border border-ui-line px-2 text-[14px] bg-white">
+      <option>全部线上状态</option><option>已上线</option><option>待上线</option><option>未上线</option>
+    </select>
+    <button type="button" id="only-review" data-role="editor" aria-pressed="false" class="h-8 px-3 rounded-md border border-ui-line text-[13px] aria-pressed:bg-warn-tint aria-pressed:text-warn aria-pressed:border-[#EBD7A9]">只看待审核 <span class="tnum">2</span></button>
+  </form>
+
+  <!-- 表格 -->
+  <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tbl min-w-[880px]" id="posts-table">
+        <thead><tr><th class="w-[34%]">标题</th><th>编辑状态</th><th>期望公开</th><th>当前线上</th><th data-role="editor">作者</th><th>更新</th><th class="text-right">操作</th></tr></thead>
+        <tbody>
+          <tr data-mine="1">
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</a><div class="text-[12px] text-ui-sub mt-0.5">后端工程 · 首页精选</div></td>
+            <td><span class="chip chip-warn">r14 草稿</span></td>
+            <td><span class="chip chip-info">r12 待上线</span></td>
+            <td><span class="chip chip-ok">r9 已上线</span></td>
+            <td data-role="editor">周屿</td><td class="tnum text-ui-sub">11-21 10:42</td>
+            <td class="text-right whitespace-nowrap"><a href="post-edit.html" class="text-accent hover:underline">编辑</a><a href="post-revisions.html" class="ml-3 text-ui-sub hover:text-ui-text">历史</a></td>
+          </tr>
+          <tr data-review="1">
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">Axum 中间件的执行顺序，一张图讲清楚</a><div class="text-[12px] text-ui-sub mt-0.5">Rust</div></td>
+            <td><span class="chip chip-info">r6 审核中</span></td>
+            <td><span class="text-ui-sub text-[13px]">r4（同线上）</span></td>
+            <td><span class="chip chip-ok">r4 已上线</span></td>
+            <td data-role="editor">林夏</td><td class="tnum text-ui-sub">11-21 07:15</td>
+            <td class="text-right whitespace-nowrap"><a href="post-revision-detail.html" data-role="editor" class="text-accent hover:underline">审核 r6</a><a href="post-edit.html" class="ml-3 text-ui-sub hover:text-ui-text">编辑</a></td>
+          </tr>
+          <tr data-mine="1">
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">静态优先的 Astro 站点，什么时候才需要 Island</a><div class="text-[12px] text-ui-sub mt-0.5">前端</div></td>
+            <td><span class="chip chip-ok">r5 已批准</span></td>
+            <td><span class="chip chip-mute">未设置</span></td>
+            <td><span class="chip chip-ok">r3 已上线</span></td>
+            <td data-role="editor">周屿</td><td class="tnum text-ui-sub">11-20 22:03</td>
+            <td class="text-right whitespace-nowrap"><a href="post-edit.html" class="text-accent hover:underline">编辑</a><a href="post-revisions.html" class="ml-3 text-ui-sub hover:text-ui-text">历史</a></td>
+          </tr>
+          <tr data-review="1">
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">从零搭建 MCP Server 目录：数据模型与核验</a><div class="text-[12px] text-ui-sub mt-0.5">AI 工程</div></td>
+            <td><span class="chip chip-info">r2 审核中</span></td>
+            <td><span class="chip chip-mute">未设置</span></td>
+            <td><span class="chip chip-mute">未上线</span></td>
+            <td data-role="editor">陈默</td><td class="tnum text-ui-sub">11-20 16:40</td>
+            <td class="text-right whitespace-nowrap"><a href="post-revision-detail.html" data-role="editor" class="text-accent hover:underline">审核 r2</a><a href="post-edit.html" class="ml-3 text-ui-sub hover:text-ui-text">编辑</a></td>
+          </tr>
+          <tr data-mine="1">
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">PostgreSQL 迁移锁表排查笔记</a><div class="text-[12px] text-ui-sub mt-0.5">数据库</div></td>
+            <td><span class="chip chip-bad">r3 已拒绝</span></td>
+            <td><span class="chip chip-mute">未设置</span></td>
+            <td><span class="chip chip-mute">未上线</span></td>
+            <td data-role="editor">周屿</td><td class="tnum text-ui-sub">11-18 09:12</td>
+            <td class="text-right whitespace-nowrap"><a href="post-edit.html" class="text-accent hover:underline">编辑</a><a href="post-revisions.html" class="ml-3 text-ui-sub hover:text-ui-text">历史</a></td>
+          </tr>
+          <tr>
+            <td><a href="post-edit.html" class="font-medium hover:text-accent">一份给后端工程师的 Tailwind 速查</a><div class="text-[12px] text-ui-sub mt-0.5">前端</div></td>
+            <td><span class="chip chip-ok">r7 已批准</span></td>
+            <td><span class="chip chip-warn">取消发布·待上线</span></td>
+            <td><span class="chip chip-ok">r7 已上线</span></td>
+            <td data-role="editor">林夏</td><td class="tnum text-ui-sub">11-17 20:31</td>
+            <td class="text-right whitespace-nowrap"><a href="post-edit.html" class="text-accent hover:underline">编辑</a><a href="publishing-detail.html" class="ml-3 text-ui-sub hover:text-ui-text">任务</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-ui-line text-[13px] text-ui-sub">
+      <span>共 <span class="tnum">36</span> 篇，第 1 / 4 页</span>
+      <nav aria-label="分页" class="flex items-center gap-1">
+        <button class="h-8 px-3 rounded border border-ui-line text-ui-sub" disabled>上一页</button>
+        <a href="#" class="h-8 min-w-8 px-2 grid place-items-center rounded bg-accent text-white tnum" aria-current="page">1</a>
+        <a href="#" class="h-8 min-w-8 px-2 grid place-items-center rounded hover:bg-ui-bg tnum">2</a>
+        <a href="#" class="h-8 min-w-8 px-2 grid place-items-center rounded hover:bg-ui-bg tnum">3</a>
+        <a href="#" class="h-8 min-w-8 px-2 grid place-items-center rounded hover:bg-ui-bg tnum">4</a>
+        <a href="#" class="h-8 px-3 grid place-items-center rounded border border-ui-line hover:bg-ui-bg">下一页</a>
+      </nav>
+    </div>
+  </div>
+
+  <div data-state="empty" hidden class="mt-4 bg-white border border-ui-line rounded-lg px-4 py-14 text-center">
+    <p class="text-[15px]">没有符合条件的文章。</p>
+    <p class="mt-1 text-[14px] text-ui-sub">调整筛选条件，或新建一篇文章。</p>
+    <div class="mt-4 flex justify-center gap-2">
+      <button type="button" class="h-9 px-4 rounded-md border border-ui-line bg-white text-[14px]">清除筛选</button>
+      <a href="post-new.html" class="h-9 px-4 inline-flex items-center rounded-md bg-accent text-white text-[14px]">新建文章</a>
+    </div>
+  </div>
+
+  <div data-state="error" hidden class="mt-4 bg-white border border-[#E8C3BF] rounded-lg px-4 py-10 text-center" role="alert">
+    <p class="text-[15px] text-bad font-medium">文章列表加载失败</p>
+    <p class="mt-1 text-[14px] text-ui-sub">服务暂时不可用（503）。你的筛选条件已保留。</p>
+    <button type="button" class="mt-4 h-9 px-4 rounded-md border border-ui-line bg-white text-[14px]" data-toast="正在重新加载…">重试</button>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  // 原型：范围切换与「只看待审核」筛选
+  const rows = [...document.querySelectorAll('#posts-table tbody tr')];
+  let scope = 'all', onlyReview = false;
+  function filter() {
+    const author = Proto.role === 'author';
+    rows.forEach(r => {
+      let show = true;
+      if (author || scope === 'mine') show = r.dataset.mine === '1';
+      if (onlyReview && !author) show = r.dataset.review === '1';
+      r.style.display = show ? '' : 'none';
+    });
+  }
+  document.querySelectorAll('.scope').forEach(b => b.addEventListener('click', () => {
+    scope = b.dataset.scope;
+    document.querySelectorAll('.scope').forEach(x => x.setAttribute('aria-pressed', x === b));
+    filter();
+  }));
+  document.getElementById('only-review').addEventListener('click', e => {
+    onlyReview = !onlyReview; e.currentTarget.setAttribute('aria-pressed', onlyReview); filter();
+  });
+  if (new URLSearchParams(location.search).get('filter') === 'review') { onlyReview = true; document.getElementById('only-review').setAttribute('aria-pressed', 'true'); }
+  document.addEventListener('proto:role', filter);
+  filter();
+</script>
+</body>
+</html>

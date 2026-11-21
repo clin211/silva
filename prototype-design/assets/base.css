@@ -1,0 +1,53 @@
+/* Shared base styles for all prototype pages */
+html { -webkit-text-size-adjust: 100%; }
+body { font-feature-settings: "palt" 1; text-rendering: optimizeLegibility; }
+.tnum { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid #27467A; outline-offset: 2px; border-radius: 2px; }
+::selection { background: #27467A; color: #fff; }
+
+/* Long-form prose (article / project / MCP body) */
+.prose-ink { color: #2A303B; font-size: 17px; line-height: 1.85; }
+.prose-ink > * + * { margin-top: 1.1em; }
+.prose-ink h2 { font-family: "Noto Serif SC", serif; font-size: 1.55rem; font-weight: 700; color: #1D2330; margin-top: 2.2em; scroll-margin-top: 88px; }
+.prose-ink h3 { font-family: "Noto Serif SC", serif; font-size: 1.2rem; font-weight: 700; color: #1D2330; margin-top: 1.8em; scroll-margin-top: 88px; }
+.prose-ink a { color: #27467A; text-decoration: underline; text-underline-offset: 3px; }
+.prose-ink ul { list-style: disc; padding-left: 1.3em; }
+.prose-ink ol { list-style: decimal; padding-left: 1.3em; }
+.prose-ink blockquote { border-left: 3px solid #27467A; padding-left: 1em; color: #4A505B; }
+.prose-ink code { font-family: "JetBrains Mono", monospace; font-size: .88em; background: #EEEAE2; padding: .1em .35em; border-radius: 3px; }
+.prose-ink pre { background: #1D2330; color: #E8EAF0; padding: 1rem 1.1rem; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.65; }
+.prose-ink pre code { background: transparent; padding: 0; color: inherit; }
+.prose-ink table { width: 100%; border-collapse: collapse; font-size: 15px; display: block; overflow-x: auto; }
+.prose-ink th, .prose-ink td { border-bottom: 1px solid #DCD6CB; padding: .5em .75em; text-align: left; white-space: nowrap; }
+
+/* Admin compact table */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; font-weight: 500; color: #5E6470; background: #F8F9FA; padding: 10px 12px; border-bottom: 1px solid #E2E4E9; white-space: nowrap; }
+.tbl td { padding: 11px 12px; border-bottom: 1px solid #EEF0F3; vertical-align: middle; }
+.tbl tr:hover td { background: #FAFBFC; }
+
+/* Status chip: always text + color, never color alone */
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1; padding: 5px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid transparent; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip-ok { color: #1F6B4A; background: #E2F0E8; }
+.chip-warn { color: #8A5A00; background: #F8EDD5; }
+.chip-bad { color: #A3261F; background: #F7E1DF; }
+.chip-info { color: #27467A; background: #E3E8F1; }
+.chip-mute { color: #5E6470; background: #EEF0F3; }
+
+/* Contour hero graphic draw-in (single orchestrated moment) */
+.contour path { fill: none; stroke-linecap: round; }
+@media (prefers-reduced-motion: no-preference) {
+  .contour.draw path { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: contour-draw 1.8s cubic-bezier(.3,.6,.2,1) forwards; animation-delay: var(--d, 0s); }
+}
+@keyframes contour-draw { to { stroke-dashoffset: 0; } }
+
+/* Drawer & dialog */
+.drawer-backdrop { background: rgba(29,35,48,.35); }
+[hidden] { display: none !important; }
+
+/* Prototype state switcher (not part of the product UI) */
+#proto-bar { font-family: "Noto Sans SC", system-ui, sans-serif; }
+
+/* sr-only children inside horizontally scrolling containers must not escape them */
+.overflow-x-auto { position: relative; }

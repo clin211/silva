@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>修订历史 · Silva 后台</title>
+  <meta name="description" content="A06 修订历史原型：修订号、时间、作者与审核状态，选中进入修订详情。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="posts"
+      data-crumbs="内容|文章@posts.html|用不可变 revision 重写 CMS…@post-edit.html|修订历史" data-proto-roles="editor"
+      data-proto-states="default:正常;error:加载失败">
+<main id="admin-main">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div class="min-w-0">
+      <h1 class="text-[22px] font-semibold">修订历史</h1>
+      <p class="mt-1 text-[14px] text-ui-sub truncate">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</p>
+    </div>
+    <a href="post-edit.html" class="h-9 px-4 inline-flex items-center rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">返回编辑</a>
+  </div>
+
+  <!-- 三种修订概览 -->
+  <dl class="mt-5 grid sm:grid-cols-3 gap-3">
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><dt class="text-[13px] text-ui-sub">当前编辑修订</dt><dd class="mt-1"><span class="chip chip-warn">r14 草稿</span></dd></div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><dt class="text-[13px] text-ui-sub">期望公开修订</dt><dd class="mt-1"><span class="chip chip-info">r12 待上线</span> <a href="publishing-detail.html" class="ml-1 text-[13px] text-accent hover:underline">任务 g-0143</a></dd></div>
+    <div class="bg-white border border-ui-line rounded-lg px-4 py-3"><dt class="text-[13px] text-ui-sub">当前线上修订</dt><dd class="mt-1"><span class="chip chip-ok">r9 已上线</span></dd></div>
+  </dl>
+
+  <div data-state="default" class="mt-4 bg-white border border-ui-line rounded-lg overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="tbl min-w-[760px]">
+        <thead><tr><th>修订</th><th>保存时间</th><th>作者</th><th>审核状态</th><th>变更摘要</th><th class="text-right">操作</th></tr></thead>
+        <tbody>
+          <tr><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r14</a> <span class="text-[12px] text-ui-sub">当前编辑</span></td><td class="tnum text-ui-sub">11-21 10:42</td><td>周屿</td><td><span class="chip chip-warn">草稿</span></td><td class="text-ui-sub">正文 · SEO 描述</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline">查看</a></td></tr>
+          <tr><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r13</a></td><td class="tnum text-ui-sub">11-21 09:18</td><td>周屿</td><td><span class="chip chip-info">审核中</span></td><td class="text-ui-sub">正文 · 标签</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline"><span data-role="editor">审核</span><span data-role-only="author">查看</span></a></td></tr>
+          <tr class="bg-accent-tint/40"><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r12</a> <span class="text-[12px] text-accent">期望公开</span></td><td class="tnum text-ui-sub">11-20 17:40</td><td>周屿</td><td><span class="chip chip-ok">已批准 · 林夏</span></td><td class="text-ui-sub">封面 · 首页精选</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline">查看</a></td></tr>
+          <tr><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r11</a></td><td class="tnum text-ui-sub">11-20 15:02</td><td>周屿</td><td><span class="chip chip-bad">已拒绝 · 林夏</span></td><td class="text-ui-sub">正文</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline">查看</a></td></tr>
+          <tr><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r10</a></td><td class="tnum text-ui-sub">11-19 22:16</td><td>周屿</td><td><span class="chip chip-mute">未提交</span></td><td class="text-ui-sub">自动保存</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline">查看</a></td></tr>
+          <tr><td><a href="post-revision-detail.html" class="font-medium tnum hover:text-accent">r9</a> <span class="text-[12px] text-ok">当前线上</span></td><td class="tnum text-ui-sub">11-12 14:05</td><td>周屿</td><td><span class="chip chip-ok">已批准 · 周屿</span></td><td class="text-ui-sub">首次发布</td><td class="text-right"><a href="post-revision-detail.html" class="text-accent hover:underline">查看</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 border-t border-ui-line text-[13px] text-ui-sub">
+      <span>共 <span class="tnum">14</span> 个修订，修订一经保存不再修改</span>
+      <nav aria-label="分页" class="flex gap-1"><button class="h-8 px-3 rounded border border-ui-line" disabled>上一页</button><a href="#" class="h-8 px-3 grid place-items-center rounded border border-ui-line hover:bg-ui-bg">下一页</a></nav>
+    </div>
+  </div>
+
+  <div data-state="error" hidden class="mt-4 bg-white border border-[#E8C3BF] rounded-lg px-4 py-10 text-center" role="alert">
+    <p class="text-[15px] text-bad font-medium">修订历史加载失败</p>
+    <p class="mt-1 text-[14px] text-ui-sub">请稍后重试。编辑器中的内容不受影响。</p>
+    <button type="button" class="mt-4 h-9 px-4 rounded-md border border-ui-line bg-white text-[14px]" data-toast="正在重新加载…">重试</button>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

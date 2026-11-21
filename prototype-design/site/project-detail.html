@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tidewatch · 项目 · Silva</title>
+  <meta name="description" content="W07 项目详情原型：面包屑、名称与简介、状态、仓库/演示/主页按钮、可选封面、项目说明与侧栏信息。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="projects"
+      data-proto-states="default:链接齐全;minimal:仅仓库链接、无封面">
+<div id="site-header"></div>
+
+<main id="main" class="max-w-site mx-auto px-4 md:px-8">
+  <nav aria-label="面包屑" class="pt-8 md:pt-10"><ol class="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
+    <li><a href="home.html" class="hover:text-accent">首页</a></li><li aria-hidden="true">/</li>
+    <li><a href="projects.html" class="hover:text-accent">项目</a></li><li aria-hidden="true">/</li>
+    <li aria-current="page" class="text-ink">tidewatch</li>
+  </ol></nav>
+
+  <header class="pt-8 md:pt-12 pb-10 grid lg:grid-cols-12 gap-6 items-end">
+    <div class="lg:col-span-8">
+      <span class="chip chip-info">开发中</span>
+      <h1 class="mt-4 font-serif text-[40px] md:text-[60px] font-black leading-[1.05] break-words">tidewatch</h1>
+      <p class="mt-4 text-[18px] leading-8 text-ink-2 max-w-[34em]">采集 GitHub 仓库指标并保存每日快照，用快照相减计算 7 天和 30 天增长；数据不足时如实标注，而不是显示 0。</p>
+    </div>
+    <!-- 只显示已配置的链接 -->
+    <div class="lg:col-span-4 flex flex-wrap lg:justify-end gap-3">
+      <a href="https://github.com/" target="_blank" rel="noopener" class="inline-flex items-center gap-2 h-11 px-5 rounded-full bg-ink text-paper text-[15px] hover:bg-accent">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.15-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+        仓库<span class="sr-only">（外部链接）</span><span aria-hidden="true">↗</span></a>
+      <a data-state="default" href="https://example.com/" target="_blank" rel="noopener" class="inline-flex items-center h-11 px-5 rounded-full border border-ink/25 text-[15px] hover:border-ink">在线演示<span class="sr-only">（外部链接）</span>&nbsp;<span aria-hidden="true">↗</span></a>
+      <a data-state="default" href="https://example.com/" target="_blank" rel="noopener" class="inline-flex items-center h-11 px-5 rounded-full border border-ink/25 text-[15px] hover:border-ink">项目主页<span class="sr-only">（外部链接）</span>&nbsp;<span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <figure data-state="default" class="aspect-[21/9] rounded-md overflow-hidden bg-paper-3"><svg id="cover" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></figure>
+
+  <div class="mt-12 grid lg:grid-cols-12 gap-10 lg:gap-16">
+    <!-- 侧栏：桌面右侧；手机按顺序排在正文前 -->
+    <aside class="lg:col-span-4 lg:order-2" aria-label="项目信息">
+      <dl class="lg:sticky lg:top-24 grid grid-cols-2 lg:grid-cols-1 gap-x-6 border-t border-ink text-[15px]">
+        <div class="py-4 border-b border-rule col-span-2 lg:col-span-1">
+          <dt class="text-[13px] text-ink-soft">技术栈</dt>
+          <dd class="mt-2 flex flex-wrap gap-2"><span class="px-2.5 py-1 rounded bg-paper-2 text-[13px]">Rust</span><span class="px-2.5 py-1 rounded bg-paper-2 text-[13px]">Tokio</span><span class="px-2.5 py-1 rounded bg-paper-2 text-[13px]">reqwest</span><span class="px-2.5 py-1 rounded bg-paper-2 text-[13px]">PostgreSQL</span></dd>
+        </div>
+        <div class="py-4 border-b border-rule"><dt class="text-[13px] text-ink-soft">开始于</dt><dd class="mt-1 tnum">2026 年 6 月</dd></div>
+        <div class="py-4 border-b border-rule"><dt class="text-[13px] text-ink-soft">最近更新</dt><dd class="mt-1 tnum">2026 年 11 月 16 日</dd></div>
+        <div class="py-4 border-b border-rule col-span-2 lg:col-span-1">
+          <dt class="text-[13px] text-ink-soft">相关链接</dt>
+          <dd class="mt-2"><ul class="space-y-1.5">
+            <li><a href="blog-detail.html" class="text-accent hover:underline underline-offset-4">设计笔记：限流、退避与幂等批次</a></li>
+            <li data-state="default"><a href="https://example.com/" target="_blank" rel="noopener" class="text-accent hover:underline underline-offset-4">更新日志 <span class="text-ink-soft text-[12px]">（外部链接）</span></a></li>
+          </ul></dd>
+        </div>
+      </dl>
+    </aside>
+
+    <div class="lg:col-span-8 lg:order-1 prose-ink max-w-prose min-w-0">
+      <h2 id="why">为什么做它</h2>
+      <p>GitHub 页面只显示当前 Stars，看不出最近一周涨了多少。tidewatch 每天在固定的 UTC 时间窗口抓取一次指标，保存为快照，增长由两份快照相减得到。</p>
+      <h2 id="how">它怎么工作</h2>
+      <ol>
+        <li>按配置的 topic 白名单发现候选仓库，排除 fork 与已归档仓库；</li>
+        <li>以仓库 ID 去重，抓取 Stars、Forks、Open Issues 与最近 release；</li>
+        <li>一批全部成功才发布，部分失败则保留上一次完整榜单。</li>
+      </ol>
+<pre><code>$ tidewatch run --window 2026-11-20
+discovered 1,284 repos · fetched 1,284 · rate-limit remaining 3,912
+batch 2026-11-20 committed</code></pre>
+      <h2 id="limits">已知限制</h2>
+      <p>样本少于 7 天的仓库会标记为「数据不足」。负增长会保留，不会被截断为 0。</p>
+    </div>
+  </div>
+
+  <div class="mt-16 pt-8 border-t border-rule"><a href="projects.html" class="inline-flex items-center h-11 px-5 rounded-full border border-ink/25 text-[15px] hover:border-ink">返回项目列表</a></div>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+<script>drawContours(document.getElementById('cover'), { cx: 380, cy: 320, rings: 30, step: 20, seed: 8, highlight: 11, animate: false });</script>
+</body>
+</html>

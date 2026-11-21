@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silva 原型目录</title>
+  <meta name="description" content="Developer Hub 一期前端原型：公开站点 W01–W14 与管理后台 A01–A29。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="assets/tw-config.js"></script>
+  <link rel="stylesheet" href="assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased">
+<main class="max-w-site mx-auto px-4 md:px-8 py-14 md:py-20">
+  <header class="grid md:grid-cols-12 gap-6 border-b border-ink pb-10">
+    <div class="md:col-span-7">
+      <h1 class="font-serif font-black text-[clamp(38px,6vw,64px)] leading-none">Silva 原型目录</h1>
+      <p class="mt-5 text-[16px] leading-8 text-ink-2 max-w-[36em]">依据 <code class="text-[14px]">docs/04-frontend-design.md</code> 与 <code class="text-[14px]">docs/02-frontend-technical.md</code> 绘制的一期页面原型。每个页面是独立的 HTML 文件，页面之间按真实路由互相链接。</p>
+    </div>
+    <div class="md:col-span-5 md:col-start-8 text-[14px] leading-7 text-ink-soft self-end">
+      <p>页面右下角的原型工具条可切换<strong class="text-ink font-medium">页面状态</strong>（空态、失败、版本变化等），后台页还可切换 <strong class="text-ink font-medium">Author / Editor / Admin</strong> 查看权限差异。状态也可以用 <code>?state=</code>、<code>?role=</code> 直接链接。</p>
+    </div>
+  </header>
+
+  <div class="mt-6">
+    <label class="sr-only" for="q">筛选页面</label>
+    <input id="q" type="search" placeholder="按名称或路由筛选，例如 mcp、发布、/posts" class="w-full md:w-[420px] h-11 px-4 rounded-md border border-rule bg-white/70 text-[15px] placeholder:text-ink-soft/70 focus:outline-none focus:border-accent">
+  </div>
+
+  <section aria-labelledby="w-title" class="mt-12">
+    <div class="flex items-baseline justify-between gap-4">
+      <h2 id="w-title" class="font-serif text-[28px] font-bold">公开站点</h2>
+      <span class="text-[14px] text-ink-soft">Astro · 14 页</span>
+    </div>
+    <ul id="w-list" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-rule border border-rule rounded-lg overflow-hidden"></ul>
+  </section>
+
+  <section aria-labelledby="a-title" class="mt-16">
+    <div class="flex items-baseline justify-between gap-4">
+      <h2 id="a-title" class="font-serif text-[28px] font-bold">管理后台</h2>
+      <span class="text-[14px] text-ink-soft">React SPA · 29 页</span>
+    </div>
+    <div id="a-groups"></div>
+  </section>
+  <p id="none" hidden class="mt-10 text-ink-soft">没有匹配的页面。</p>
+</main>
+
+<script>
+const W = [
+  ['W01', '首页', '/', 'site/home.html', '个人首屏、最近更新、正在发生、关于与联络'],
+  ['W02', '文章列表', '/blog', 'site/blog.html', '文章列表＋分类/标签侧栏'],
+  ['W03', '文章详情', '/blog/[slug]', 'site/blog-detail.html', '居中正文＋右侧目录'],
+  ['W04', '分类归档', '/categories/[slug]', 'site/category.html', '分类名称与文章数'],
+  ['W05', '标签归档', '/tags/[slug]', 'site/tag.html', '标签名称与文章数'],
+  ['W06', '项目展览', '/projects', 'site/projects.html', '精选优先＋卡片网格'],
+  ['W07', '项目详情', '/projects/[slug]', 'site/project-detail.html', '链接按钮、说明与技术栈'],
+  ['W08', '工具导航', '/tools', 'site/tools.html', '分类锚点与分组卡片'],
+  ['W09', '公开 404', '未匹配路径', 'site/404.html', '回首页、浏览文章'],
+  ['W10', 'AI 趋势榜', '/ai-trending', 'site/ai-trending.html', '筛选、精选区、自然榜单与分页'],
+  ['W11', 'AI 项目详情', '/ai-trending/[slug]', 'site/ai-trending-detail.html', '摘要指标与历史趋势图'],
+  ['W12', 'MCP 目录', '/mcp', 'site/mcp.html', '分类、Transport、语言筛选'],
+  ['W13', 'MCP 条目详情', '/mcp/[slug]', 'site/mcp-detail.html', '正文、版本与元数据'],
+  ['W14', '关于', '/about', 'site/about.html', '档案、简介、经历、技能、联络'],
+];
+const A = [
+  ['入口', [
+    ['A01', '登录', '/login', 'login.html'],
+    ['A02', '工作台', '/', 'dashboard.html'],
+  ]],
+  ['内容', [
+    ['A03', '文章列表', '/posts', 'posts.html'],
+    ['A04', '新建文章', '/posts/new', 'post-new.html'],
+    ['A05', '编辑文章', '/posts/{id}/edit', 'post-edit.html'],
+    ['A06', '修订历史', '/posts/{id}/revisions', 'post-revisions.html'],
+    ['A07', '修订详情与审核', '/posts/{id}/revisions/{revisionId}', 'post-revision-detail.html'],
+    ['A08', '分类与标签', '/taxonomy', 'taxonomy.html'],
+    ['A09', '媒体库', '/media', 'media.html'],
+  ]],
+  ['资源', [
+    ['A10', '工具维护', '/tools', 'tools.html'],
+    ['A11', '个人资料', '/profile', 'profile.html'],
+    ['A12', '项目列表', '/projects', 'projects.html'],
+    ['A13', '新建项目', '/projects/new', 'project-new.html'],
+    ['A14', '编辑项目', '/projects/{id}/edit', 'project-edit.html'],
+    ['A15', 'MCP 条目列表', '/mcp', 'mcp.html'],
+    ['A16', '新建 MCP 条目', '/mcp/new', 'mcp-new.html'],
+    ['A17', '编辑 MCP 条目', '/mcp/{id}/edit', 'mcp-edit.html'],
+    ['A18', 'MCP 分类', '/mcp/categories', 'mcp-categories.html'],
+  ]],
+  ['运行', [
+    ['A19', 'AI 项目管理', '/ai-trending', 'ai-trending.html'],
+    ['A20', 'AI 仓库详情', '/ai-trending/repositories/{id}', 'ai-repo-detail.html'],
+    ['A21', '采集批次', '/ai-trending/runs', 'ai-runs.html'],
+    ['A22', '发布任务列表', '/publishing', 'publishing.html'],
+    ['A23', '发布任务详情', '/publishing/{id}', 'publishing-detail.html'],
+  ]],
+  ['系统', [
+    ['A24', '账户', '/users', 'users.html'],
+    ['A25', '角色', '/roles', 'roles.html'],
+    ['A26', '审计日志', '/audit-logs', 'audit-logs.html'],
+    ['A27', '系统健康', '/system/health', 'system-health.html'],
+    ['A28', '后台 403', '无权访问', '403.html'],
+    ['A29', '后台 404', '未匹配路径', '404.html'],
+  ]],
+];
+const item = (id, name, route, href, note) => `
+  <li class="bg-paper" data-search="${(id + name + route + (note || '')).toLowerCase()}">
+    <a href="${href}" class="group flex flex-col h-full p-5 hover:bg-white/70 focus-visible:bg-white">
+      <span class="flex items-baseline gap-3"><span class="text-[13px] text-ink-soft tnum w-9 shrink-0">${id}</span><span class="font-serif text-[19px] font-bold group-hover:text-accent">${name}</span></span>
+      <span class="mt-1.5 ml-12 text-[13px] text-accent break-all">${route}</span>
+      ${note ? `<span class="mt-1 ml-12 text-[13px] text-ink-soft">${note}</span>` : ''}
+    </a></li>`;
+document.getElementById('w-list').innerHTML = W.map(w => item(...w)).join('');
+document.getElementById('a-groups').innerHTML = A.map(([g, list]) => `
+  <div class="mt-6" data-group>
+    <h3 class="text-[15px] font-medium text-ink-2 mb-3">${g}</h3>
+    <ul class="grid sm:grid-cols-2 lg:grid-cols-3 gap-px bg-rule border border-rule rounded-lg overflow-hidden">
+      ${list.map(([id, n, r, f]) => item(id, n, r, 'admin/' + f)).join('')}
+    </ul>
+  </div>`).join('');
+document.getElementById('q').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  let any = false;
+  document.querySelectorAll('[data-search]').forEach(li => { const m = !q || li.dataset.search.includes(q); li.hidden = !m; any ||= m; });
+  document.querySelectorAll('[data-group]').forEach(g => { g.hidden = ![...g.querySelectorAll('[data-search]')].some(li => !li.hidden); });
+  document.getElementById('none').hidden = any;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>审计日志 · Silva 后台</title>
+  <meta name="description" content="A26 审计日志原型：事件表格、筛选与详情抽屉。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="audit-logs" data-crumbs="系统|审计日志"
+      data-proto-roles="admin" data-proto-states="default:正常;empty:筛选无结果;error:请求失败">
+<main id="admin-main">
+  <h1 class="text-[22px] font-semibold">审计日志</h1>
+  <p class="mt-1 text-[14px] text-ui-sub">记录登录、内容、目录、账户与任务相关的写操作。日志只读。</p>
+
+  <form class="mt-5 grid gap-2 sm:flex sm:flex-wrap" onsubmit="return false">
+    <div><label for="f-from" class="sr-only">开始日期</label><input id="f-from" type="date" value="2026-11-14" class="h-9 w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></div>
+    <div><label for="f-to" class="sr-only">结束日期</label><input id="f-to" type="date" value="2026-11-21" class="h-9 w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></div>
+    <div><label for="f-actor" class="sr-only">操作人</label><select id="f-actor" class="h-9 w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"><option>全部操作人</option><option>周屿</option><option>林晓</option><option>陈默</option><option>系统</option></select></div>
+    <div><label for="f-act" class="sr-only">事件类型</label><select id="f-act" class="h-9 w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"><option>全部事件</option><option>auth.*</option><option>post.*</option><option>revision.*</option><option>catalog.*</option><option>user.*</option><option>publishing.*</option><option>ai_trending.*</option></select></div>
+    <div><label for="f-req" class="sr-only">Request ID</label><input id="f-req" type="search" placeholder="Request ID" class="h-9 w-full sm:w-56 rounded-md border border-ui-line bg-white px-3 text-[14px] font-code"></div>
+  </form>
+
+  <section data-state="default" class="mt-3 rounded-lg border border-ui-line bg-white">
+    <div class="relative overflow-x-auto">
+      <table class="tbl min-w-[900px]">
+        <thead><tr><th>时间</th><th>操作人</th><th>事件</th><th>资源</th><th>Request ID</th><th><span class="sr-only">详情</span></th></tr></thead>
+        <tbody>
+          <tr><td class="tnum whitespace-nowrap">11-21 10:05:10</td><td>周屿</td><td class="font-code text-[13px]">post.publish</td><td>文章《用不可变 revision 重写 CMS 的发布流程》r12</td><td class="font-code text-[12px] text-ui-sub">01JDK7P2…X4QA</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-21 10:01:44</td><td>林晓</td><td class="font-code text-[13px]">catalog.mcp.update</td><td>MCP 条目 pg-mcp</td><td class="font-code text-[12px] text-ui-sub">01JDK7G8…M2CT</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-21 09:58:02</td><td>林晓</td><td class="font-code text-[13px]">revision.approve</td><td>文章《用不可变 revision 重写 CMS 的发布流程》r12</td><td class="font-code text-[12px] text-ui-sub">01JDK7A1…9PZK</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-21 09:30:15</td><td>周屿</td><td class="font-code text-[13px]">auth.login</td><td>账户 zhouyu@silva.dev</td><td class="font-code text-[12px] text-ui-sub">01JDK5R0…B7WE</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-21 09:20:31</td><td>周屿</td><td class="font-code text-[13px]">post.unpublish</td><td>文章《Docker 镜像瘦身笔记》</td><td class="font-code text-[12px] text-ui-sub">01JDK4Y6…D1RN</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-21 08:00:03</td><td class="text-ui-sub">系统</td><td class="font-code text-[13px]">ai_trending.run.succeeded</td><td>采集批次 2026-11-20（UTC）</td><td class="font-code text-[12px] text-ui-sub">01JDK0C3…F8LS</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-20 17:44:51</td><td>周屿</td><td class="font-code text-[13px]">user.disable</td><td>账户 xuan@silva.dev</td><td class="font-code text-[12px] text-ui-sub">01JDHX2K…7GHV</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+          <tr><td class="tnum whitespace-nowrap">11-20 16:12:09</td><td>陈默</td><td class="font-code text-[13px]">auth.login_failed</td><td>账户 chenmo@silva.dev</td><td class="font-code text-[12px] text-ui-sub">01JDHRT9…Q3ZM</td><td><button type="button" data-open="log-drawer" class="text-accent text-[13px]">详情</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 text-[13px] text-ui-sub border-t border-ui-line">
+      <span>第 1 页，每页 50 条</span>
+      <div class="flex gap-1"><button class="h-8 px-3 rounded border border-ui-line" disabled>上一页</button><button class="h-8 px-3 rounded border border-ui-line bg-white hover:bg-ui-bg">下一页</button></div>
+    </div>
+  </section>
+
+  <div data-state="empty" hidden class="mt-3 rounded-lg border border-dashed border-ui-line bg-white px-6 py-12 text-center">
+    <p class="text-[15px]">没有符合条件的事件</p>
+    <p class="mt-1 text-[13px] text-ui-sub">调整日期范围或事件类型后再试。</p>
+    <button type="button" class="mt-4 h-9 rounded-md border border-ui-line px-4 text-[14px]" data-toast="已清除筛选">清除筛选</button>
+  </div>
+  <div data-state="error" hidden role="alert" class="mt-3 rounded-lg border border-bad/30 bg-bad-tint px-4 py-4 text-[14px] text-bad">
+    无法读取审计日志（503 service_unavailable）。<button type="button" class="ml-2 underline" data-toast="正在重新读取…">重试</button>
+  </div>
+</main>
+
+<div id="log-drawer" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <aside role="dialog" aria-modal="true" aria-labelledby="log-h" class="absolute right-0 top-0 h-full w-full max-w-[520px] bg-white shadow-xl flex flex-col">
+    <div class="flex items-center justify-between border-b border-ui-line px-5 h-14">
+      <h2 id="log-h" class="text-[16px] font-semibold font-code">catalog.mcp.update</h2>
+      <button type="button" data-close class="p-1.5 text-ui-sub" aria-label="关闭">✕</button>
+    </div>
+    <div class="flex-1 overflow-y-auto px-5 py-5">
+      <dl class="grid grid-cols-[88px_1fr] gap-y-2 text-[14px]">
+        <dt class="text-ui-sub">时间</dt><dd class="tnum">2026-11-21 10:01:44（UTC+8）</dd>
+        <dt class="text-ui-sub">操作人</dt><dd>林晓（Editor）</dd>
+        <dt class="text-ui-sub">资源</dt><dd>MCP 条目 <a href="mcp-edit.html" class="text-accent underline">pg-mcp</a></dd>
+        <dt class="text-ui-sub">资源 ID</dt><dd class="font-code text-[12px] break-all">0193a1f2-7c4e-7d10-9b2a-5e6f7a8b9c0d</dd>
+        <dt class="text-ui-sub">Request ID</dt><dd class="font-code text-[12px] break-all">01JDK7G8W3N5R2M8H6J4K1F2M2CT</dd>
+        <dt class="text-ui-sub">来源 IP</dt><dd class="tnum">203.0.113.24</dd>
+        <dt class="text-ui-sub">结果</dt><dd><span class="chip chip-ok">成功</span></dd>
+      </dl>
+      <h3 class="mt-6 text-[14px] font-semibold">变更内容</h3>
+      <pre class="mt-2 overflow-x-auto rounded-md border border-ui-line bg-[#FAFBFC] p-3 text-[12px] leading-6 font-code"><span class="text-ui-sub">{</span>
+  "versions": [
+<span class="block bg-ok-tint text-ok">+   { "version": "0.4.0", "released_at": "2026-11-18" },</span>    { "version": "0.3.2", "released_at": "2026-10-02" }
+  ],
+<span class="block bg-bad-tint text-bad">-  "verified_at": "2026-10-02T08:00:00Z"</span><span class="block bg-ok-tint text-ok">+  "verified_at": "2026-11-21T02:01:40Z"</span><span class="text-ui-sub">}</span></pre>
+      <p class="mt-3 text-[12px] text-ui-sub">本次修改已排队至发布任务 <a href="publishing-detail.html?state=superseded" class="text-accent underline tnum">g-0143</a>。</p>
+    </div>
+  </aside>
+</div>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>项目 · Silva</title>
+  <meta name="description" content="W06 项目展览原型：页标题与说明、精选项目优先、其他项目卡片网格。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="projects"
+      data-proto-states="default:有精选;nofeatured:无精选;empty:暂无项目">
+<div id="site-header"></div>
+
+<main id="main" class="max-w-site mx-auto px-4 md:px-8">
+  <header class="pt-12 md:pt-20 pb-8 border-b border-ink">
+    <h1 class="font-serif text-[40px] md:text-[56px] font-black leading-tight">项目</h1>
+    <p class="mt-4 text-[16px] leading-8 text-ink-2 max-w-[36em]">工作之外自己做、自己维护的东西。有的还在开发，有的已经归档；每个项目的状态都写在卡片上。</p>
+  </header>
+
+  <!-- 精选：较大版面，优先展示 -->
+  <section data-state="default" aria-labelledby="featured-title" class="pt-10">
+    <h2 id="featured-title" class="text-[15px] text-ink-soft">精选项目</h2>
+    <div class="mt-5 grid md:grid-cols-2 gap-8">
+      <article class="group">
+        <a href="project-detail.html" class="block">
+          <div class="aspect-[16/10] rounded-md overflow-hidden bg-paper-3"><svg data-cover="3" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>
+          <div class="mt-5 flex items-center gap-3"><h3 class="font-serif text-[26px] font-bold group-hover:text-accent">Silva Hub</h3><span class="chip chip-ok">维护中</span></div>
+          <p class="mt-2 text-[16px] leading-7 text-ink-2">本站。Astro 静态前台、React 管理后台与 Rust Axum API，内容发布基于不可变 revision 与站点版本。</p>
+          <ul class="mt-4 flex flex-wrap gap-2 text-[13px] text-ink-2" aria-label="技术栈"><li class="px-2.5 py-1 rounded bg-paper-2">Rust</li><li class="px-2.5 py-1 rounded bg-paper-2">Axum</li><li class="px-2.5 py-1 rounded bg-paper-2">Astro</li><li class="px-2.5 py-1 rounded bg-paper-2">PostgreSQL</li></ul>
+        </a>
+      </article>
+      <article class="group">
+        <a href="project-detail.html" class="block">
+          <div class="aspect-[16/10] rounded-md overflow-hidden bg-paper-3"><svg data-cover="8" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>
+          <div class="mt-5 flex items-center gap-3"><h3 class="font-serif text-[26px] font-bold group-hover:text-accent">tidewatch</h3><span class="chip chip-info">开发中</span></div>
+          <p class="mt-2 text-[16px] leading-7 text-ink-2">采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长，数据不足时如实标注。</p>
+          <ul class="mt-4 flex flex-wrap gap-2 text-[13px] text-ink-2" aria-label="技术栈"><li class="px-2.5 py-1 rounded bg-paper-2">Rust</li><li class="px-2.5 py-1 rounded bg-paper-2">Tokio</li><li class="px-2.5 py-1 rounded bg-paper-2">GitHub API</li></ul>
+        </a>
+      </article>
+    </div>
+  </section>
+
+  <!-- 其他项目网格 -->
+  <section data-state="default nofeatured" aria-labelledby="all-title" class="pt-16">
+    <h2 id="all-title" class="text-[15px] text-ink-soft"><span data-state="default">其他项目</span><span data-state="nofeatured" hidden>全部项目</span></h2>
+    <ul id="grid" class="mt-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-10"></ul>
+  </section>
+
+  <section data-state="empty" hidden class="mt-10 py-16 border-y border-rule">
+    <p class="font-serif text-[22px]">还没有公开的项目。</p>
+    <p class="mt-2 text-[15px] text-ink-soft">先去读读<a href="blog.html" class="text-accent underline underline-offset-4">文章</a>吧。</p>
+  </section>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  const OTHERS = [
+    { n: 'Silva Hub', d: '本站。Astro 静态前台、React 管理后台与 Rust Axum API。', s: ['维护中', 'ok'], t: ['Rust', 'Axum', 'Astro'], nf: true },
+    { n: 'tidewatch', d: '采集 GitHub 仓库指标并保存每日快照，用快照相减计算增长。', s: ['开发中', 'info'], t: ['Rust', 'Tokio'], nf: true },
+    { n: 'pgmigrate-lint', d: '在 CI 中检查 PostgreSQL 迁移是否会长时间锁表，给出分步执行建议。', s: ['已归档', 'mute'], t: ['Rust', 'SQL'], cover: true },
+    { n: 'axum-request-id', d: '为 Axum 服务生成和透传 request ID，并写入 tracing span。', s: ['维护中', 'ok'], t: ['Rust', 'tower'] },
+    { n: 'md-sanitize-preview', d: '安全的 Markdown 预览组件：白名单渲染、禁止原始 HTML、代码高亮。', s: ['维护中', 'ok'], t: ['TypeScript', 'React'], cover: true },
+    { n: 'astro-snapshot-loader', d: '让 Astro 在构建时从带版本号的不可变快照读取内容，校验失败即停止构建。', s: ['开发中', 'info'], t: ['TypeScript', 'Astro'] },
+    { n: 'dotfiles', d: '我的终端、编辑器和 Git 配置，附带一键安装脚本。', s: ['维护中', 'ok'], t: ['Shell', 'Neovim'] },
+  ];
+  document.getElementById('grid').innerHTML = OTHERS.map((p, i) => `
+    <li ${p.nf ? 'data-state="nofeatured"' : ''}><article class="group h-full border-t border-ink pt-5">
+      <a href="project-detail.html" class="block">
+        ${p.cover ? `<div class="aspect-[16/9] rounded overflow-hidden bg-paper-3 mb-4"><svg data-cover="${20 + i}" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>` : ''}
+        <div class="flex items-start justify-between gap-3"><h3 class="font-serif text-[20px] font-bold leading-snug break-all group-hover:text-accent">${p.n}</h3><span class="chip chip-${p.s[1]} shrink-0 mt-1">${p.s[0]}</span></div>
+        <p class="mt-2 text-[15px] leading-7 text-ink-2">${p.d}</p>
+        <p class="mt-3 text-[13px] text-ink-soft">${p.t.join('、')}</p>
+      </a></article></li>`).join('');
+  document.querySelectorAll('[data-cover]').forEach(s => drawContours(s, { seed: +s.dataset.cover, rings: 24, step: 20, cx: 360, cy: 300, highlight: 8, animate: false }));
+</script>
+</body>
+</html>

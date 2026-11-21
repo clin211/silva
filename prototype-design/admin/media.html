@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>媒体库 · Silva 后台</title>
+  <meta name="description" content="A09 媒体库：上传按钮与状态 → 媒体网格 → 详情抽屉。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="media" data-crumbs="内容|媒体库" data-proto-roles="editor"
+      data-proto-states="default:有媒体;empty:暂无媒体">
+<main id="admin-main">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">媒体库</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">只有校验通过、状态为「就绪」的媒体才能插入文章或设为封面。</p>
+    </div>
+    <div>
+      <input id="file-input" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" class="sr-only">
+      <label for="file-input" class="cursor-pointer inline-flex items-center h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2 focus-within:ring-2">上传文件</label>
+      <button type="button" id="demo-upload" class="ml-1 h-9 px-3 rounded-md border border-ui-line bg-white text-[13px]">模拟上传</button>
+    </div>
+  </div>
+
+  <p data-role-only="author" class="mt-4 text-[13px] bg-accent-tint text-accent rounded-md px-3 py-2">你只能看到和使用自己上传的媒体。</p>
+
+  <!-- 上传队列 -->
+  <section id="upload-queue" hidden aria-label="上传队列" class="mt-5 bg-white border border-ui-line rounded-lg">
+    <header class="px-4 py-2.5 border-b border-ui-line text-[13px] text-ui-sub flex justify-between"><span>上传队列</span><span>PNG、JPEG、WebP、GIF，单个不超过 10 MB</span></header>
+    <ul id="queue-list" class="divide-y divide-ui-line text-[14px]" aria-live="polite"></ul>
+  </section>
+
+  <!-- 筛选 -->
+  <div class="mt-6 flex flex-wrap items-center gap-2">
+    <label><span class="sr-only">搜索文件名</span><input type="search" placeholder="搜索文件名" class="h-9 w-56 max-w-full rounded-md border border-ui-line bg-white px-3 text-[14px]"></label>
+    <label><span class="sr-only">状态</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部状态</option><option>就绪</option><option>校验中</option><option>失败</option></select></label>
+    <label data-role="editor"><span class="sr-only">上传者</span><select class="h-9 rounded-md border border-ui-line bg-white px-2 text-[14px]"><option>全部上传者</option><option>周屿</option><option>林夏</option></select></label>
+  </div>
+
+  <!-- 媒体网格 -->
+  <ul id="media-grid" data-state="default" class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"></ul>
+  <div data-state="default" class="mt-5 flex items-center justify-between text-[13px] text-ui-sub">
+    <span>共 <span class="tnum">48</span> 个文件，第 1 / 3 页</span>
+    <div class="flex gap-1"><button class="h-8 px-3 rounded border border-ui-line bg-white" disabled>上一页</button><button class="h-8 px-3 rounded border border-ui-line bg-white">下一页</button></div>
+  </div>
+  <div data-state="empty" hidden class="mt-4 bg-white border border-dashed border-ui-line rounded-lg p-12 text-center">
+    <p class="text-[15px]">还没有上传任何媒体。</p>
+    <p class="mt-1 text-[13px] text-ui-sub">上传的图片会先校验，通过后才能插入文章。</p>
+    <label for="file-input" class="mt-4 cursor-pointer inline-flex items-center h-9 px-4 rounded-md bg-accent text-white text-[14px]">上传文件</label>
+  </div>
+</main>
+
+<!-- 详情抽屉 -->
+<div id="drawer-media" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <section role="dialog" aria-modal="true" aria-labelledby="dm-title" class="absolute right-0 top-0 h-full w-full sm:w-[440px] bg-white shadow-xl flex flex-col">
+    <header class="flex items-center justify-between px-5 h-14 border-b border-ui-line">
+      <h2 id="dm-title" class="text-[16px] font-semibold truncate">媒体详情</h2>
+      <button type="button" data-close class="p-2 text-ui-sub" aria-label="关闭">✕</button>
+    </header>
+    <div class="flex-1 overflow-y-auto p-5">
+      <div id="dm-preview" class="aspect-[4/3] rounded-md bg-ui-bg border border-ui-line"></div>
+      <dl class="mt-5 grid grid-cols-[88px_1fr] gap-y-2.5 text-[14px]">
+        <dt class="text-ui-sub">文件名</dt><dd id="dm-name" class="break-all">cover-revision-flow.png</dd>
+        <dt class="text-ui-sub">状态</dt><dd id="dm-status"><span class="chip chip-ok">就绪</span></dd>
+        <dt class="text-ui-sub">MIME</dt><dd class="font-code text-[13px]">image/png</dd>
+        <dt class="text-ui-sub">大小</dt><dd class="tnum">842 KB</dd>
+        <dt class="text-ui-sub">尺寸</dt><dd class="tnum">1600 × 900</dd>
+        <dt class="text-ui-sub">上传者</dt><dd>周屿</dd>
+        <dt class="text-ui-sub">上传时间</dt><dd class="tnum">2026-11-17 21:04</dd>
+      </dl>
+      <h3 class="mt-6 text-[13px] font-medium">被引用</h3>
+      <ul class="mt-2 text-[14px] space-y-1.5">
+        <li><a href="post-edit.html" class="text-accent">用不可变 revision 重写 CMS 的发布流程</a> <span class="text-ui-sub text-[12px]">封面 · r12</span></li>
+        <li><a href="project-edit.html" class="text-accent">Silva Hub</a> <span class="text-ui-sub text-[12px]">项目封面</span></li>
+      </ul>
+      <div class="mt-6">
+        <label for="dm-alt" class="block text-[13px] font-medium">替代文本</label>
+        <input id="dm-alt" value="三条状态线：编辑、审核、上线" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]">
+      </div>
+    </div>
+    <footer class="px-5 py-3 border-t border-ui-line flex justify-between gap-2">
+      <button type="button" class="h-9 px-3 rounded-md text-bad text-[14px] disabled:opacity-40" disabled title="被引用的媒体不能删除">删除</button>
+      <div class="flex gap-2">
+        <button type="button" data-toast="已复制媒体引用" class="h-9 px-3 rounded-md border border-ui-line text-[14px]">复制引用</button>
+        <button type="button" data-close data-toast="已保存" class="h-9 px-4 rounded-md bg-accent text-white text-[14px]">保存</button>
+      </div>
+    </footer>
+    <p class="px-5 pb-3 -mt-1 text-[12px] text-ui-sub">被文章或项目引用时不能删除。</p>
+  </section>
+</div>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  // ---- 媒体网格（占位图用色块＋等宽文件名，不依赖外部图片）----
+  const items = [
+    ['cover-revision-flow.png', 'ready', '#C9D3E3', '周屿'], ['axum-layers.svg', 'ready', '#DCE6DA', '周屿'],
+    ['astro-islands.webp', 'ready', '#E8DFCF', '林夏'], ['tidewatch-dashboard.png', 'ready', '#D8D2E4', '周屿'],
+    ['pg-lock-chart.png', 'failed', '#F1D9D6', '周屿'], ['hero-contour.png', 'ready', '#E4E1DA', '周屿'],
+    ['mcp-directory.png', 'checking', '#D5E3E6', '林夏'], ['profile-avatar.jpg', 'ready', '#E6D9CF', '周屿'],
+    ['release-timeline.png', 'ready', '#CFD9E6', '周屿'], ['trending-chart.png', 'ready', '#DDE6D3', '林夏'],
+  ];
+  const STATUS = { ready: ['chip-ok', '就绪'], checking: ['chip-warn', '校验中'], failed: ['chip-bad', '校验失败'], uploading: ['chip-info', '上传中'] };
+  const grid = document.getElementById('media-grid');
+  grid.innerHTML = items.map(([n, s, c, u], i) => `
+    <li data-owner="${u}">
+      <button type="button" class="w-full text-left group" data-open="drawer-media" data-media="${i}">
+        <div class="aspect-[4/3] rounded-md border border-ui-line overflow-hidden grid place-items-center group-hover:border-accent" style="background:${c}">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#1D2330" stroke-opacity=".35" stroke-width="1.4" aria-hidden="true"><path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4"/></svg>
+        </div>
+        <div class="mt-1.5 text-[13px] truncate">${n}</div>
+        <div class="mt-1 flex items-center justify-between gap-2"><span class="chip ${STATUS[s][0]}">${STATUS[s][1]}</span><span class="text-[12px] text-ui-sub truncate">${u}</span></div>
+      </button>
+    </li>`).join('');
+  grid.addEventListener('click', e => {
+    const b = e.target.closest('[data-media]'); if (!b) return;
+    const [n, s, c] = items[b.dataset.media];
+    document.getElementById('dm-name').textContent = n;
+    document.getElementById('dm-title').textContent = n;
+    document.getElementById('dm-status').innerHTML = `<span class="chip ${STATUS[s][0]}">${STATUS[s][1]}</span>${s === 'failed' ? '<p class="mt-1 text-[12px] text-bad">文件内容与扩展名不符（声明 PNG，实际为 HTML）。请重新导出图片后再上传。</p>' : ''}`;
+    document.getElementById('dm-preview').style.background = c;
+  });
+  // Author 只看到自己的媒体
+  document.addEventListener('proto:role', e => {
+    grid.querySelectorAll('li').forEach(li => { li.hidden = e.detail === 'author' && li.dataset.owner !== '周屿'; });
+  });
+  if (window.Proto.role) document.dispatchEvent(new CustomEvent('proto:role', { detail: Proto.role }));
+
+  // ---- 上传：申请签名 → 直传 → 确认 → 服务端校验 ----
+  const queue = document.getElementById('upload-queue'), list = document.getElementById('queue-list');
+  function runUpload(name, willFail) {
+    queue.hidden = false;
+    const li = document.createElement('li');
+    li.className = 'px-4 py-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 items-center';
+    li.innerHTML = `<span class="truncate">${name}</span><span class="st"></span><div class="col-span-2 h-1.5 bg-ui-bg rounded overflow-hidden"><div class="bar h-full bg-accent transition-all duration-300" style="width:0%"></div></div><p class="msg col-span-2 text-[12px] text-ui-sub"></p>`;
+    list.prepend(li);
+    const st = li.querySelector('.st'), bar = li.querySelector('.bar'), msg = li.querySelector('.msg');
+    const set = (k, m) => { st.innerHTML = `<span class="chip ${STATUS[k][0]}">${STATUS[k][1]}</span>`; msg.textContent = m; };
+    set('uploading', '正在上传到私有存储…');
+    let p = 0;
+    const t = setInterval(() => {
+      p += 20; bar.style.width = p + '%';
+      if (p >= 100) {
+        clearInterval(t);
+        set('checking', '上传完成，等待服务端校验文件类型与大小…');
+        setTimeout(() => {
+          if (willFail) { set('failed', '校验失败：文件超过 10 MB。压缩后重新上传。'); bar.classList.replace('bg-accent', 'bg-bad'); li.insertAdjacentHTML('beforeend', '<button type="button" class="col-span-2 justify-self-start text-[13px] text-accent">重新选择文件</button>'); }
+          else { set('ready', '就绪，可以插入文章或设为封面。'); bar.classList.replace('bg-accent', 'bg-ok'); }
+        }, 1200);
+      }
+    }, 250);
+  }
+  document.getElementById('demo-upload').addEventListener('click', () => { runUpload('diagram-release-states.png', false); runUpload('screen-recording.gif', true); });
+  document.getElementById('file-input').addEventListener('change', e => { [...e.target.files].forEach((f, i) => runUpload(f.name, f.size > 10 * 1024 * 1024)); e.target.value = ''; });
+</script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>用不可变 revision 重写 CMS 的发布流程 · Silva</title>
+  <meta name="description" content="W03 文章详情原型：面包屑、标题与元信息、摘要与封面、居中正文、桌面右侧目录（手机折叠在正文前）。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="blog"
+      data-proto-states="default:完整;nocover:无封面;notoc:标题不足（无目录）">
+<div id="site-header"></div>
+
+<main id="main" class="max-w-site mx-auto px-4 md:px-8">
+  <nav aria-label="面包屑" class="pt-8 md:pt-10"><ol class="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
+    <li><a href="home.html" class="hover:text-accent">首页</a></li><li aria-hidden="true">/</li>
+    <li><a href="blog.html" class="hover:text-accent">文章</a></li><li aria-hidden="true">/</li>
+    <li><a href="category.html" class="hover:text-accent">后端工程</a></li>
+  </ol></nav>
+
+  <article>
+    <header class="max-w-prose mx-auto pt-8 md:pt-12">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[14px] text-ink-soft">
+        <a href="category.html" class="text-accent hover:underline underline-offset-4">后端工程</a>
+        <time class="tnum" datetime="2026-11-18">2026 年 11 月 18 日</time>
+        <span>约 12 分钟读完</span>
+      </div>
+      <h1 class="mt-4 font-serif text-[32px] md:text-[44px] leading-[1.2] font-black">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</h1>
+      <p class="mt-5 text-[18px] leading-8 text-ink-2">把「保存」「批准」「上线」拆成三个独立状态之后，旧版本可以在新草稿审核期间继续在线，构建失败也不会把编辑状态拖下水。这篇记录我在 Silva 里这样设计的原因和取舍。</p>
+      <ul class="mt-5 flex flex-wrap gap-2 text-[13px]" aria-label="标签">
+        <li><a href="tag.html" class="inline-block px-3 py-1 rounded-full border border-rule hover:border-accent hover:text-accent">CMS</a></li>
+        <li><a href="tag.html" class="inline-block px-3 py-1 rounded-full border border-rule hover:border-accent hover:text-accent">PostgreSQL</a></li>
+        <li><a href="tag.html" class="inline-block px-3 py-1 rounded-full border border-rule hover:border-accent hover:text-accent">Axum</a></li>
+      </ul>
+    </header>
+
+    <figure data-state="default notoc" class="mt-10 max-w-[960px] mx-auto">
+      <div class="aspect-[2/1] rounded-md overflow-hidden bg-paper-3"><svg id="cover" class="w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg></div>
+      <figcaption class="mt-2 text-[13px] text-ink-soft">封面：发布流程中三种版本状态的示意。</figcaption>
+    </figure>
+
+    <div class="mt-10 lg:grid lg:grid-cols-[1fr_720px_1fr] lg:gap-10">
+      <div class="hidden lg:block"></div>
+
+      <!-- 手机/平板目录：正文前，可折叠 -->
+      <div data-state="default nocover" class="lg:hidden max-w-prose mx-auto mb-8 border border-rule rounded-md bg-paper-2/50">
+        <button type="button" class="w-full flex items-center justify-between px-4 py-3 text-[15px]" data-toggle="toc-mobile" aria-expanded="false" aria-controls="toc-mobile">
+          <span>本文目录</span><span aria-hidden="true">▾</span>
+        </button>
+        <nav id="toc-mobile" hidden aria-label="本文目录（手机）" class="px-4 pb-4"></nav>
+      </div>
+
+      <div id="article-body" class="prose-ink max-w-prose mx-auto min-w-0">
+        <p>在最早的版本里，文章只有一张表、一个 <code>status</code> 字段：草稿、已发布、已下线。它很直观，直到我第一次想在不影响线上内容的情况下修改一篇已发布的文章。</p>
+        <h2 id="s1">问题：一个字段承担了三件事</h2>
+        <p><code>status = published</code> 同时意味着「这是最新内容」「它被批准过」「访客能看到它」。只要我开始编辑，这三件事就不再同时成立。</p>
+        <ul>
+          <li>编辑中的内容不应该出现在线上；</li>
+          <li>批准的是某个具体版本，而不是「这篇文章」；</li>
+          <li>访客看到什么，取决于哪个站点版本已经构建成功并激活。</li>
+        </ul>
+        <h2 id="s2">拆成三条线</h2>
+        <p>于是每次保存都会生成一个不可变的 revision，文章本身只保存三个指针：</p>
+        <table>
+          <thead><tr><th>指针</th><th>含义</th><th>谁来改变它</th></tr></thead>
+          <tbody>
+            <tr><td>current_revision</td><td>当前编辑的版本</td><td>保存 / 自动保存</td></tr>
+            <tr><td>desired_revision</td><td>期望公开的版本</td><td>发布、取消发布</td></tr>
+            <tr><td>live_revision</td><td>当前线上的版本</td><td>站点版本激活</td></tr>
+          </tbody>
+        </table>
+        <h3 id="s2-1">保存时带上期望版本</h3>
+        <p>并发编辑用乐观锁处理。客户端保存时带上它看到的版本号，服务端不一致就返回冲突，而不是悄悄覆盖：</p>
+<pre><code>PUT /api/v1/admin/posts/{id}
+{
+  "expected_revision_id": "01936f0e-7c1a-7b2e-9f0d-3c1a8e2b4d55",
+  "title": "用不可变 revision 重写 CMS 的发布流程",
+  "body_markdown": "..."
+}
+// 409 { "error": { "code": "revision_conflict" } }</code></pre>
+        <h3 id="s2-2">审核绑定具体版本</h3>
+        <p>提交审核锁定的是某个 revision。之后的编辑会产生新的 revision，不会继承旧版本的批准。</p>
+        <h2 id="s3">上线是另一件事</h2>
+        <p>「发布」只是把一个已批准的 revision 设为期望公开版本，然后排队构建。只有构建成功、新的 <code>generation</code> 被激活，访客才看得到。构建失败时，上一个线上版本保持不变。</p>
+        <blockquote>发布不是上线。把这两个词分开，后台的状态文案就不会骗人。</blockquote>
+        <h2 id="s4">小结</h2>
+        <p>三条线让每个状态都有唯一的来源。代价是表和接口多了一些，但换来的是：旧版本永远不会被新草稿覆盖，也不会因为一次失败的构建而消失。</p>
+      </div>
+
+      <!-- 桌面右侧目录 -->
+      <aside data-state="default nocover" class="hidden lg:block" aria-label="本文目录">
+        <div class="sticky top-24">
+          <h2 class="text-[13px] text-ink-soft">本文目录</h2>
+          <nav id="toc-desktop" class="mt-3 border-l border-rule"></nav>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="max-w-prose mx-auto mt-16 pt-8 border-t border-rule flex flex-wrap items-center justify-between gap-4">
+      <a href="blog.html" class="inline-flex items-center h-11 px-5 rounded-full border border-ink/25 text-[15px] hover:border-ink">返回文章列表</a>
+      <div class="text-[14px] text-ink-soft">下一篇：<a href="blog-detail.html" class="text-accent hover:underline underline-offset-4">Axum 中间件的执行顺序</a></div>
+    </footer>
+  </article>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  drawContours(document.getElementById('cover'), { cx: 520, cy: 300, rings: 28, step: 22, seed: 5, highlight: 10, animate: false });
+
+  // 目录：由正文 h2/h3 生成；标题少于 3 个时不显示（原型中用「notoc」状态演示）
+  const heads = [...document.querySelectorAll('#article-body h2, #article-body h3')];
+  const tocHTML = `<ol class="space-y-0.5 text-[14px]">${heads.map(h => `<li><a href="#${h.id}" data-toc="${h.id}" class="block -ml-px border-l-2 border-transparent py-1.5 ${h.tagName === 'H3' ? 'pl-7 text-[13px]' : 'pl-4'} text-ink-soft hover:text-ink">${h.textContent}</a></li>`).join('')}</ol>`;
+  document.getElementById('toc-desktop').innerHTML = tocHTML;
+  document.getElementById('toc-mobile').innerHTML = tocHTML.replace(/-ml-px border-l-2 border-transparent /g, '');
+
+  // scroll-spy
+  const links = document.querySelectorAll('#toc-desktop [data-toc]');
+  const setActive = id => links.forEach(a => {
+    const on = a.dataset.toc === id;
+    a.classList.toggle('border-accent', on); a.classList.toggle('text-accent', on); a.classList.toggle('font-medium', on);
+    a.classList.toggle('border-transparent', !on); a.classList.toggle('text-ink-soft', !on);
+    on ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current');
+  });
+  const io = new IntersectionObserver(entries => {
+    const vis = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (vis[0]) setActive(vis[0].target.id);
+  }, { rootMargin: '-80px 0px -65% 0px' });
+  heads.forEach(h => io.observe(h));
+  setActive(heads[0].id);
+</script>
+</body>
+</html>

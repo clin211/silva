@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>编辑文章 · Silva 后台</title>
+  <meta name="description" content="A05 编辑文章原型：三种修订状态、自动保存与冲突、源码｜预览、文章设置、审核与发布。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+  <style>
+    .md-src { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; line-height: 1.75; tab-size: 2; }
+    .prose-ink figure .ph { background: repeating-linear-gradient(135deg,#EEEAE2 0 10px,#E5E0D5 10px 20px); }
+  </style>
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-mode="edit" data-admin-nav="posts"
+      data-crumbs="内容|文章@posts.html|编辑文章" data-proto-roles="editor"
+      data-proto-states="default:正常;conflict:修订冲突 409;savefail:保存失败">
+<main id="admin-main">
+
+  <!-- ================= 顶栏：标题、保存状态、三种修订、操作 ================= -->
+  <section class="bg-white border border-ui-line rounded-lg" aria-label="文章状态与操作">
+    <div class="px-4 pt-3 pb-3 flex flex-wrap items-start gap-3">
+      <div class="flex-1 min-w-[240px]">
+        <label for="title" class="sr-only">文章标题</label>
+        <textarea id="title" rows="1" class="block w-full resize-none overflow-hidden text-[18px] sm:text-[20px] leading-snug font-semibold bg-transparent border-0 p-0 focus:ring-0 focus:outline-none placeholder:text-[#A9AEB8]" placeholder="文章标题">用不可变 revision 重写 CMS 的发布流程：草稿、审核与上线的三条线</textarea>
+        <div class="mt-1 flex items-center gap-2 text-[13px]" aria-live="polite">
+          <span id="save-status" class="inline-flex items-center gap-1.5"></span>
+          <button type="button" id="retry-save" hidden class="text-accent hover:underline">重试保存</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <a href="post-revisions.html" id="btn-history" class="h-9 px-3 inline-flex items-center rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">修订历史</a>
+        <button type="button" id="btn-submit" class="h-9 px-3 rounded-md border border-accent/40 text-accent bg-white text-[14px] hover:bg-accent-tint disabled:opacity-50 disabled:cursor-not-allowed">提交审核</button>
+        <button type="button" id="btn-unpublish" data-role="editor" class="h-9 px-3 rounded-md border border-[#E8C3BF] text-bad bg-white text-[14px] hover:bg-bad-tint disabled:opacity-50 disabled:cursor-not-allowed" data-open="dlg-unpublish">取消发布</button>
+        <button type="button" id="btn-publish" data-role="editor" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2 disabled:opacity-50 disabled:cursor-not-allowed" data-open="dlg-publish">发布…</button>
+      </div>
+    </div>
+
+    <!-- 三种修订分开标注 -->
+    <dl class="grid grid-cols-1 sm:grid-cols-3 border-t border-ui-line text-[13px] divide-y sm:divide-y-0 sm:divide-x divide-ui-line">
+      <div class="px-4 py-2.5 flex sm:block items-center justify-between gap-2"><dt class="text-ui-sub">当前编辑修订</dt><dd class="sm:mt-1" id="rev-edit"></dd></div>
+      <div class="px-4 py-2.5 flex sm:block items-center justify-between gap-2"><dt class="text-ui-sub">期望公开修订</dt><dd class="sm:mt-1" id="rev-target"></dd></div>
+      <div class="px-4 py-2.5 flex sm:block items-center justify-between gap-2"><dt class="text-ui-sub">当前线上修订</dt><dd class="sm:mt-1" id="rev-live"></dd></div>
+    </dl>
+  </section>
+
+  <!-- 待上线提示（发布/取消发布提交后出现；不等同于已上线） -->
+  <div id="pending-banner" hidden class="mt-3 rounded-lg border border-[#CBD5E6] bg-accent-tint px-4 py-3 text-[14px] text-accent flex flex-wrap items-center gap-x-3 gap-y-1" role="status">
+    <span class="chip chip-info bg-white">待上线</span>
+    <span id="pending-text"></span>
+    <a href="publishing-detail.html" class="underline underline-offset-2 font-medium">查看任务详情</a>
+  </div>
+
+  <!-- 409 冲突：停止自动保存，保留输入 -->
+  <div data-state="conflict" hidden class="mt-3 rounded-lg border border-[#EBD7A9] bg-warn-tint px-4 py-3 text-[14px] text-warn" role="alert">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p><strong class="font-medium">有新版本，已停止自动保存。</strong>林夏在 10:44 保存了 r15。你的输入仍保留在下方，不会被覆盖。</p>
+      <div class="flex gap-2 shrink-0">
+        <button type="button" class="h-8 px-3 rounded-md border border-[#D9B970] bg-white text-[13px]" data-toast="已把你的内容复制到剪贴板">复制我的内容</button>
+        <a href="post-revision-detail.html" class="h-8 px-3 inline-flex items-center rounded-md bg-warn text-white text-[13px]">读取最新修订 r15</a>
+      </div>
+    </div>
+  </div>
+  <!-- 保存失败：保留本地编辑 -->
+  <div data-state="savefail" hidden class="mt-3 rounded-lg border border-[#E8C3BF] bg-bad-tint px-4 py-3 text-[14px] text-bad" role="alert">
+    <strong class="font-medium">保存失败：</strong>网络连接中断。编辑内容已保留在本页，恢复连接后点击「重试保存」。
+  </div>
+
+  <!-- 窄屏：编辑 / 预览 / 设置 切换（切换不清空表单） -->
+  <div class="lg:hidden mt-3 grid grid-cols-3 bg-white border border-ui-line rounded-lg p-1 text-[14px]" role="tablist" aria-label="编辑器视图">
+    <button type="button" role="tab" data-view="source" class="view-tab h-9 rounded-md aria-selected:bg-accent-tint aria-selected:text-accent aria-selected:font-medium" aria-selected="true">编辑</button>
+    <button type="button" role="tab" data-view="preview" class="view-tab h-9 rounded-md aria-selected:bg-accent-tint aria-selected:text-accent aria-selected:font-medium" aria-selected="false">预览</button>
+    <button type="button" role="tab" data-view="settings" class="view-tab h-9 rounded-md aria-selected:bg-accent-tint aria-selected:text-accent aria-selected:font-medium" aria-selected="false">设置</button>
+  </div>
+
+  <!-- ================= 主体：源码 ｜ 预览 ｜ 设置 ================= -->
+  <div id="editor-grid" class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]">
+    <!-- 源码 -->
+    <section id="pane-source" class="pane bg-white border border-ui-line rounded-lg flex flex-col min-h-[420px] lg:h-[calc(100vh-15.5rem)] lg:min-h-[480px]" aria-label="Markdown 源码">
+      <div class="flex items-center justify-between gap-2 px-3 h-10 border-b border-ui-line text-[13px]">
+        <span class="text-ui-sub">Markdown</span>
+        <div class="flex items-center gap-1">
+          <button type="button" class="h-7 px-2 rounded hover:bg-ui-bg" data-wrap="**" title="粗体" aria-label="粗体"><b>B</b></button>
+          <button type="button" class="h-7 px-2 rounded hover:bg-ui-bg font-code" data-wrap="`" title="行内代码" aria-label="行内代码">&lt;/&gt;</button>
+          <button type="button" class="h-7 px-2 rounded hover:bg-ui-bg" data-open="media-picker" data-picker-target="body">插入媒体</button>
+          <button type="button" id="toggle-settings" class="hidden lg:inline-flex h-7 px-2 rounded hover:bg-ui-bg items-center" aria-controls="pane-settings" aria-expanded="true">收起设置</button>
+        </div>
+      </div>
+      <label for="src" class="sr-only">正文 Markdown</label>
+      <textarea id="src" spellcheck="false" class="md-src flex-1 w-full resize-none border-0 p-4 focus:ring-0 focus:outline-none" placeholder="用 Markdown 写正文……"></textarea>
+      <div class="px-3 h-8 border-t border-ui-line flex items-center justify-between text-[12px] text-ui-sub"><span id="count" class="tnum"></span><span>自动保存间隔 1.5 秒</span></div>
+    </section>
+
+    <!-- 预览（安全渲染：先转义 HTML） -->
+    <section id="pane-preview" class="pane max-lg:hidden bg-white border border-ui-line rounded-lg flex flex-col min-h-[420px] lg:h-[calc(100vh-15.5rem)] lg:min-h-[480px]" aria-label="预览">
+      <div class="flex items-center justify-between px-3 h-10 border-b border-ui-line text-[13px]">
+        <span class="text-ui-sub">预览 · 仅后台可见，不生成公开地址</span>
+      </div>
+      <div class="flex-1 overflow-y-auto px-5 py-5 bg-paper">
+        <h1 id="pv-title" class="font-serif text-[26px] leading-tight font-bold text-ink"></h1>
+        <article id="preview" class="prose-ink mt-4 !text-[16px] [&>h2:first-child]:!mt-6"></article>
+      </div>
+    </section>
+
+    <!-- 文章设置：随修订发布 -->
+    <aside id="pane-settings" class="pane max-lg:hidden bg-white border border-ui-line rounded-lg lg:h-[calc(100vh-15.5rem)] lg:min-h-[480px] overflow-y-auto" aria-label="文章设置">
+      <div class="px-4 h-10 border-b border-ui-line flex items-center text-[13px] text-ui-sub">文章设置 · 随修订一起发布</div>
+      <div class="p-4 space-y-5 text-[14px]">
+        <div>
+          <label for="slug" class="block font-medium">Slug</label>
+          <input id="slug" class="mt-1.5 w-full h-9 rounded-md border border-ui-line px-3 font-code text-[13px] read-only:bg-ui-bg read-only:text-ui-sub" value="immutable-revision-publishing" readonly>
+          <p id="slug-note" class="mt-1 text-[12px] text-ui-sub">首次发布后已锁定，一期不支持改名。</p>
+        </div>
+        <div>
+          <label for="cat" class="block font-medium">分类</label>
+          <select id="cat" class="mt-1.5 w-full h-9 rounded-md border border-ui-line px-2 bg-white">
+            <option>后端工程</option><option>Rust</option><option>前端</option><option>数据库</option><option>AI 工程</option>
+          </select>
+        </div>
+        <div>
+          <label for="tag-input" class="block font-medium">标签</label>
+          <div class="mt-1.5 flex flex-wrap gap-1.5 rounded-md border border-ui-line p-1.5" id="tags">
+            <input id="tag-input" class="flex-1 min-w-[80px] h-7 border-0 p-1 text-[13px] focus:ring-0 focus:outline-none" placeholder="输入后回车" list="tag-options">
+          </div>
+          <datalist id="tag-options"><option>CMS</option><option>发布流程</option><option>PostgreSQL</option><option>Axum</option><option>架构</option></datalist>
+        </div>
+        <div>
+          <span class="block font-medium">封面</span>
+          <div id="cover-box" class="mt-1.5 rounded-md border border-dashed border-ui-line p-3 flex items-center gap-3">
+            <div id="cover-thumb" class="w-20 h-12 rounded bg-[repeating-linear-gradient(135deg,#EEEAE2_0_8px,#E5E0D5_8px_16px)] shrink-0"></div>
+            <div class="min-w-0 flex-1">
+              <div id="cover-name" class="text-[13px] truncate">cover-revision-flow.png</div>
+              <div class="mt-1 flex gap-3 text-[13px]">
+                <button type="button" class="text-accent hover:underline" data-open="media-picker" data-picker-target="cover">更换</button>
+                <button type="button" id="cover-remove" class="text-ui-sub hover:text-bad">移除</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <label class="flex items-start gap-2.5">
+          <input type="checkbox" id="featured" class="mt-0.5 w-4 h-4 accent-[#27467A]" checked>
+          <span><span class="font-medium">首页精选</span><span class="block text-[12px] text-ui-sub">多篇精选时首页取最新的一篇。</span></span>
+        </label>
+        <fieldset class="pt-4 border-t border-ui-line space-y-3">
+          <legend class="font-medium">SEO</legend>
+          <div>
+            <label for="seo-title" class="block text-[13px] text-ui-sub">标题（留空则用文章标题）</label>
+            <input id="seo-title" class="mt-1 w-full h-9 rounded-md border border-ui-line px-3" placeholder="文章标题">
+          </div>
+          <div>
+            <div class="flex justify-between"><label for="seo-desc" class="block text-[13px] text-ui-sub">描述</label><span id="desc-count" class="text-[12px] text-ui-sub tnum"></span></div>
+            <textarea id="seo-desc" rows="3" maxlength="160" class="mt-1 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]">把保存、批准、上线拆成三个独立状态之后，旧版本可以在新草稿审核期间继续在线。</textarea>
+          </div>
+        </fieldset>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ================= 媒体选择器（仅就绪媒体可插入） ================= -->
+<div id="media-picker" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="mp-title" class="absolute right-0 top-0 h-full w-full max-w-[520px] bg-white shadow-xl flex flex-col">
+    <div class="flex items-center justify-between px-5 h-14 border-b border-ui-line">
+      <h2 id="mp-title" class="text-[16px] font-semibold">选择媒体</h2>
+      <button type="button" data-close class="p-2 text-ui-sub hover:text-ui-text" aria-label="关闭">✕</button>
+    </div>
+    <div class="px-5 py-3 border-b border-ui-line flex flex-wrap items-center justify-between gap-2 text-[13px]">
+      <span class="text-ui-sub">只有「已就绪」的媒体可以插入。</span>
+      <button type="button" id="mp-upload" class="h-8 px-3 rounded-md border border-ui-line hover:bg-ui-bg">上传新文件</button>
+    </div>
+    <ul id="mp-grid" class="flex-1 overflow-y-auto p-5 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start"></ul>
+    <div class="px-5 py-3 border-t border-ui-line flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" id="mp-insert" disabled class="h-9 px-4 rounded-md bg-accent text-white text-[14px] disabled:opacity-50">插入</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 提交审核（绑定具体修订） ================= -->
+<div id="dlg-submit" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="ds-title" class="relative w-full max-w-[440px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="ds-title" class="text-[17px] font-semibold">提交 <span class="rev-now tnum"></span> 审核？</h2>
+    <p class="mt-2 text-[14px] text-ui-sub leading-6">审核只作用于这一修订。之后的编辑会产生新修订，不继承这次的审核结果。提交后线上内容不受影响。</p>
+    <label for="ds-note" class="block mt-4 text-[13px] text-ui-sub">给审核人的说明（可选）</label>
+    <textarea id="ds-note" rows="3" class="mt-1 w-full rounded-md border border-ui-line px-3 py-2 text-[14px]"></textarea>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" id="ds-ok" class="h-9 px-4 rounded-md bg-accent text-white text-[14px]">提交 <span class="rev-now"></span> 审核</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 发布：只能从已批准修订中选择 ================= -->
+<div id="dlg-publish" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="dp-title" class="relative w-full max-w-[480px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="dp-title" class="text-[17px] font-semibold">选择要发布的修订</h2>
+    <p class="mt-2 text-[14px] text-ui-sub leading-6">只列出已批准的修订。<span id="dp-current-note"></span>发布后进入站点构建，新版本激活后才算上线。</p>
+    <fieldset id="dp-list" class="mt-4 space-y-2"><legend class="sr-only">已批准的修订</legend></fieldset>
+    <p id="dp-empty" hidden class="mt-4 rounded-md bg-ui-bg px-3 py-4 text-[14px] text-ui-sub">还没有已批准的修订。先提交审核，批准后才能发布。</p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">取消</button>
+      <button type="button" id="dp-ok" class="h-9 px-4 rounded-md bg-accent text-white text-[14px] disabled:opacity-50">发布所选修订</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 取消发布：单独确认 ================= -->
+<div id="dlg-unpublish" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="alertdialog" aria-modal="true" aria-labelledby="du-title" aria-describedby="du-desc" class="relative w-full max-w-[440px] bg-white rounded-xl shadow-xl p-5">
+    <h2 id="du-title" class="text-[17px] font-semibold text-bad">取消发布这篇文章？</h2>
+    <div id="du-desc" class="mt-2 text-[14px] text-ui-sub leading-6 space-y-2">
+      <p>线上的 <span class="tnum text-ui-text">r9</span> 会在包含此变更的新站点版本激活后下线：详情页返回 404，列表、sitemap 与 RSS 移除该文章。</p>
+      <p>在那之前访客仍能看到它。草稿与修订历史都会保留，之后可以重新发布已批准的修订。</p>
+    </div>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 px-4 rounded-md border border-ui-line text-[14px]">保留在线</button>
+      <button type="button" id="du-ok" class="h-9 px-4 rounded-md bg-bad text-white text-[14px]">取消发布</button>
+    </div>
+  </div>
+</div>
+
+<template id="seed-edit"># 为什么要拆开
+
+一篇文章同时存在三种「版本」：**正在编辑的**、**已接受发布、等待上线的**，以及**访客正在看到的**。把它们混成一个 `status` 字段，迟早会出事。
+
+## 不可变修订
+
+每次保存都创建新的 revision，旧的永不覆盖。保存请求带上 `expected_revision_id`：
+
+```
+PUT /api/v1/admin/posts/{id}
+{ "expected_revision_id": "0193…", "body": "…" }
+```
+
+收到 `409 revision_conflict` 时停止自动保存，保留本地草稿。
+
+## 发布不是上线
+
+- 发布：把一个**已批准**的修订设为期望公开版本
+- 上线：包含它的站点 generation 激活
+- 构建失败：线上保持原样
+
+> 失败的构建不应该把编辑状态标成失败。
+
+![发布流程示意](media://cover-revision-flow)
+</template>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+(function () {
+  const isNew = document.body.dataset.mode === 'new';
+  const $ = id => document.getElementById(id);
+  const src = $('src');
+
+  /* ---------- 修订模型（原型数据） ---------- */
+  const S = isNew
+    ? { saved: false, rev: 0, reviewStatus: null, target: null, live: null, dirty: false,
+        approved: [] }
+    : { saved: true, rev: 14, reviewStatus: 'draft', target: { rev: 12, label: '已批准 · 待上线' }, live: 9, dirty: false,
+        approved: [{ rev: 13, at: '11-21 09:30', by: '林夏' }, { rev: 12, at: '11-20 18:02', by: '周屿' }, { rev: 9, at: '11-12 14:20', by: '周屿' }] };
+  if (!isNew) src.value = $('seed-edit').content.textContent.trim() + '\n';
+
+  const chip = (cls, t) => `<span class="chip ${cls}">${t}</span>`;
+  function renderRevs() {
+    const reviewMap = { draft: ['chip-warn', '草稿'], review: ['chip-info', '审核中'], approved: ['chip-ok', '已批准'], rejected: ['chip-bad', '已拒绝'] };
+    $('rev-edit').innerHTML = S.rev ? chip(reviewMap[S.reviewStatus][0], `r${S.rev} ${reviewMap[S.reviewStatus][1]}`) + (S.dirty ? ' <span class="text-[12px] text-warn">＋未保存更改</span>' : '') : chip('chip-mute', '未保存');
+    $('rev-target').innerHTML = S.target ? chip(S.target.cancel ? 'chip-warn' : 'chip-info', S.target.cancel ? '无（取消发布 · 待上线）' : `r${S.target.rev} ${S.target.label}`) : '<span class="text-ui-sub">无</span>';
+    $('rev-live').innerHTML = S.live ? chip('chip-ok', `r${S.live} 已上线`) : '<span class="text-ui-sub">无（未上线）</span>';
+    document.querySelectorAll('.rev-now').forEach(e => e.textContent = 'r' + S.rev);
+    // 提交审核：未保存内容不可提交
+    const canSubmit = S.saved && !S.dirty && S.reviewStatus === 'draft' && Proto.state !== 'conflict';
+    $('btn-submit').disabled = !canSubmit;
+    $('btn-submit').title = !S.saved || S.dirty ? '请等待保存完成后再提交' : S.reviewStatus !== 'draft' ? `r${S.rev} 已${S.reviewStatus === 'review' ? '在审核中' : '处理'}` : '';
+    $('btn-unpublish').disabled = !S.live || (S.target && S.target.cancel);
+    $('btn-history').classList.toggle('pointer-events-none', !S.saved);
+    $('btn-history').classList.toggle('opacity-50', !S.saved);
+  }
+
+  /* ---------- 保存状态 ---------- */
+  const STATUS = {
+    idle: ['text-ui-sub', '●', ''],
+    dirty: ['text-warn', '●', '有未保存的更改'],
+    saving: ['text-ui-sub', '◌', '保存中…'],
+    saved: ['text-ok', '✓', ''],
+    failed: ['text-bad', '!', '保存失败，内容已保留在本页'],
+    conflict: ['text-warn', '!', '有新版本，已停止自动保存'],
+  };
+  function setStatus(k, extra) {
+    const [cls, icon, text] = STATUS[k];
+    $('save-status').className = 'inline-flex items-center gap-1.5 ' + cls;
+    $('save-status').innerHTML = `<span aria-hidden="true">${icon}</span><span>${extra || text}</span>`;
+    $('retry-save').hidden = k !== 'failed';
+  }
+  let timer = null;
+  function scheduleSave() {
+    S.dirty = true; renderRevs();
+    if (Proto.state === 'conflict') { setStatus('conflict'); return; } // 冲突后不再自动保存
+    setStatus('dirty');
+    clearTimeout(timer);
+    timer = setTimeout(save, 1500);
+  }
+  function save() {
+    setStatus('saving');
+    setTimeout(() => {
+      if (Proto.state === 'savefail') { setStatus('failed'); return; }
+      if (Proto.state === 'conflict') { setStatus('conflict'); return; }
+      S.rev += 1; S.saved = true; S.dirty = false; S.reviewStatus = 'draft';
+      setStatus('saved', `已保存为 r${S.rev} · 刚刚`);
+      if (isNew && S.rev === 1) { $('slug-note').textContent = '首次被接受发布前可修改，之后锁定。'; }
+      renderRevs();
+    }, 700);
+  }
+  $('retry-save').addEventListener('click', () => { if (Proto.state === 'savefail') { Proto.toast('仍无法连接，内容已保留', 'bad'); } save(); });
+  ['input'].forEach(ev => {
+    src.addEventListener(ev, () => { scheduleSave(); renderPreview(); });
+    $('title').addEventListener(ev, () => { scheduleSave(); renderPreview(); });
+    ['seo-title', 'seo-desc', 'slug'].forEach(id => $(id).addEventListener(ev, scheduleSave));
+  });
+  ['cat', 'featured'].forEach(id => $(id).addEventListener('change', scheduleSave));
+
+  document.addEventListener('proto:state', e => {
+    clearTimeout(timer);
+    if (e.detail === 'conflict') setStatus('conflict');
+    else if (e.detail === 'savefail') setStatus('failed');
+    else setStatus(S.saved ? 'saved' : 'idle', S.saved ? `已保存为 r${S.rev} · 2 分钟前` : '尚未保存');
+    renderRevs();
+  });
+  document.addEventListener('proto:role', renderRevs);
+
+  /* ---------- 安全 Markdown 预览：先转义，再做有限的语法替换 ---------- */
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const safeUrl = u => /^(https?:\/\/|\/|#|media:\/\/)/i.test(u) ? u : '#';
+  function inline(t) {
+    return t
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, a, u) => `<figure><div class="ph h-40 rounded grid place-items-center text-[13px] text-ink-soft">图片：${a || '未命名'}</div><figcaption class="text-[13px] text-ink-soft mt-1">${a}</figcaption></figure>`)
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, a, u) => `<a href="${safeUrl(u)}" rel="noopener nofollow">${a}</a>`)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  }
+  function md(text) {
+    const lines = esc(text).split('\n'); let html = '', list = null, code = null, para = [];
+    const flushP = () => { if (para.length) { html += `<p>${inline(para.join(' '))}</p>`; para = []; } };
+    const flushL = () => { if (list) { html += `</${list}>`; list = null; } };
+    for (const l of lines) {
+      if (code !== null) { if (/^```/.test(l)) { html += `<pre><code>${code}</code></pre>`; code = null; } else code += l + '\n'; continue; }
+      if (/^```/.test(l)) { flushP(); flushL(); code = ''; continue; }
+      let m;
+      if ((m = l.match(/^(#{1,3})\s+(.*)/))) { flushP(); flushL(); const n = Math.min(m[1].length + 1, 3); html += `<h${n}>${inline(m[2])}</h${n}>`; continue; }
+      if ((m = l.match(/^\s*[-*]\s+(.*)/))) { flushP(); if (list !== 'ul') { flushL(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; continue; }
+      if ((m = l.match(/^\s*\d+\.\s+(.*)/))) { flushP(); if (list !== 'ol') { flushL(); html += '<ol>'; list = 'ol'; } html += `<li>${inline(m[1])}</li>`; continue; }
+      if ((m = l.match(/^&gt;\s?(.*)/))) { flushP(); flushL(); html += `<blockquote>${inline(m[1])}</blockquote>`; continue; }
+      if (!l.trim()) { flushP(); flushL(); continue; }
+      flushL(); para.push(l);
+    }
+    if (code !== null) html += `<pre><code>${code}</code></pre>`;
+    flushP(); flushL();
+    return html;
+  }
+  function renderPreview() {
+    $('pv-title').textContent = $('title').value || '（未填写标题）';
+    $('preview').innerHTML = src.value.trim() ? md(src.value) : '<p class="text-ink-soft">正文预览会显示在这里。</p>';
+    $('count').textContent = `${src.value.length} 字符`;
+  }
+  $('seo-desc').addEventListener('input', () => $('desc-count').textContent = `${$('seo-desc').value.length}/160`);
+  $('desc-count').textContent = `${$('seo-desc').value.length}/160`;
+
+  // 工具栏：包裹选区
+  document.querySelectorAll('[data-wrap]').forEach(b => b.addEventListener('click', () => {
+    const w = b.dataset.wrap, s = src.selectionStart, e = src.selectionEnd;
+    src.setRangeText(w + src.value.slice(s, e) + w, s, e, 'end'); src.focus(); scheduleSave(); renderPreview();
+  }));
+
+  /* ---------- 标签 ---------- */
+  const tags = isNew ? [] : ['CMS', '发布流程', '架构'];
+  function renderTags() {
+    $('tags').querySelectorAll('.tag').forEach(t => t.remove());
+    tags.forEach((t, i) => {
+      const s = document.createElement('span');
+      s.className = 'tag inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded bg-ui-bg text-[13px]';
+      s.innerHTML = `${esc(t)}<button type="button" class="px-1 text-ui-sub hover:text-bad" aria-label="移除标签 ${esc(t)}">✕</button>`;
+      s.querySelector('button').onclick = () => { tags.splice(i, 1); renderTags(); scheduleSave(); };
+      $('tags').insertBefore(s, $('tag-input'));
+    });
+  }
+  $('tag-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.value.trim()) { e.preventDefault(); if (!tags.includes(e.target.value.trim())) tags.push(e.target.value.trim()); e.target.value = ''; renderTags(); scheduleSave(); }
+  });
+
+  /* ---------- 封面 ---------- */
+  function setCover(name) {
+    $('cover-name').textContent = name || '未设置封面';
+    $('cover-thumb').style.visibility = name ? 'visible' : 'hidden';
+    $('cover-remove').hidden = !name;
+  }
+  $('cover-remove').onclick = () => { setCover(null); scheduleSave(); };
+
+  /* ---------- 媒体选择器 ---------- */
+  const media = [
+    { id: 'cover-revision-flow', name: 'cover-revision-flow.png', st: 'ready' },
+    { id: 'axum-layers', name: 'axum-layers.svg', st: 'ready' },
+    { id: 'pg-lock', name: 'pg-lock-graph.png', st: 'ready' },
+    { id: 'screen-01', name: 'admin-screen.png', st: 'validating' },
+    { id: 'big-raw', name: 'IMG_2041.HEIC', st: 'failed', reason: '不支持的格式' },
+  ];
+  const ST = { ready: ['chip-ok', '已就绪'], uploading: ['chip-info', '上传中'], validating: ['chip-warn', '校验中'], failed: ['chip-bad', '失败'] };
+  let pickTarget = 'body', picked = null;
+  function renderMedia() {
+    $('mp-grid').innerHTML = media.map(m => `
+      <li><button type="button" data-mid="${m.id}" ${m.st !== 'ready' ? 'disabled' : ''} aria-pressed="${picked === m.id}"
+        class="w-full text-left rounded-lg border border-ui-line p-2 enabled:hover:border-accent/60 aria-pressed:border-accent aria-pressed:ring-2 aria-pressed:ring-accent/25 disabled:cursor-not-allowed">
+        <div class="aspect-[4/3] rounded bg-[repeating-linear-gradient(135deg,#EEF0F3_0_8px,#E2E4E9_8px_16px)] ${m.st !== 'ready' ? 'opacity-50' : ''}"></div>
+        <div class="mt-2 text-[12px] truncate">${m.name}</div>
+        <div class="mt-1"><span class="chip ${ST[m.st][0]}">${ST[m.st][1]}${m.pct ? ' ' + m.pct + '%' : ''}</span></div>
+        ${m.reason ? `<div class="mt-1 text-[11px] text-bad">${m.reason}</div>` : ''}
+      </button></li>`).join('');
+    $('mp-insert').disabled = !picked;
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-picker-target]'); if (t) { pickTarget = t.dataset.pickerTarget; picked = null; renderMedia(); $('mp-insert').textContent = pickTarget === 'cover' ? '设为封面' : '插入正文'; }
+    const b = e.target.closest('[data-mid]'); if (b && !b.disabled) { picked = b.dataset.mid; renderMedia(); }
+  });
+  $('mp-insert').onclick = () => {
+    const m = media.find(x => x.id === picked); if (!m || m.st !== 'ready') return;
+    if (pickTarget === 'cover') setCover(m.name);
+    else { src.setRangeText(`\n![${m.name}](media://${m.id})\n`, src.selectionStart, src.selectionEnd, 'end'); renderPreview(); }
+    scheduleSave(); Proto.close('media-picker');
+  };
+  // 上传：申请签名 → 直传 → 确认/校验 → 就绪
+  $('mp-upload').onclick = () => {
+    const m = { id: 'up-' + Date.now(), name: 'diagram-new.png', st: 'uploading', pct: 0 };
+    media.unshift(m); renderMedia();
+    const iv = setInterval(() => {
+      m.pct += 25; if (m.pct >= 100) { clearInterval(iv); m.pct = 0; m.st = 'validating'; renderMedia();
+        setTimeout(() => { m.st = Proto.state === 'savefail' ? 'failed' : 'ready'; if (m.st === 'failed') m.reason = '服务端校验未通过，正文未改动'; renderMedia(); }, 1200); }
+      else renderMedia();
+    }, 300);
+  };
+
+  /* ---------- 提交审核 ---------- */
+  $('btn-submit').addEventListener('click', () => { if (!$('btn-submit').disabled) Proto.open('dlg-submit', $('btn-submit')); });
+  $('ds-ok').onclick = () => { S.reviewStatus = 'review'; renderRevs(); Proto.close('dlg-submit'); Proto.toast(`已提交 r${S.rev} 审核`, 'ok'); };
+
+  /* ---------- 发布 ---------- */
+  function renderPublish() {
+    $('dp-current-note').textContent = S.rev && S.reviewStatus !== 'approved' ? `当前编辑的 r${S.rev} 尚未批准，不能发布。` : '';
+    $('dp-empty').hidden = S.approved.length > 0;
+    $('dp-list').hidden = !S.approved.length;
+    $('dp-ok').disabled = !S.approved.length;
+    $('dp-list').innerHTML = '<legend class="sr-only">已批准的修订</legend>' + S.approved.map((a, i) => `
+      <label class="flex items-center gap-3 rounded-lg border border-ui-line px-3 py-2.5 has-[:checked]:border-accent has-[:checked]:bg-accent-tint/50 cursor-pointer">
+        <input type="radio" name="pub-rev" value="${a.rev}" ${i === 0 ? 'checked' : ''} class="accent-[#27467A]">
+        <span class="flex-1 text-[14px]"><span class="font-medium tnum">r${a.rev}</span> <span class="text-ui-sub">· ${a.by} 批准于 ${a.at}</span></span>
+        ${S.target && S.target.rev === a.rev ? '<span class="chip chip-info">期望公开</span>' : ''}${S.live === a.rev ? '<span class="chip chip-ok">线上</span>' : ''}
+      </label>`).join('');
+  }
+  $('btn-publish').addEventListener('click', renderPublish);
+  $('dp-ok').onclick = () => {
+    const r = +document.querySelector('[name=pub-rev]:checked').value;
+    S.target = { rev: r, label: '已批准 · 待上线' }; renderRevs(); Proto.close('dlg-publish');
+    showPending(`发布 r${r}：站点版本 g-0144 排队中。上线前访客仍看到 r${S.live || '—'}。`);
+  };
+  $('du-ok').onclick = () => {
+    S.target = { cancel: true }; renderRevs(); Proto.close('dlg-unpublish');
+    showPending(`取消发布：站点版本 g-0144 排队中。新版本激活前 r${S.live} 仍在线。`);
+  };
+  function showPending(t) { $('pending-text').textContent = t; $('pending-banner').hidden = false; }
+
+  /* ---------- 窄屏视图切换 / 宽屏收起设置 ---------- */
+  document.querySelectorAll('.view-tab').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.view-tab').forEach(x => x.setAttribute('aria-selected', x === b));
+    ['source', 'preview', 'settings'].forEach(v => $('pane-' + v).classList.toggle('max-lg:hidden', v !== b.dataset.view));
+  }));
+  $('toggle-settings').onclick = e => {
+    const grid = $('editor-grid'), open = e.currentTarget.getAttribute('aria-expanded') === 'true';
+    $('pane-settings').classList.toggle('lg:hidden', open);
+    grid.classList.toggle('lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]', !open);
+    grid.classList.toggle('lg:grid-cols-2', open);
+    e.currentTarget.setAttribute('aria-expanded', !open);
+    e.currentTarget.textContent = open ? '展开设置' : '收起设置';
+  };
+
+  /* ---------- 初始化 ---------- */
+  if (isNew) {
+    $('title').value = ''; $('slug').readOnly = false; $('slug').value = '';
+    $('slug-note').textContent = '保存后生成；首次被接受发布前可修改，之后锁定。';
+    $('featured').checked = false; $('seo-desc').value = ''; setCover(null);
+    $('desc-count').textContent = '0/160';
+    setStatus('idle', '尚未保存 · 开始输入后自动保存');
+  } else {
+    setCover('cover-revision-flow.png');
+    setStatus('saved', `已保存为 r${S.rev} · 2 分钟前`);
+  }
+  const fit = () => { const t = $('title'); t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; };
+  $('title').addEventListener('input', fit); $('title').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  window.addEventListener('resize', fit);
+  renderTags(); renderPreview(); renderRevs(); fit();
+  if (Proto.state && Proto.state !== 'default') document.dispatchEvent(new CustomEvent('proto:state', { detail: Proto.state }));
+})();
+</script>
+</body>
+</html>

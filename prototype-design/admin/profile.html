@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>个人资料 · Silva 后台</title>
+  <meta name="description" content="A11 个人资料：单例表单，身份与头像、Markdown 简介、可排序的经历/技能/社交链接，统一保存，独立显示上线状态。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="profile" data-crumbs="资源|个人资料" data-proto-roles="editor"
+      data-proto-states="default:已上线;pending:待上线;failed:构建失败">
+<main id="admin-main">
+  <div class="max-w-[880px]">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 class="text-[22px] font-semibold">个人资料</h1>
+        <p class="mt-1 text-[14px] text-ui-sub">用于首页首屏、关于页和页脚联络。所有区块一起保存，保存后进入站点发布队列。</p>
+      </div>
+      <div class="flex items-center gap-2 text-[13px]" aria-live="polite">
+        <span class="text-ui-sub">上线状态</span>
+        <span data-state="default" class="chip chip-ok">已上线</span>
+        <span data-state="pending" hidden class="chip chip-warn">待上线</span>
+        <span data-state="failed" hidden class="chip chip-bad">构建失败</span>
+        <a data-state="pending failed" hidden href="publishing-detail.html" class="text-accent">查看任务</a>
+      </div>
+    </div>
+    <p data-state="failed" hidden class="mt-4 text-[13px] bg-bad-tint text-bad rounded-md px-3 py-2">资料已保存，但包含它的站点版本构建失败，访客仍看到上一版资料。可在发布任务中查看原因。</p>
+
+    <form class="mt-6 space-y-6" onsubmit="event.preventDefault()">
+      <!-- 身份与头像 -->
+      <section class="bg-white border border-ui-line rounded-lg p-5" aria-labelledby="s-id">
+        <h2 id="s-id" class="text-[16px] font-semibold">身份</h2>
+        <div class="mt-4 grid sm:grid-cols-[120px_1fr] gap-6">
+          <div>
+            <div class="w-[96px] h-[96px] rounded-full bg-accent text-white grid place-items-center font-serif text-[34px] font-bold">屿</div>
+            <div class="mt-2 flex flex-col items-start text-[13px] gap-1"><button type="button" class="text-accent">从媒体库选择</button><button type="button" class="text-ui-sub">移除头像</button></div>
+            <p class="mt-1 text-[12px] text-ui-sub">无头像时显示姓名首字。</p>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div><label for="p-name" class="block text-[13px] font-medium">显示名</label><input id="p-name" value="周屿" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div><label for="p-loc" class="block text-[13px] font-medium">所在地 <span class="text-ui-sub font-normal">（可选）</span></label><input id="p-loc" value="杭州" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div class="sm:col-span-2"><label for="p-role" class="block text-[13px] font-medium">身份标签</label><input id="p-role" value="后端工程师" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"></div>
+            <div class="sm:col-span-2"><label for="p-tagline" class="block text-[13px] font-medium">一句话定位</label><input id="p-tagline" value="用 Rust 写服务端，也记录把系统做稳的每一步。" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]"><p class="mt-1 text-[12px] text-ui-sub">首页首屏大字显示，建议 30 字以内。</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Markdown 简介 -->
+      <section data-tabs class="bg-white border border-ui-line rounded-lg p-5" aria-labelledby="s-bio">
+        <div class="flex items-center justify-between">
+          <h2 id="s-bio" class="text-[16px] font-semibold">简介</h2>
+          <div>
+            <div role="tablist" aria-label="简介编辑模式" class="flex text-[13px] bg-ui-bg rounded-md p-0.5">
+              <button type="button" role="tab" data-tab="bio-src" aria-selected="true" class="px-3 py-1 rounded aria-selected:bg-white aria-selected:shadow-sm">Markdown</button>
+              <button type="button" role="tab" data-tab="bio-pre" aria-selected="false" class="px-3 py-1 rounded aria-selected:bg-white aria-selected:shadow-sm">预览</button>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3">
+          <textarea data-panel="bio-src" id="p-bio" aria-labelledby="s-bio" rows="9" class="w-full rounded-md border border-ui-line px-3 py-2 text-[14px] font-code leading-6">做了六年后端，大部分时间在和**数据一致性**、发布流程打交道。
+
+## 关注方向
+- Rust 服务端与可观测性
+- 内容系统的发布与版本管理
+- AI 开源生态里的开发者工具
+
+工作之外喜欢徒步和看地形图，站名 Silva 就来自拉丁语里的「森林」。</textarea>
+          <div data-panel="bio-pre" hidden class="prose-ink rounded-md border border-ui-line p-4 !text-[15px]">
+            <p>做了六年后端，大部分时间在和<strong>数据一致性</strong>、发布流程打交道。</p>
+            <h2>关注方向</h2>
+            <ul><li>Rust 服务端与可观测性</li><li>内容系统的发布与版本管理</li><li>AI 开源生态里的开发者工具</li></ul>
+            <p>工作之外喜欢徒步和看地形图，站名 Silva 就来自拉丁语里的「森林」。</p>
+          </div>
+          <p class="mt-1 text-[12px] text-ui-sub">预览经过安全渲染，原始 HTML 不会输出。</p>
+        </div>
+      </section>
+
+      <!-- 经历 -->
+      <section class="bg-white border border-ui-line rounded-lg p-5" aria-labelledby="s-exp">
+        <div class="flex items-center justify-between">
+          <h2 id="s-exp" class="text-[16px] font-semibold">经历</h2>
+          <button type="button" class="text-[14px] text-accent" data-add="exp">添加经历</button>
+        </div>
+        <p class="mt-1 text-[12px] text-ui-sub">按这里的顺序展示。日期可留空；未填结束日期不会自动显示为「至今」，需要时请勾选。</p>
+        <ol id="list-exp" class="mt-4 space-y-3"></ol>
+      </section>
+
+      <!-- 技能 -->
+      <section class="bg-white border border-ui-line rounded-lg p-5" aria-labelledby="s-skill">
+        <div class="flex items-center justify-between">
+          <h2 id="s-skill" class="text-[16px] font-semibold">技能</h2>
+          <button type="button" class="text-[14px] text-accent" data-add="skill">添加技能</button>
+        </div>
+        <p class="mt-1 text-[12px] text-ui-sub">按分类分组展示；未填分类归入「其他」。熟练程度按原文显示，不换算成百分比。</p>
+        <div class="mt-4 overflow-x-auto">
+          <table class="tbl min-w-[560px]">
+            <thead><tr><th class="w-10">顺序</th><th>技能</th><th>分类</th><th>熟练程度（可选）</th><th class="text-right">操作</th></tr></thead>
+            <tbody id="list-skill"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 社交链接 -->
+      <section class="bg-white border border-ui-line rounded-lg p-5" aria-labelledby="s-social">
+        <div class="flex items-center justify-between">
+          <h2 id="s-social" class="text-[16px] font-semibold">社交链接</h2>
+          <button type="button" class="text-[14px] text-accent" data-add="social">添加链接</button>
+        </div>
+        <p class="mt-1 text-[12px] text-ui-sub">只有填写的链接会公开显示；全部为空时，首页与关于页不显示联络区按钮。</p>
+        <ol id="list-social" class="mt-4 space-y-2"></ol>
+      </section>
+
+      <!-- 统一保存 -->
+      <div class="sticky bottom-0 -mx-4 md:mx-0 px-4 md:px-5 py-3 bg-white/95 backdrop-blur border-t md:border border-ui-line md:rounded-lg flex flex-wrap items-center justify-between gap-3">
+        <span id="save-state" class="text-[13px] text-ui-sub" aria-live="polite">有未保存的修改</span>
+        <div class="flex gap-2">
+          <button type="button" class="h-9 px-4 rounded-md border border-ui-line text-[14px]">放弃修改</button>
+          <button type="button" id="btn-save" class="h-9 px-5 rounded-md bg-accent text-white text-[14px] font-medium">保存资料</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</main>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  const lists = {
+    exp: [
+      { start: '2023-03', end: '', now: true, title: '高级后端工程师', org: '某云服务公司', desc: '负责内容平台的发布系统与多租户存储。' },
+      { start: '2020-07', end: '2023-02', now: false, title: '后端工程师', org: '某电商公司', desc: '订单与库存服务，参与从单体到服务化的迁移。' },
+      { start: '', end: '', now: false, title: '开源贡献者', org: 'tokio-rs 生态', desc: '日期不填时，公开页省略日期行。' },
+    ],
+    skill: [['Rust', '语言', '日常主力'], ['Go', '语言', ''], ['PostgreSQL', '数据', '熟练'], ['Astro', '前端', ''], ['Kubernetes', '', '会用']],
+    social: [['GitHub', 'https://github.com/zhouyu'], ['邮箱', 'mailto:hello@example.com'], ['RSS', '/rss.xml']],
+  };
+  const mv = (k, i, n) => `<div class="flex"><button type="button" class="p-1.5 text-ui-sub disabled:opacity-30" aria-label="上移" data-mv="${k},${i},-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="p-1.5 text-ui-sub disabled:opacity-30" aria-label="下移" data-mv="${k},${i},1" ${i === n - 1 ? 'disabled' : ''}>↓</button><button type="button" class="p-1.5 text-bad text-[13px]" data-rm="${k},${i}">移除</button></div>`;
+  const inp = 'h-9 w-full rounded-md border border-ui-line px-3 text-[14px]';
+  function render() {
+    const e = lists.exp;
+    document.getElementById('list-exp').innerHTML = e.map((x, i) => `
+      <li class="border border-ui-line rounded-md p-4">
+        <div class="flex items-center justify-between"><span class="text-[13px] text-ui-sub tnum">第 ${i + 1} 条</span>${mv('exp', i, e.length)}</div>
+        <div class="mt-2 grid sm:grid-cols-2 gap-3">
+          <label class="text-[12px] text-ui-sub">职位<input class="${inp} mt-1 text-ui-text" value="${x.title}"></label>
+          <label class="text-[12px] text-ui-sub">组织<input class="${inp} mt-1 text-ui-text" value="${x.org}"></label>
+          <label class="text-[12px] text-ui-sub">开始（年月，可选）<input type="month" class="${inp} mt-1 text-ui-text" value="${x.start}"></label>
+          <label class="text-[12px] text-ui-sub">结束（年月，可选）<input type="month" class="${inp} mt-1 text-ui-text" value="${x.end}" ${x.now ? 'disabled' : ''}>
+            <span class="mt-1 inline-flex items-center gap-1.5 text-ui-text"><input type="checkbox" ${x.now ? 'checked' : ''}> 至今</span></label>
+          <label class="sm:col-span-2 text-[12px] text-ui-sub">说明<textarea rows="2" class="mt-1 w-full rounded-md border border-ui-line px-3 py-2 text-[14px] text-ui-text">${x.desc}</textarea></label>
+        </div>
+      </li>`).join('');
+    const s = lists.skill;
+    document.getElementById('list-skill').innerHTML = s.map((x, i) => `
+      <tr><td class="tnum text-ui-sub">${i + 1}</td>
+        <td><input aria-label="技能名称" class="${inp}" value="${x[0]}"></td>
+        <td><input aria-label="分类" class="${inp}" value="${x[1]}" placeholder="其他"></td>
+        <td><input aria-label="熟练程度" class="${inp}" value="${x[2]}" placeholder="不填则不显示"></td>
+        <td class="text-right">${mv('skill', i, s.length)}</td></tr>`).join('');
+    const so = lists.social;
+    document.getElementById('list-social').innerHTML = so.map((x, i) => `
+      <li class="grid grid-cols-[1fr] sm:grid-cols-[140px_1fr_auto] gap-2 items-center">
+        <input aria-label="链接名称" class="${inp}" value="${x[0]}">
+        <input aria-label="链接地址" class="${inp} font-code" value="${x[1]}">
+        ${mv('social', i, so.length)}</li>`).join('');
+  }
+  render();
+  document.addEventListener('click', e => {
+    const m = e.target.closest('[data-mv]'), r = e.target.closest('[data-rm]'), a = e.target.closest('[data-add]');
+    if (m) { const [k, i, d] = m.dataset.mv.split(','); const arr = lists[k], j = +i + +d; [arr[+i], arr[j]] = [arr[j], arr[+i]]; render(); }
+    if (r) { const [k, i] = r.dataset.rm.split(','); lists[k].splice(+i, 1); render(); }
+    if (a) { const k = a.dataset.add; lists[k].push(k === 'exp' ? { start: '', end: '', now: false, title: '', org: '', desc: '' } : k === 'skill' ? ['', '', ''] : ['', '']); render(); }
+  });
+  document.getElementById('btn-save').addEventListener('click', () => {
+    const s = document.getElementById('save-state');
+    s.textContent = '保存中…';
+    setTimeout(() => {
+      s.innerHTML = '已保存，待上线 · <a class="text-accent" href="publishing-detail.html">查看任务</a>';
+      Proto.toast('资料已保存，待上线', 'ok');
+      document.querySelector('[data-proto-state-btn="pending"]')?.click();
+    }, 600);
+  });
+</script>
+</body>
+</html>

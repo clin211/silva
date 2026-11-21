@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工作台 · Silva 后台</title>
+  <meta name="description" content="A02 工作台原型：常用操作与按角色展示的任务摘要。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="dashboard" data-crumbs="工作台" data-proto-roles="admin"
+      data-proto-states="default:正常;empty:暂无任务">
+<main id="admin-main">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-semibold">工作台</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">你好，周屿。以下是与你的角色（<span data-current-role>Admin</span>）相关的待办。</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <a href="post-new.html" class="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-accent text-white text-[14px] font-medium hover:bg-accent-2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>新建文章</a>
+      <a href="media.html" class="inline-flex items-center h-9 px-4 rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">上传媒体</a>
+      <a href="posts.html?filter=review" data-role="editor" class="inline-flex items-center h-9 px-4 rounded-md border border-ui-line bg-white text-[14px] hover:bg-ui-bg">处理待审核</a>
+    </div>
+  </div>
+
+  <!-- ===== Author：只看自己的文章 ===== -->
+  <div data-role-only="author" class="mt-6 grid gap-4 md:grid-cols-3">
+    <a href="posts.html?mine=1&status=draft" class="bg-white border border-ui-line rounded-lg p-4 hover:border-accent/50">
+      <div class="text-[13px] text-ui-sub">我的草稿</div><div class="mt-1 text-[26px] font-semibold tnum">3</div><div class="text-[13px] text-ui-sub">最近编辑 2 小时前</div></a>
+    <a href="posts.html?mine=1&status=review" class="bg-white border border-ui-line rounded-lg p-4 hover:border-accent/50">
+      <div class="text-[13px] text-ui-sub">审核中</div><div class="mt-1 text-[26px] font-semibold tnum">1</div><div class="text-[13px] text-ui-sub">等待 Editor 处理</div></a>
+    <a href="posts.html?mine=1&status=rejected" class="bg-white border border-ui-line rounded-lg p-4 hover:border-accent/50">
+      <div class="text-[13px] text-ui-sub">被拒绝待修改</div><div class="mt-1 text-[26px] font-semibold tnum text-bad">1</div><div class="text-[13px] text-ui-sub">查看审核意见</div></a>
+  </div>
+
+  <div class="mt-6 grid gap-5 xl:grid-cols-3">
+    <!-- 我的最近文章（所有角色） -->
+    <section class="xl:col-span-2 min-w-0 bg-white border border-ui-line rounded-lg" aria-labelledby="my-posts">
+      <div class="flex items-center justify-between px-4 h-12 border-b border-ui-line">
+        <h2 id="my-posts" class="text-[15px] font-semibold">我最近编辑的文章</h2>
+        <a href="posts.html" class="text-[13px] text-accent hover:underline">全部文章</a>
+      </div>
+      <div data-state="default" class="overflow-x-auto">
+        <table class="tbl min-w-[560px]">
+          <thead><tr><th>标题</th><th>编辑状态</th><th>当前线上</th><th>更新</th></tr></thead>
+          <tbody>
+            <tr><td><a href="post-edit.html" class="text-ui-text hover:text-accent font-medium">用不可变 revision 重写 CMS 的发布流程</a></td><td><span class="chip chip-warn">r14 草稿</span></td><td><span class="chip chip-ok">r9 已上线</span></td><td class="text-ui-sub tnum">10:42</td></tr>
+            <tr><td><a href="post-edit.html" class="text-ui-text hover:text-accent font-medium">Axum 中间件的执行顺序</a></td><td><span class="chip chip-info">r6 审核中</span></td><td><span class="chip chip-ok">r4 已上线</span></td><td class="text-ui-sub tnum">昨天</td></tr>
+            <tr><td><a href="post-edit.html" class="text-ui-text hover:text-accent font-medium">PostgreSQL 迁移锁表排查笔记</a></td><td><span class="chip chip-bad">r3 已拒绝</span></td><td><span class="chip chip-mute">未上线</span></td><td class="text-ui-sub tnum">11-18</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div data-state="empty" hidden class="px-4 py-10 text-center">
+        <p class="text-[14px] text-ui-sub">你还没有写过文章。</p>
+        <a href="post-new.html" class="mt-3 inline-flex h-9 items-center px-4 rounded-md bg-accent text-white text-[14px]">写第一篇文章</a>
+      </div>
+    </section>
+
+    <!-- 待审核（Editor / Admin） -->
+    <section data-role="editor" class="bg-white border border-ui-line rounded-lg" aria-labelledby="review-q">
+      <div class="flex items-center justify-between px-4 h-12 border-b border-ui-line">
+        <h2 id="review-q" class="text-[15px] font-semibold">待审核修订 <span class="ml-1 text-ui-sub font-normal tnum" data-state="default">2</span></h2>
+        <a href="posts.html?filter=review" class="text-[13px] text-accent hover:underline">去审核</a>
+      </div>
+      <ul data-state="default" class="divide-y divide-ui-line text-[14px]">
+        <li class="px-4 py-3"><a href="post-revision-detail.html" class="font-medium hover:text-accent">Axum 中间件的执行顺序</a><div class="mt-0.5 text-[13px] text-ui-sub">r6 · 林夏 提交 · 3 小时前</div></li>
+        <li class="px-4 py-3"><a href="post-revision-detail.html" class="font-medium hover:text-accent">从零搭建 MCP Server 目录</a><div class="mt-0.5 text-[13px] text-ui-sub">r2 · 陈默 提交 · 昨天</div></li>
+      </ul>
+      <p data-state="empty" hidden class="px-4 py-8 text-center text-[14px] text-ui-sub">没有待审核的修订。</p>
+    </section>
+  </div>
+
+  <div data-role="editor" class="mt-5 grid gap-5 xl:grid-cols-3">
+    <!-- 待上线发布任务 -->
+    <section class="bg-white border border-ui-line rounded-lg" aria-labelledby="pub">
+      <div class="flex items-center justify-between px-4 h-12 border-b border-ui-line">
+        <h2 id="pub" class="text-[15px] font-semibold">站点发布</h2>
+        <a href="publishing.html" class="text-[13px] text-accent hover:underline">全部任务</a>
+      </div>
+      <dl class="px-4 py-3 grid grid-cols-2 gap-y-1 text-[13px] border-b border-ui-line">
+        <dt class="text-ui-sub">当前线上</dt><dd class="tnum text-right">g-0142</dd>
+        <dt class="text-ui-sub">当前目标</dt><dd class="tnum text-right">g-0143</dd>
+      </dl>
+      <ul data-state="default" class="divide-y divide-ui-line text-[14px]">
+        <li class="px-4 py-3 flex items-center justify-between gap-3"><a href="publishing-detail.html" class="hover:text-accent"><span class="tnum">g-0143</span> 发布「用不可变 revision…」</a><span class="chip chip-info">构建中</span></li>
+        <li class="px-4 py-3 flex items-center justify-between gap-3"><a href="publishing-detail.html" class="hover:text-accent"><span class="tnum">g-0142</span> 工具目录更新</a><span class="chip chip-ok">已上线</span></li>
+      </ul>
+      <p data-state="empty" hidden class="px-4 py-6 text-center text-[14px] text-ui-sub">没有待上线的变更。</p>
+    </section>
+
+    <!-- AI 采集 -->
+    <section class="bg-white border border-ui-line rounded-lg" aria-labelledby="ai">
+      <div class="flex items-center justify-between px-4 h-12 border-b border-ui-line">
+        <h2 id="ai" class="text-[15px] font-semibold">AI 趋势采集</h2>
+        <a href="ai-runs.html" class="text-[13px] text-accent hover:underline">采集批次</a>
+      </div>
+      <dl class="px-4 py-3 space-y-2 text-[14px]">
+        <div class="flex justify-between"><dt class="text-ui-sub">最近成功</dt><dd class="tnum">2026-11-20 02:10 UTC</dd></div>
+        <div class="flex justify-between items-center"><dt class="text-ui-sub">今日批次</dt><dd><span class="chip chip-info">运行中 64%</span></dd></div>
+        <div class="flex justify-between"><dt class="text-ui-sub">GitHub 限流余量</dt><dd class="tnum">3,912 / 5,000</dd></div>
+        <div class="flex justify-between"><dt class="text-ui-sub">收录仓库</dt><dd class="tnum">1,284</dd></div>
+      </dl>
+    </section>
+
+    <!-- 系统健康（Admin） -->
+    <section data-role="admin" class="bg-white border border-ui-line rounded-lg" aria-labelledby="health">
+      <div class="flex items-center justify-between px-4 h-12 border-b border-ui-line">
+        <h2 id="health" class="text-[15px] font-semibold">系统健康</h2>
+        <a href="system-health.html" class="text-[13px] text-accent hover:underline">详情</a>
+      </div>
+      <ul class="px-4 py-3 space-y-2.5 text-[14px]">
+        <li class="flex justify-between items-center"><span>API 服务</span><span class="chip chip-ok">正常</span></li>
+        <li class="flex justify-between items-center"><span>PostgreSQL</span><span class="chip chip-ok">正常</span></li>
+        <li class="flex justify-between items-center"><span>Worker 队列</span><span class="chip chip-warn">积压 12</span></li>
+        <li class="flex justify-between items-center"><span>对象存储</span><span class="chip chip-ok">正常</span></li>
+      </ul>
+    </section>
+  </div>
+</main>
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+</body>
+</html>

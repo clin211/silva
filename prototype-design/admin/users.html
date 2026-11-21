@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>账户 · Silva 后台</title>
+  <meta name="description" content="A24 账户管理原型：账户表格、创建/编辑抽屉、停用与启用、分配内置角色。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-ui-bg text-ui-text font-sans antialiased" data-admin-nav="users" data-crumbs="系统|账户"
+      data-proto-roles="admin" data-proto-states="default:正常;error:请求失败">
+<main id="admin-main">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-[22px] font-semibold">账户</h1>
+      <p class="mt-1 text-[14px] text-ui-sub">创建后台账户、分配内置角色、停用或启用。站点不提供公开注册。</p>
+    </div>
+    <button type="button" data-open="user-drawer" data-mode="create" class="inline-flex h-9 items-center rounded-md bg-accent px-4 text-[14px] text-white hover:bg-accent-2">新建账户</button>
+  </div>
+
+  <form class="mt-5 flex flex-wrap gap-2" onsubmit="return false" data-state="default">
+    <label class="sr-only" for="q">搜索</label>
+    <input id="q" type="search" placeholder="搜索姓名或邮箱" class="h-9 w-full sm:w-64 rounded-md border border-ui-line bg-white px-3 text-[14px]">
+    <label class="sr-only" for="f-role">角色</label>
+    <select id="f-role" class="h-9 rounded-md border border-ui-line bg-white px-3 text-[14px]"><option>全部角色</option><option>Admin</option><option>Editor</option><option>Author</option></select>
+    <label class="sr-only" for="f-st">状态</label>
+    <select id="f-st" class="h-9 rounded-md border border-ui-line bg-white px-3 text-[14px]"><option>全部状态</option><option>启用</option><option>已停用</option></select>
+  </form>
+
+  <section data-state="default" class="mt-3 rounded-lg border border-ui-line bg-white">
+    <div class="relative overflow-x-auto">
+      <table class="tbl min-w-[820px]">
+        <thead><tr><th>姓名</th><th>邮箱</th><th>角色</th><th>状态</th><th>最近登录</th><th class="text-right">操作</th></tr></thead>
+        <tbody id="user-rows">
+          <tr data-name="周屿" data-email="zhouyu@silva.dev" data-role-val="Admin" data-active="1"><td class="font-medium">周屿 <span class="text-[12px] text-ui-sub font-normal">（你）</span></td><td>zhouyu@silva.dev</td><td>Admin</td><td><span class="chip chip-ok">启用</span></td><td class="tnum">11-21 09:30</td>
+            <td class="text-right whitespace-nowrap"><button type="button" class="text-accent text-[13px] px-2" data-edit>编辑</button><span class="text-[12px] text-ui-sub px-2" title="不能停用自己的账户">不可停用</span></td></tr>
+          <tr data-name="林晓" data-email="linxiao@silva.dev" data-role-val="Editor" data-active="1"><td class="font-medium">林晓</td><td>linxiao@silva.dev</td><td>Editor</td><td><span class="chip chip-ok">启用</span></td><td class="tnum">11-21 08:12</td>
+            <td class="text-right whitespace-nowrap"><button type="button" class="text-accent text-[13px] px-2" data-edit>编辑</button><button type="button" class="text-bad text-[13px] px-2" data-toggle-active>停用</button></td></tr>
+          <tr data-name="陈默" data-email="chenmo@silva.dev" data-role-val="Author" data-active="1"><td class="font-medium">陈默</td><td>chenmo@silva.dev</td><td>Author</td><td><span class="chip chip-ok">启用</span></td><td class="tnum">11-19 22:47</td>
+            <td class="text-right whitespace-nowrap"><button type="button" class="text-accent text-[13px] px-2" data-edit>编辑</button><button type="button" class="text-bad text-[13px] px-2" data-toggle-active>停用</button></td></tr>
+          <tr data-name="许安" data-email="xuan@silva.dev" data-role-val="Author" data-active="0"><td class="font-medium text-ui-sub">许安</td><td class="text-ui-sub">xuan@silva.dev</td><td class="text-ui-sub">Author</td><td><span class="chip chip-mute">已停用</span></td><td class="tnum text-ui-sub">09-02 14:05</td>
+            <td class="text-right whitespace-nowrap"><button type="button" class="text-accent text-[13px] px-2" data-edit>编辑</button><button type="button" class="text-accent text-[13px] px-2" data-toggle-active>启用</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="px-4 py-3 text-[12px] text-ui-sub border-t border-ui-line">停用后该账户的会话立即失效，已写的文章与修订保留。</p>
+  </section>
+
+  <div data-state="error" hidden role="alert" class="mt-6 rounded-lg border border-bad/30 bg-bad-tint px-4 py-4 text-[14px] text-bad">
+    无法读取账户列表（500 internal_error，Request ID 01JDK8…）。<button type="button" class="ml-2 underline" data-toast="正在重新读取…">重试</button>
+  </div>
+</main>
+
+<!-- 创建 / 编辑抽屉 -->
+<div id="user-drawer" data-overlay hidden class="fixed inset-0 z-50">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <aside role="dialog" aria-modal="true" aria-labelledby="drawer-h" class="absolute right-0 top-0 h-full w-full max-w-[420px] bg-white shadow-xl flex flex-col">
+    <div class="flex items-center justify-between border-b border-ui-line px-5 h-14">
+      <h2 id="drawer-h" class="text-[16px] font-semibold">新建账户</h2>
+      <button type="button" data-close class="p-1.5 text-ui-sub" aria-label="关闭">✕</button>
+    </div>
+    <form class="flex-1 overflow-y-auto px-5 py-5 space-y-4" onsubmit="return false">
+      <div>
+        <label for="u-name" class="block text-[13px] font-medium">姓名</label>
+        <input id="u-name" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]" required>
+      </div>
+      <div>
+        <label for="u-email" class="block text-[13px] font-medium">邮箱</label>
+        <input id="u-email" type="email" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]" required>
+        <p class="mt-1 text-[12px] text-ui-sub">用于登录，不能与已有账户重复。</p>
+      </div>
+      <div id="pw-field">
+        <label for="u-pw" class="block text-[13px] font-medium">初始密码</label>
+        <input id="u-pw" type="password" autocomplete="new-password" class="mt-1.5 h-9 w-full rounded-md border border-ui-line px-3 text-[14px]">
+        <p class="mt-1 text-[12px] text-ui-sub">至少 12 位。请通过安全渠道告知对方。</p>
+      </div>
+      <fieldset>
+        <legend class="text-[13px] font-medium">内置角色</legend>
+        <div class="mt-2 space-y-2">
+          <label class="flex gap-3 rounded-md border border-ui-line p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-tint/50"><input type="radio" name="role" value="Author" checked class="mt-1"><span><span class="block text-[14px] font-medium">Author</span><span class="block text-[12px] text-ui-sub">写自己的文章、上传自己的媒体、提交审核</span></span></label>
+          <label class="flex gap-3 rounded-md border border-ui-line p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-tint/50"><input type="radio" name="role" value="Editor" class="mt-1"><span><span class="block text-[14px] font-medium">Editor</span><span class="block text-[12px] text-ui-sub">审核与发布所有文章，维护分类标签与资源目录</span></span></label>
+          <label class="flex gap-3 rounded-md border border-ui-line p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-tint/50"><input type="radio" name="role" value="Admin" class="mt-1"><span><span class="block text-[14px] font-medium">Admin</span><span class="block text-[12px] text-ui-sub">包含 Editor，另可管理账户、触发采集、重试发布、查看审计与系统健康</span></span></label>
+        </div>
+        <p class="mt-2 text-[12px] text-ui-sub">权限定义不可编辑，详见 <a href="roles.html" class="text-accent underline">角色</a>。</p>
+      </fieldset>
+    </form>
+    <div class="flex justify-end gap-2 border-t border-ui-line px-5 py-3">
+      <button type="button" data-close class="h-9 rounded-md border border-ui-line px-4 text-[14px]">取消</button>
+      <button type="button" data-close id="save-user" data-toast="已创建账户" data-toast-tone="ok" class="h-9 rounded-md bg-accent px-4 text-[14px] text-white">创建账户</button>
+    </div>
+  </aside>
+</div>
+
+<!-- 停用 / 启用确认 -->
+<div id="active-dialog" data-overlay hidden class="fixed inset-0 z-50 grid place-items-center p-4">
+  <div class="absolute inset-0 drawer-backdrop" data-overlay-backdrop></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="act-h" class="relative w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+    <h2 id="act-h" class="text-[16px] font-semibold">停用账户</h2>
+    <p id="act-body" class="mt-2 text-[14px] text-ui-sub"></p>
+    <div class="mt-5 flex justify-end gap-2">
+      <button type="button" data-close class="h-9 rounded-md border border-ui-line px-4 text-[14px]">取消</button>
+      <button type="button" data-close id="act-confirm" class="h-9 rounded-md bg-bad px-4 text-[14px] text-white">停用账户</button>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/admin.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  // 原型交互：编辑抽屉预填、停用/启用确认
+  const drawer = document.getElementById('user-drawer');
+  document.querySelector('[data-mode="create"]').addEventListener('click', () => {
+    drawer.querySelector('#drawer-h').textContent = '新建账户';
+    drawer.querySelector('#u-name').value = ''; drawer.querySelector('#u-email').value = '';
+    drawer.querySelector('#pw-field').hidden = false;
+    const s = drawer.querySelector('#save-user'); s.textContent = '创建账户'; s.dataset.toast = '已创建账户';
+  });
+  let pendingRow = null;
+  document.getElementById('user-rows').addEventListener('click', e => {
+    const row = e.target.closest('tr');
+    if (e.target.matches('[data-edit]')) {
+      drawer.querySelector('#drawer-h').textContent = '编辑账户';
+      drawer.querySelector('#u-name').value = row.dataset.name;
+      drawer.querySelector('#u-email').value = row.dataset.email;
+      drawer.querySelector('#pw-field').hidden = true;
+      drawer.querySelector(`input[value="${row.dataset.roleVal}"]`).checked = true;
+      const s = drawer.querySelector('#save-user'); s.textContent = '保存修改'; s.dataset.toast = '已保存修改';
+      Proto.open('user-drawer', e.target);
+    }
+    if (e.target.matches('[data-toggle-active]')) {
+      pendingRow = row;
+      const off = row.dataset.active === '1';
+      document.getElementById('act-h').textContent = off ? `停用 ${row.dataset.name}？` : `启用 ${row.dataset.name}？`;
+      document.getElementById('act-body').textContent = off
+        ? '停用后对方无法登录，当前会话立即失效。已写的文章、修订和媒体保留，可随时重新启用。'
+        : '启用后对方可以使用原邮箱和密码登录，角色保持为 ' + row.dataset.roleVal + '。';
+      const c = document.getElementById('act-confirm');
+      c.textContent = off ? '停用账户' : '启用账户';
+      c.className = `h-9 rounded-md px-4 text-[14px] text-white ${off ? 'bg-bad' : 'bg-accent'}`;
+      Proto.open('active-dialog', e.target);
+    }
+  });
+  document.getElementById('act-confirm').addEventListener('click', () => {
+    if (!pendingRow) return;
+    const off = pendingRow.dataset.active === '1';
+    pendingRow.dataset.active = off ? '0' : '1';
+    pendingRow.querySelector('.chip').className = 'chip ' + (off ? 'chip-mute' : 'chip-ok');
+    pendingRow.querySelector('.chip').textContent = off ? '已停用' : '启用';
+    const b = pendingRow.querySelector('[data-toggle-active]');
+    b.textContent = off ? '启用' : '停用'; b.className = `text-[13px] px-2 ${off ? 'text-accent' : 'text-bad'}`;
+    Proto.toast(off ? `已停用 ${pendingRow.dataset.name}` : `已启用 ${pendingRow.dataset.name}`, 'ok');
+  });
+</script>
+</body>
+</html>

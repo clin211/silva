@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>关于周屿 · Silva</title>
+  <meta name="description" content="W14 About 原型：档案首屏、个人简介、经历时间线、技能分组、联络。">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700;900&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="../assets/tw-config.js"></script>
+  <link rel="stylesheet" href="../assets/base.css">
+</head>
+<body class="bg-paper text-ink font-sans antialiased" data-nav="about"
+      data-proto-states="default:完整资料;noavatar:无头像;partial:无经历与技能;noprofile:未配置个人档案">
+<div id="site-header"></div>
+
+<main id="main">
+  <!-- ============ 档案首屏：左 7 / 右 5 ============ -->
+  <section aria-labelledby="about-title" class="relative border-b border-rule overflow-hidden">
+    <svg id="about-contour" class="absolute -right-40 -top-24 w-[720px] h-[720px] opacity-60 hidden md:block pointer-events-none" aria-hidden="true"></svg>
+    <div class="relative max-w-site mx-auto px-4 md:px-8 py-14 md:py-24 grid md:grid-cols-12 gap-10 md:gap-8 items-center">
+      <div class="md:col-span-7">
+        <h1 id="about-title" class="font-serif font-black text-[clamp(42px,7vw,80px)] leading-none tracking-[-0.02em]">关于我</h1>
+        <div data-state="default noavatar partial">
+          <p class="mt-7 font-serif text-[clamp(21px,2.4vw,28px)] leading-snug max-w-[22em]">后端工程师，六年来一直在和数据一致性、发布流程与开发者工具打交道。</p>
+          <p class="mt-5 text-[16px] leading-8 text-ink-2 max-w-[34em]">我相信可靠的系统来自清楚的状态与可预期的流程。这一页记录我的背景、做过的事和擅长的方向。</p>
+        </div>
+        <div data-state="noprofile" hidden>
+          <p class="mt-7 text-[17px] leading-8 text-ink-2 max-w-[34em]">个人档案还在整理中。你可以先读读文章，或看看做过的项目。</p>
+          <div class="mt-7 flex flex-wrap gap-3">
+            <a href="blog.html" class="inline-flex items-center h-11 px-5 rounded-full bg-ink text-paper text-[15px] font-medium hover:bg-accent">阅读文章</a>
+            <a href="projects.html" class="inline-flex items-center h-11 px-5 rounded-full border border-ink/25 text-[15px] hover:border-ink">查看项目</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 身份卡 -->
+      <aside data-state="default noavatar partial" aria-label="身份卡" class="md:col-span-5 md:col-start-8">
+        <div class="bg-paper/95 border border-rule rounded-xl p-6 md:p-8 shadow-[0_1px_0_#DCD6CB]">
+          <div class="flex items-center gap-4">
+            <!-- 有头像（原型用图形占位） -->
+            <div data-state="default partial" class="w-20 h-20 rounded-full overflow-hidden bg-accent shrink-0 relative" role="img" aria-label="周屿的头像">
+              <svg id="avatar-contour" class="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+            </div>
+            <!-- 缺头像：用姓名首字，不使用默认人物照片 -->
+            <div data-state="noavatar" hidden class="w-20 h-20 rounded-full bg-paper-3 grid place-items-center font-serif text-[32px] font-bold text-ink shrink-0" aria-hidden="true">周</div>
+            <div>
+              <p class="font-serif text-[26px] font-bold leading-tight">周屿</p>
+              <p class="mt-1 text-[14px] text-ink-soft">后端工程师</p>
+            </div>
+          </div>
+          <dl class="mt-6 divide-y divide-rule border-t border-rule text-[15px]">
+            <div class="flex justify-between py-3"><dt class="text-ink-soft">所在地</dt><dd>浙江杭州</dd></div>
+            <div class="flex justify-between py-3"><dt class="text-ink-soft">GitHub</dt><dd><a class="text-accent hover:underline underline-offset-4" href="https://github.com/" target="_blank" rel="noopener">@zhouyu ↗</a></dd></div>
+            <div class="flex justify-between py-3"><dt class="text-ink-soft">邮箱</dt><dd><a class="text-accent hover:underline underline-offset-4" href="mailto:hello@example.com">hello@example.com</a></dd></div>
+          </dl>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ 个人简介：Profile Markdown 渲染 ============ -->
+  <section data-state="default noavatar partial" aria-labelledby="bio-title" class="max-w-site mx-auto px-4 md:px-8 pt-16 md:pt-24 grid md:grid-cols-12 gap-6 md:gap-8">
+    <h2 id="bio-title" class="md:col-span-3 font-serif text-[26px] md:text-[30px] font-bold">个人简介</h2>
+    <div class="md:col-span-8 md:col-start-5 prose-ink max-w-prose">
+      <p>我从一家物流公司的订单系统开始写后端，那几年学会的最重要一件事是：一份数据只能有一个可信来源。后来在内容平台负责发布链路，把「写好了」「审过了」「上线了」拆成三件互不干扰的事。</p>
+      <p>现在主要关注这些方向：</p>
+      <ul>
+        <li>Rust 服务端与 PostgreSQL 的工程实践</li>
+        <li>静态优先的站点与可回放的构建流程</li>
+        <li>AI 开源生态中的开发者工具与 MCP Server</li>
+      </ul>
+      <p>写作对我来说是整理思路的方式。文章大多来自真实踩过的坑，尽量把上下文和取舍讲清楚，而不是只给结论。</p>
+    </div>
+  </section>
+
+  <!-- ============ 经历时间线 ============ -->
+  <section data-state="default noavatar" aria-labelledby="exp-title" class="max-w-site mx-auto px-4 md:px-8 pt-16 md:pt-24 grid md:grid-cols-12 gap-6 md:gap-8">
+    <h2 id="exp-title" class="md:col-span-3 font-serif text-[26px] md:text-[30px] font-bold">经历</h2>
+    <ol class="md:col-span-8 md:col-start-5 border-t border-ink">
+      <li class="grid sm:grid-cols-[11.5rem_1fr] gap-x-8 gap-y-1 py-7 border-b border-rule">
+        <p class="text-[14px] text-ink-soft tnum sm:pt-1">2023 年 4 月起</p>
+        <div>
+          <h3 class="font-serif text-[20px] font-bold">高级后端工程师</h3>
+          <p class="mt-1 text-[15px] text-ink-2">某内容平台 · 发布基础设施组</p>
+          <p class="mt-3 text-[15px] leading-7 text-ink-soft max-w-[36em]">负责内容发布链路与静态站点构建，把整站构建从小时级缩短到分钟级，并引入可追溯的站点版本。</p>
+        </div>
+      </li>
+      <li class="grid sm:grid-cols-[11.5rem_1fr] gap-x-8 gap-y-1 py-7 border-b border-rule">
+        <p class="text-[14px] text-ink-soft tnum sm:pt-1">2020 年 7 月 — 2023 年 3 月</p>
+        <div>
+          <h3 class="font-serif text-[20px] font-bold">后端工程师</h3>
+          <p class="mt-1 text-[15px] text-ink-2">某物流科技公司 · 订单中台</p>
+          <p class="mt-3 text-[15px] leading-7 text-ink-soft max-w-[36em]">参与订单系统从单体到服务化的拆分，主导对账任务与幂等设计。</p>
+        </div>
+      </li>
+      <!-- 未知日期：省略日期列，不推断「至今」 -->
+      <li class="grid sm:grid-cols-[11.5rem_1fr] gap-x-8 gap-y-1 py-7 border-b border-rule">
+        <p class="hidden sm:block" aria-hidden="true"></p>
+        <div>
+          <h3 class="font-serif text-[20px] font-bold">开源贡献者</h3>
+          <p class="mt-1 text-[15px] text-ink-2">若干 Rust 生态项目</p>
+          <p class="mt-3 text-[15px] leading-7 text-ink-soft max-w-[36em]">为数据库迁移工具和 HTTP 中间件提交过修复与文档。</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- ============ 技能：按分类分组 ============ -->
+  <section data-state="default noavatar" aria-labelledby="skill-title" class="max-w-site mx-auto px-4 md:px-8 pt-16 md:pt-24 grid md:grid-cols-12 gap-6 md:gap-8">
+    <h2 id="skill-title" class="md:col-span-3 font-serif text-[26px] md:text-[30px] font-bold">技能</h2>
+    <div class="md:col-span-8 md:col-start-5 grid sm:grid-cols-2 gap-x-10 gap-y-10">
+      <div>
+        <h3 class="text-[15px] font-medium pb-3 border-b border-ink">语言</h3>
+        <ul class="mt-1 divide-y divide-rule text-[15px]">
+          <li class="flex justify-between py-2.5"><span>Rust</span><span class="text-ink-soft">日常使用</span></li>
+          <li class="flex justify-between py-2.5"><span>Go</span><span class="text-ink-soft">日常使用</span></li>
+          <li class="flex justify-between py-2.5"><span>TypeScript</span><span class="text-ink-soft">熟悉</span></li>
+          <li class="py-2.5">SQL</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-[15px] font-medium pb-3 border-b border-ink">后端与数据</h3>
+        <ul class="mt-1 divide-y divide-rule text-[15px]">
+          <li class="py-2.5">Axum / Tokio</li>
+          <li class="py-2.5">PostgreSQL</li>
+          <li class="py-2.5">Redis</li>
+          <li class="py-2.5">消息队列与任务调度</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-[15px] font-medium pb-3 border-b border-ink">前端</h3>
+        <ul class="mt-1 divide-y divide-rule text-[15px]">
+          <li class="py-2.5">Astro</li>
+          <li class="py-2.5">React</li>
+          <li class="py-2.5">Tailwind CSS</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-[15px] font-medium pb-3 border-b border-ink">其他</h3>
+        <ul class="mt-1 divide-y divide-rule text-[15px]">
+          <li class="py-2.5">Docker 与 CI/CD</li>
+          <li class="py-2.5">技术写作</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 保持联系 ============ -->
+  <section data-state="default noavatar partial" aria-labelledby="keep-title" class="max-w-site mx-auto px-4 md:px-8 pt-20 md:pt-28">
+    <div class="border-t border-ink pt-10 grid md:grid-cols-12 gap-8 items-end">
+      <div class="md:col-span-7">
+        <h2 id="keep-title" class="font-serif text-[30px] md:text-[40px] font-bold leading-tight">保持联系</h2>
+        <p class="mt-4 text-[16px] leading-8 text-ink-2 max-w-[32em]">欢迎通过邮件聊技术问题或合作，也可以在 GitHub 上找到我的代码。</p>
+        <ul class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[15px]">
+          <li><a class="text-accent hover:underline underline-offset-4" href="https://github.com/" target="_blank" rel="noopener">GitHub ↗</a></li>
+          <li><a class="text-accent hover:underline underline-offset-4" href="mailto:hello@example.com">hello@example.com</a></li>
+          <li><a class="text-accent hover:underline underline-offset-4" href="#rss">RSS 订阅</a></li>
+        </ul>
+      </div>
+      <div class="md:col-span-5 flex flex-wrap gap-3 md:justify-end">
+        <a href="blog.html" class="inline-flex items-center h-12 px-6 rounded-full bg-ink text-paper text-[15px] font-medium hover:bg-accent">阅读文章</a>
+        <a href="projects.html" class="inline-flex items-center h-12 px-6 rounded-full border border-ink/25 text-[15px] hover:border-ink">查看项目</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="site-footer"></div>
+<script src="../assets/site.js"></script>
+<script src="../assets/proto.js"></script>
+<script>
+  drawContours(document.getElementById('about-contour'), { cx: 300, cy: 320, rings: 22, step: 15, seed: 11, highlight: 99, animate: false });
+  const av = document.getElementById('avatar-contour');
+  drawContours(av, { cx: 300, cy: 320, rings: 16, step: 30, seed: 5, highlight: 99, animate: false });
+  av.querySelectorAll('path').forEach(p => { p.setAttribute('stroke', '#F6F4EF'); p.setAttribute('stroke-opacity', '.55'); });
+</script>
+</body>
+</html>
