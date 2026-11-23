@@ -357,6 +357,55 @@ impl IdentityRepository for PgIdentityRepository {
         Ok(())
     }
 
+    #[tracing::instrument(name = "db.password_hash", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn password_hash(&self, user_id: Uuid) -> Result<Option<String>> {
+        let _timer = METRICS.db_operation("password_hash");
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id=$1 AND status='active'")
+            .bind(user_id)
+            .fetch_optional(&mut *acquire(&self.pool).await.map_err(db)?)
+            .await
+            .map_err(db)
+    }
+
+    #[tracing::instrument(name = "db.change_password", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn change_password(
+        &self,
+        principal: &Principal,
+        password_hash: String,
+        meta: &RequestMeta,
+    ) -> Result<()> {
+        let _timer = METRICS.db_operation("change_password");
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        let updated =
+            sqlx::query("UPDATE users SET password_hash=$2 WHERE id=$1 AND status='active'")
+                .bind(principal.user.id)
+                .bind(password_hash)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+        if updated.rows_affected() != 1 {
+            return Err(AppError::Unauthorized);
+        }
+        // 保留发起修改的当前会话，撤销其他设备上的会话。
+        let revoked = sqlx::query("DELETE FROM sessions WHERE user_id=$1 AND id<>$2")
+            .bind(principal.user.id)
+            .bind(principal.session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        audit(
+            &mut tx,
+            Some(principal.user.id),
+            "auth.password_change",
+            principal.user.id,
+            meta,
+            serde_json::json!({ "revoked_sessions": revoked.rows_affected() }),
+        )
+        .await?;
+        tx.commit().await.map_err(db)?;
+        Ok(())
+    }
+
     #[tracing::instrument(name = "db.list_users", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn list_users(&self, page: &PageRequest) -> Result<Page<User>> {
         let _timer = METRICS.db_operation("list_users");
@@ -468,6 +517,10 @@ impl IdentityRepository for PgIdentityRepository {
             fields.push("roles");
             metadata.insert("roles".into(), roles.clone().into());
         }
+        // 只记录发生了密码重置，不记录任何密码或哈希。
+        if changes.password_hash.is_some() {
+            fields.push("password");
+        }
         metadata.insert("fields".into(), fields.into());
         sqlx::query("UPDATE users SET display_name=COALESCE($2,display_name),status=COALESCE($3,status) WHERE id=$1")
             .bind(id).bind(changes.display_name.map(|s| s.trim().to_owned())).bind(&changes.status).execute(&mut *tx).await.map_err(db)?;
@@ -477,7 +530,16 @@ impl IdentityRepository for PgIdentityRepository {
         if reduces_admins {
             ensure_active_admin(&mut tx).await?;
         }
-        if changes.status.as_deref() == Some("disabled") {
+        if let Some(password_hash) = &changes.password_hash {
+            sqlx::query("UPDATE users SET password_hash=$2 WHERE id=$1")
+                .bind(id)
+                .bind(password_hash)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+        }
+        // 停用或重置密码都使该账户已有会话立即失效。
+        if changes.status.as_deref() == Some("disabled") || changes.password_hash.is_some() {
             sqlx::query("DELETE FROM sessions WHERE user_id=$1")
                 .bind(id)
                 .execute(&mut *tx)

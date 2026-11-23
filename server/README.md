@@ -87,7 +87,7 @@ curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \
   -H 'Cookie: <Set-Cookie 中的名称>=<令牌>'
 ```
 
-管理写操作还必须携带精确 Origin 和对应会话的 `X-CSRF-Token`；`auth/me` 可重新取得 CSRF token。登录之外的管理接口执行会话和 RBAC 检查，账户停用会撤销会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
+管理写操作还必须携带精确 Origin 和对应会话的 `X-CSRF-Token`；`auth/me` 可重新取得 CSRF token。登录之外的管理接口执行会话和 RBAC 检查，账户停用或管理员重置密码会撤销该账户全部会话；`POST /api/v1/admin/auth/password` 修改自己的密码，保留当前会话并撤销其他会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
 
 ## 配置
 

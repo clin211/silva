@@ -433,6 +433,159 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     }
     let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
     let (author_cookie2, _, _) = login(app, "author@example.test").await;
+
+    // 修改自己的密码：校验当前密码，保留本会话并撤销其他会话。
+    const NEW_PASSWORD: &str = "rotated-password-2026";
+    for (body, code) in [
+        (
+            json!({"current_password":"wrong-password-0000","new_password":NEW_PASSWORD}),
+            "validation_error",
+        ),
+        (
+            json!({"current_password":PASSWORD,"new_password":PASSWORD}),
+            "validation_error",
+        ),
+        (
+            json!({"current_password":PASSWORD,"new_password":"short"}),
+            "validation_error",
+        ),
+    ] {
+        let response = request(
+            app,
+            Method::POST,
+            "/api/v1/admin/auth/password",
+            Some(body),
+            Some(&author_cookie),
+            Some(&author_csrf),
+            Some(ORIGIN),
+        )
+        .await;
+        assert_error(&response, StatusCode::UNPROCESSABLE_ENTITY, code);
+    }
+    let missing_csrf = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/auth/password",
+        Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
+        Some(&author_cookie),
+        None,
+        Some(ORIGIN),
+    )
+    .await;
+    assert_error(&missing_csrf, StatusCode::FORBIDDEN, "csrf_rejected");
+    let changed = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/auth/password",
+        Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
+        Some(&author_cookie),
+        Some(&author_csrf),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_eq!(changed.status, StatusCode::NO_CONTENT, "{}", changed.json);
+    let kept = request(
+        app,
+        Method::GET,
+        "/api/v1/admin/auth/me",
+        None,
+        Some(&author_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(kept.status, StatusCode::OK, "current session must survive");
+    let other = request(
+        app,
+        Method::GET,
+        "/api/v1/admin/auth/me",
+        None,
+        Some(&author_cookie2),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        other.status,
+        StatusCode::UNAUTHORIZED,
+        "other sessions must be revoked"
+    );
+    let change_audit: Value = sqlx::query_scalar(
+        "SELECT metadata FROM audit_logs WHERE action = 'auth.password_change' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(change_audit["revoked_sessions"], 1);
+    for (password, status) in [
+        (PASSWORD, StatusCode::UNAUTHORIZED),
+        (NEW_PASSWORD, StatusCode::OK),
+    ] {
+        let response = request(
+            app,
+            Method::POST,
+            "/api/v1/admin/auth/login",
+            Some(json!({"email":"author@example.test","password":password})),
+            None,
+            None,
+            Some(ORIGIN),
+        )
+        .await;
+        assert_eq!(response.status, status, "{}", response.json);
+    }
+
+    // 管理员重置密码：撤销目标账户全部会话，审计不含密码或哈希。
+    let reset = request(
+        app,
+        Method::PATCH,
+        &format!("/api/v1/admin/users/{author_id}"),
+        Some(json!({"password":PASSWORD})),
+        Some(&admin_cookie),
+        Some(&admin_csrf),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_eq!(reset.status, StatusCode::OK, "{}", reset.json);
+    let after_reset = request(
+        app,
+        Method::GET,
+        "/api/v1/admin/auth/me",
+        None,
+        Some(&author_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(
+        after_reset.status,
+        StatusCode::UNAUTHORIZED,
+        "reset must revoke every session"
+    );
+    let reset_audit: Value = sqlx::query_scalar(
+        "SELECT metadata FROM audit_logs WHERE action = 'users.update' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(reset_audit["fields"], json!(["password"]));
+    assert!(!reset_audit.to_string().contains(PASSWORD));
+    let short_reset = request(
+        app,
+        Method::PATCH,
+        &format!("/api/v1/admin/users/{author_id}"),
+        Some(json!({"password":"short"})),
+        Some(&admin_cookie),
+        Some(&admin_csrf),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_error(
+        &short_reset,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "validation_error",
+    );
+    let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
+    let (author_cookie2, _, _) = login(app, "author@example.test").await;
     for path in [
         "/api/v1/admin/users",
         "/api/v1/admin/roles",

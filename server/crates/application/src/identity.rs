@@ -15,6 +15,15 @@ pub struct IdentityService {
     session_ttl: Duration,
 }
 
+/// 管理员修改账户的输入；密码为明文，由用例哈希后再交给仓储。
+#[derive(Default)]
+pub struct UserUpdate {
+    pub display_name: Option<String>,
+    pub status: Option<String>,
+    pub roles: Option<Vec<String>>,
+    pub password: Option<String>,
+}
+
 pub struct LoginSession {
     pub token: String,
     pub csrf_token: String,
@@ -90,6 +99,39 @@ impl IdentityService {
         self.repository.revoke_session(principal, meta).await
     }
 
+    /// 当前账户修改自己的密码：校验当前密码，保留本会话并撤销其他会话。
+    #[tracing::instrument(name = "identity.change_password", skip_all)]
+    pub async fn change_password(
+        &self,
+        principal: &Principal,
+        current_password: String,
+        new_password: String,
+        meta: &RequestMeta,
+    ) -> Result<()> {
+        validate_password(&new_password)?;
+        if current_password.len() > 1024 {
+            return Err(current_password_invalid());
+        }
+        if current_password == new_password {
+            return Err(AppError::Validation(
+                "new password must differ from current password".into(),
+            ));
+        }
+        let stored = self.repository.password_hash(principal.user.id).await?;
+        // 账户哈希缺失时 verify_password 仍执行虚拟校验并返回 false。
+        if !self
+            .credentials
+            .verify_password(current_password, stored)
+            .await?
+        {
+            return Err(current_password_invalid());
+        }
+        let password_hash = self.credentials.hash_password(new_password).await?;
+        self.repository
+            .change_password(principal, password_hash, meta)
+            .await
+    }
+
     #[tracing::instrument(name = "identity.users", skip_all)]
     pub async fn users(&self, principal: &Principal, page: &PageRequest) -> Result<Page<User>> {
         principal.require("users.manage")?;
@@ -158,11 +200,7 @@ impl IdentityService {
             return Err(AppError::Validation("invalid email".into()));
         }
         validate_name(&display_name)?;
-        if password.len() < 12 || password.len() > 1024 {
-            return Err(AppError::Validation(
-                "password must contain 12..1024 bytes".into(),
-            ));
-        }
+        validate_password(&password)?;
         validate_roles(&roles)?;
         let password_hash = self.credentials.hash_password(password).await?;
         self.repository
@@ -185,10 +223,16 @@ impl IdentityService {
         &self,
         principal: &Principal,
         id: Uuid,
-        changes: UserChanges,
+        update: UserUpdate,
         meta: &RequestMeta,
     ) -> Result<User> {
         principal.require("users.manage")?;
+        let changes = UserChanges {
+            display_name: update.display_name,
+            status: update.status,
+            roles: update.roles,
+            password_hash: None,
+        };
         if let Some(name) = &changes.display_name {
             validate_name(name)?;
         }
@@ -202,6 +246,16 @@ impl IdentityService {
         if let Some(roles) = &changes.roles {
             validate_roles(roles)?;
         }
+        if let Some(password) = &update.password {
+            validate_password(password)?;
+        }
+        let changes = match update.password {
+            Some(password) => UserChanges {
+                password_hash: Some(self.credentials.hash_password(password).await?),
+                ..changes
+            },
+            None => changes,
+        };
         self.repository
             .update_user(principal.user.id, id, changes, meta)
             .await
@@ -223,6 +277,19 @@ impl IdentityService {
         page.validate()?;
         self.repository.audit_logs(page).await
     }
+}
+
+fn validate_password(password: &str) -> Result<()> {
+    if password.len() < 12 || password.len() > 1024 {
+        return Err(AppError::Validation(
+            "password must contain 12..1024 bytes".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn current_password_invalid() -> AppError {
+    AppError::Validation("current password is incorrect".into())
 }
 
 fn validate_name(name: &str) -> Result<()> {

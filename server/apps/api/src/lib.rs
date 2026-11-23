@@ -41,6 +41,7 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
         .route("/api/v1/admin/auth/login", post(http::login))
         .route("/api/v1/admin/auth/logout", post(http::logout))
         .route("/api/v1/admin/auth/me", get(http::me))
+        .route("/api/v1/admin/auth/password", post(http::change_password))
         .route(
             "/api/v1/admin/users",
             get(http::users).post(http::create_user),

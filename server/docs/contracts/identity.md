@@ -37,6 +37,7 @@
 | POST | `/auth/login` | JSON + 精确 Origin；返回会话 Cookie 与 CSRF token。 |
 | POST | `/auth/logout` | 有效会话 + Origin + CSRF；204。 |
 | GET | `/auth/me` | 有效会话；用户、权限、CSRF token。 |
+| POST | `/auth/password` | 有效会话 + Origin + CSRF；校验当前密码后修改，204；保留当前会话并撤销其他会话。 |
 | GET, POST | `/users` | Admin；分页列表、创建账户。 |
 | PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
 | GET | `/roles` | Admin；内置角色。 |
@@ -48,7 +49,8 @@
 - Cookie 名称：`__Host-silva_session`。
 - 登录输入：`{email,password}`；登录和 `auth/me` 返回 `{user,permissions,csrf_token}`。
 - 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
-- 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...]}`，200 直接返回 User。角色必须是非空、无重复的内置键数组。
+- 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...],password?}`，200 直接返回 User。`password` 为管理员重置，设置后撤销该账户全部会话。
+- 修改自己的密码：`{current_password,new_password}`；当前密码错误、新密码不符合 12..1024 字节或与当前密码相同时返回 422 `validation_error`；与登录共用每 IP 登录限流额度。角色必须是非空、无重复的内置键数组。
 - 新账户密码为 12..1024 UTF-8 字节；用户邮箱去首尾空白后转小写，最大 254 字节；显示名去空白后非空，最大 100 字节。
 - Origin 失败：403 `origin_rejected`；CSRF 失败：403 `csrf_rejected`；凭据失败：401 `invalid_credentials`；无会话：401 `unauthorized`；无权限：403 `forbidden`。
 - 非 JSON：415 `unsupported_media_type`；JSON 解码或字段校验失败：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。

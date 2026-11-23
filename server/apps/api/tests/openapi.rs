@@ -93,6 +93,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/auth/login", "post"),
         ("/api/v1/admin/auth/logout", "post"),
         ("/api/v1/admin/auth/me", "get"),
+        ("/api/v1/admin/auth/password", "post"),
         ("/api/v1/admin/users", "get"),
         ("/api/v1/admin/users", "post"),
         ("/api/v1/admin/users/{id}", "patch"),
@@ -218,7 +219,12 @@ fn session_csrf_origin_and_rbac_requirements_are_explicit() {
 fn input_shapes_and_pagination_match_runtime_validation() {
     let spec = contract();
     let schemas = &spec["components"]["schemas"];
-    for name in ["LoginInput", "CreateUserInput", "UpdateUserInput"] {
+    for name in [
+        "LoginInput",
+        "CreateUserInput",
+        "UpdateUserInput",
+        "ChangePasswordInput",
+    ] {
         assert_eq!(schemas[name]["additionalProperties"], false);
     }
     assert_eq!(
@@ -236,6 +242,14 @@ fn input_shapes_and_pagination_match_runtime_validation() {
     assert_eq!(
         schemas["CreateUserInput"]["properties"]["password"]["x-max-bytes"],
         1024
+    );
+    assert_eq!(
+        schemas["ChangePasswordInput"]["properties"]["new_password"]["x-min-bytes"],
+        12
+    );
+    assert_eq!(
+        spec["paths"]["/api/v1/admin/auth/password"]["post"]["responses"]["204"].get("content"),
+        None
     );
     assert_eq!(schemas["RoleAssignments"]["uniqueItems"], true);
     assert_eq!(schemas["RoleAssignments"]["minItems"], 1);

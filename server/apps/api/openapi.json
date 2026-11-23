@@ -511,6 +511,149 @@
                 }
             }
         },
+        "/api/v1/admin/auth/password": {
+            "post": {
+                "operationId": "changePassword",
+                "summary": "修改当前账户密码",
+                "tags": ["身份认证"],
+                "responses": {
+                    "204": {
+                        "description": "密码已更新；当前会话保留，该账户的其他会话全部撤销。无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "415": {
+                        "description": "Content-Type 必须为 application/json。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["unsupported_media_type"]
+                    },
+                    "422": {
+                        "description": "当前密码错误、新密码长度不符或与当前密码相同。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "current password is incorrect",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["validation_error"]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["payload_too_large"]
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Origin"
+                    },
+                    {
+                        "$ref": "#/components/parameters/CsrfToken"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangePasswordInput"
+                            },
+                            "example": {
+                                "current_password": "example-password-only",
+                                "new_password": "another-example-password"
+                            }
+                        }
+                    }
+                },
+                "description": "要求当前会话 Cookie、精确匹配的 Origin 及该会话绑定的 CSRF Token。与登录共用每 IP 登录限流额度。"
+            }
+        },
         "/api/v1/admin/users": {
             "get": {
                 "operationId": "listUsers",
@@ -1540,6 +1683,33 @@
                     }
                 ]
             },
+            "ChangePasswordInput": {
+                "type": "object",
+                "properties": {
+                    "current_password": {
+                        "type": "string",
+                        "format": "password",
+                        "writeOnly": true,
+                        "description": "当前密码，最多 1024 个 UTF-8 字节。"
+                    },
+                    "new_password": {
+                        "type": "string",
+                        "format": "password",
+                        "writeOnly": true,
+                        "description": "新密码，12–1024 个 UTF-8 字节，且不能与当前密码相同。",
+                        "x-min-bytes": 12,
+                        "x-max-bytes": 1024
+                    }
+                },
+                "required": ["current_password", "new_password"],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "current_password": "example-password-only",
+                        "new_password": "another-example-password"
+                    }
+                ]
+            },
             "UpdateUserInput": {
                 "type": "object",
                 "properties": {
@@ -1575,6 +1745,21 @@
                             }
                         ],
                         "description": "省略或传 null 均保持原值。"
+                    },
+                    "password": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "password",
+                                "writeOnly": true,
+                                "x-min-bytes": 12,
+                                "x-max-bytes": 1024
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "管理员重置密码，12–1024 个 UTF-8 字节；设置后撤销该账户全部会话。省略或传 null 保持原密码。"
                     }
                 },
                 "required": [],

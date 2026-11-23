@@ -103,7 +103,7 @@ unset SILVA_API_CSRF
 | 接口 | 要求 |
 | --- | --- |
 | `POST /api/v1/admin/auth/login` | 无需已有会话，要求 Origin |
-| `GET /api/v1/admin/auth/me`、`POST /api/v1/admin/auth/logout` | 有效会话 |
+| `GET /api/v1/admin/auth/me`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效会话 |
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |

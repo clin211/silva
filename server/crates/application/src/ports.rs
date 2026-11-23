@@ -32,6 +32,8 @@ pub struct UserChanges {
     pub display_name: Option<String>,
     pub status: Option<String>,
     pub roles: Option<Vec<String>>,
+    /// 管理员重置后的 Argon2id 哈希；设置时撤销该账户全部会话。
+    pub password_hash: Option<String>,
 }
 
 #[async_trait]
@@ -48,6 +50,15 @@ pub trait IdentityRepository: Send + Sync {
     /// 重新读取账户状态和角色权限，不缓存登录时的授权结果。
     async fn principal(&self, token_hash: &str) -> Result<Principal>;
     async fn revoke_session(&self, principal: &Principal, meta: &RequestMeta) -> Result<()>;
+    /// 读取启用账户的密码哈希，用于修改密码前校验当前密码。
+    async fn password_hash(&self, user_id: Uuid) -> Result<Option<String>>;
+    /// 在同一事务中替换密码哈希、撤销该账户除当前会话外的全部会话并写入审计。
+    async fn change_password(
+        &self,
+        principal: &Principal,
+        password_hash: String,
+        meta: &RequestMeta,
+    ) -> Result<()>;
     async fn list_users(&self, page: &PageRequest) -> Result<Page<User>>;
     async fn create_user(
         &self,

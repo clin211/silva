@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use silva_application::ports::{RequestMeta, UserChanges};
+use silva_application::{identity::UserUpdate, ports::RequestMeta};
 use silva_domain::identity::{Principal, User};
 use silva_infrastructure::persistence;
 use silva_shared::{
@@ -31,6 +31,8 @@ use std::{
 use subtle::ConstantTimeEq;
 
 const SESSION_COOKIE: &str = "__Host-silva_session";
+/// 需要校验密码的入口共用登录额度，防止借修改密码接口暴力猜测当前密码。
+const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/password"];
 type HttpResult<T> = Result<T, ApiError>;
 
 pub(crate) struct Input<T>(T);
@@ -229,7 +231,7 @@ pub(crate) async fn context(
             || (state
                 .limiter
                 .allow(ip, false, state.config.api_rate_per_minute)
-                && (path != "/api/v1/admin/auth/login"
+                && (!PASSWORD_PATHS.contains(&path)
                     || state
                         .limiter
                         .allow(ip, true, state.config.login_rate_per_minute)));
@@ -414,6 +416,31 @@ pub(crate) async fn logout(
     Ok(response)
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ChangePasswordInput {
+    current_password: String,
+    new_password: String,
+}
+pub(crate) async fn change_password(
+    State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
+    headers: HeaderMap,
+    Input(input): Input<ChangePasswordInput>,
+) -> HttpResult<Response> {
+    let (principal, _) = authorize(&state, &headers, true).await?;
+    state
+        .identity
+        .change_password(
+            &principal,
+            input.current_password,
+            input.new_password,
+            &meta,
+        )
+        .await?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 pub(crate) async fn users(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -463,6 +490,7 @@ pub(crate) struct UpdateUserInput {
     display_name: Option<String>,
     status: Option<String>,
     roles: Option<Vec<String>>,
+    password: Option<String>,
 }
 pub(crate) async fn update_user(
     State(state): State<AppState>,
@@ -478,10 +506,11 @@ pub(crate) async fn update_user(
             .update_user(
                 &principal,
                 id.as_uuid(),
-                UserChanges {
+                UserUpdate {
                     display_name: input.display_name,
                     status: input.status,
                     roles: input.roles,
+                    password: input.password,
                 },
                 &meta,
             )
