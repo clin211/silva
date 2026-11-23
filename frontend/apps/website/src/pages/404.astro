@@ -1,0 +1,19 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+---
+
+<SiteLayout title="页面不存在" description="这个页面不存在，或者已经下线。" noindex>
+    <section class="wrap not-found">
+        <p class="mono muted">404</p>
+        <h1 class="t-h1">页面不存在</h1>
+        <p class="t-lead ink-2">这个链接指向的页面可能已下线。你可以回到首页，或继续浏览文章。</p>
+        <div class="actions">
+            <a class="btn btn-dark" href="/">
+                回首页
+            </a>
+            <a class="btn btn-ghost" href="/blog/">
+                浏览文章
+            </a>
+        </div>
+    </section>
+</SiteLayout>

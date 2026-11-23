@@ -1,0 +1,24 @@
+{
+    "name": "silva-frontend",
+    "private": true,
+    "scripts": {
+        "dev": "pnpm --filter @silva/website dev",
+        "format": "oxfmt .",
+        "format:check": "oxfmt --check .",
+        "lint": "oxlint --deny-warnings .",
+        "lint:fix": "oxlint --fix --deny-warnings .",
+        "typecheck": "pnpm --filter @silva/website check",
+        "check": "pnpm format:check && pnpm lint && pnpm typecheck",
+        "build": "pnpm --filter @silva/website build",
+        "preview": "pnpm --filter @silva/website preview"
+    },
+    "devDependencies": {
+        "@astrojs/compiler-rs": "^0.5.3",
+        "oxfmt": "^0.79.0",
+        "oxlint": "^1.94.0"
+    },
+    "engines": {
+        "node": ">=22.23.4"
+    },
+    "packageManager": "pnpm@11.9.0"
+}

@@ -204,7 +204,7 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - Vitest：单元测试。
 - Testing Library：组件测试。
 - Playwright：登录和越权拒绝、自动保存冲突保留输入、已上线旧版不受新草稿影响、发布/取消发布状态与 404、上传未确认不能插入、个人资料保存与上线、榜单空态与缺样。
-- ESLint + Prettier + TypeScript strict。
+- Oxlint 校验代码，Oxfmt 统一格式。TypeScript 使用 strict 模式，Astro Check 校验模板和类型。
 - 对 API Client 做生成检查，确保 OpenAPI 变化后类型同步。
 
 ## 9. 前端交付顺序

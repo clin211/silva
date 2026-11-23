@@ -1,0 +1,77 @@
+---
+import { categories, categorySlugs, tags, tagSlugs } from '../data/taxonomy';
+import { categoryUrl, tagUrl } from '../lib/site';
+import type { Post } from '../lib/content';
+
+interface Props {
+    posts: Post[];
+    category?: string;
+    tag?: string;
+}
+
+const { posts, category, tag } = Astro.props;
+const categoryCounts = categorySlugs.map(
+    (slug) => [slug, posts.filter((post) => post.data.category === slug).length] as const,
+);
+const tagCounts = tagSlugs.map(
+    (slug) => [slug, posts.filter((post) => post.data.tags.includes(slug)).length] as const,
+);
+---
+
+<aside class="archive-aside" aria-label="分类与标签">
+    {posts.length > 0 && (
+        <details class="taxonomy-panel" open>
+            <summary>分类与标签</summary>
+            <div class="taxonomy-groups">
+                <nav aria-label="文章分类">
+                    <h3 class="t-small muted">分类</h3>
+                    <ul class="taxonomy-categories">
+                        <li>
+                            <a href="/blog/" aria-current={!category && !tag ? 'page' : undefined}>
+                                全部文章 <span class="num">{posts.length}</span>
+                            </a>
+                        </li>
+                        {categoryCounts
+                            .filter(([, count]) => count > 0)
+                            .map(([slug, count]) => (
+                                <li>
+                                    <a
+                                        href={categoryUrl(slug)}
+                                        aria-current={category === slug ? 'page' : undefined}
+                                    >
+                                        {categories[slug].name}
+                                        <span class="num">{count}</span>
+                                    </a>
+                                </li>
+                            ))}
+                    </ul>
+                </nav>
+                <nav aria-label="文章标签">
+                    <h3 class="t-small muted">标签</h3>
+                    <ul class="chips">
+                        {tagCounts
+                            .filter(([, count]) => count > 0)
+                            .map(([slug, count]) => (
+                                <li>
+                                    <a
+                                        class:list={['chip hash', { 'chip-teal': tag === slug }]}
+                                        href={tagUrl(slug)}
+                                        aria-current={tag === slug ? 'page' : undefined}
+                                    >
+                                        {tags[slug]} <span class="taxonomy-count num">{count}</span>
+                                    </a>
+                                </li>
+                            ))}
+                    </ul>
+                </nav>
+            </div>
+        </details>
+    )}
+    <a class="btn btn-ghost btn-sm" href="/rss.xml">
+        订阅文章 RSS
+    </a>
+</aside>
+<script>
+    const details = document.querySelector<HTMLDetailsElement>('.taxonomy-panel');
+    if (details && matchMedia('(max-width: 899px)').matches) details.open = false;
+</script>

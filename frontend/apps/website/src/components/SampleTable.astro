@@ -1,0 +1,38 @@
+---
+import type { Sample } from '../data/trending';
+import { number } from '../lib/format';
+
+interface Props {
+    samples: Sample[];
+    label: string;
+}
+const { samples, label } = Astro.props;
+---
+
+<table class="data-table snapshot-table">
+    <caption class="sr-only">{label}</caption>
+    <thead>
+        <tr>
+            <th scope="col">日期（UTC）</th>
+            <th scope="col" class="num">
+                Stars
+            </th>
+            <th scope="col" class="num">
+                Forks
+            </th>
+        </tr>
+    </thead>
+    <tbody>
+        {samples.map(({ date, stars, forks }) => (
+            <tr>
+                <th scope="row">
+                    <time datetime={date} class="num">
+                        {date}
+                    </time>
+                </th>
+                <td class="num">{number(stars)}</td>
+                <td class="num">{number(forks)}</td>
+            </tr>
+        ))}
+    </tbody>
+</table>

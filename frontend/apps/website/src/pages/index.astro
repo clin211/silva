@@ -1,0 +1,293 @@
+---
+import { Image } from 'astro:assets';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import Icon from '../components/Icon.astro';
+import Cover from '../components/Cover.astro';
+import hero from '../assets/hero-balloon.webp';
+import { categories } from '../data/taxonomy';
+import { loadTrending } from '../data/trending';
+import { getProfile, listPosts } from '../lib/content';
+import { categoryUrl, postUrl, repoUrl, siteDescription } from '../lib/site';
+import { growth } from '../lib/format';
+import { defaultFilters, rank } from '../lib/ranking';
+
+const [profileEntry, posts] = await Promise.all([getProfile(), listPosts()]);
+const profile = profileEntry?.data;
+const primary = posts.find((post) => post.data.featured) ?? posts[0];
+const recent = posts.filter((post) => post.id !== primary?.id).slice(0, 2);
+const snapshot = loadTrending();
+const top = snapshot ? rank(snapshot.repos, defaultFilters).slice(0, 3) : [];
+const stats = [
+    { label: '文章', value: posts.length },
+    { label: '分类', value: new Set(posts.map((post) => post.data.category)).size },
+    { label: '标签', value: new Set(posts.flatMap((post) => post.data.tags)).size },
+    { label: '榜单收录', value: snapshot?.repos.length ?? '—' },
+];
+---
+
+<SiteLayout
+    title={profile?.name ?? '首页'}
+    active="home"
+    flush
+    image={{ path: hero.src, alt: '蓝天中的热气球' }}
+>
+    <section class="hero band-teal" aria-labelledby="hero-title">
+        <div class="hero-sky" aria-hidden="true">
+            <Image
+                src={hero}
+                alt=""
+                widths={[640, 1000, 1500, 2000, 2600]}
+                sizes="100vw"
+                width={1500}
+                height={2250}
+                format="webp"
+                loading="eager"
+                fetchpriority="high"
+            />
+        </div>
+        <div class="hero-shade" aria-hidden="true"></div>
+        <div class="wrap hero-grid">
+            <div class="hero-content">
+                {profile && (
+                    <p class="hero-kicker">
+                        {profile.location && (
+                            <>
+                                <Icon name="pin" size={16} />
+                                {profile.location}
+                                <span aria-hidden="true">·</span>
+                            </>
+                        )}
+                        {profile.title}
+                    </p>
+                )}
+                <h1 id="hero-title" class="t-hero">
+                    {profile?.name ?? 'Silva'}
+                </h1>
+                <p class="hero-line">
+                    {profile ? '记录技术，写下实践。' : '一个持续更新的个人技术门户。'}
+                </p>
+                <p class="hero-description t-lead">
+                    {profile
+                        ? '这里记录工程实践、学习笔记，以及对 AI 开源生态的观察。'
+                        : siteDescription}
+                </p>
+                <div class="actions">
+                    <a href="/blog/" class="btn btn-light">
+                        浏览文章
+                    </a>
+                    <a href="/about/" class="btn btn-ghost">
+                        {profile ? '关于长林' : '关于本站'}
+                    </a>
+                </div>
+            </div>
+            <aside class="hero-snapshot" aria-labelledby="snapshot-title">
+                <div class="snapshot-surface">
+                    <header>
+                        <h2 id="snapshot-title">站点快照</h2>
+                        <span class="snapshot-label">本地预览</span>
+                    </header>
+                    <dl>
+                        {stats.map(({ label, value }) => (
+                            <div>
+                                <dt>{label}</dt>
+                                <dd class="num">{value}</dd>
+                            </div>
+                        ))}
+                    </dl>
+                    {top[0] && (
+                        <a href={repoUrl(top[0].slug)} class="snapshot-leader">
+                            <span>
+                                <small>近 7 天 Stars 增长最快</small>
+                                <strong>{top[0].name}</strong>
+                            </span>
+                            <span class="mono">{growth(top[0].growth.stars[7])}</span>
+                        </a>
+                    )}
+                </div>
+            </aside>
+        </div>
+    </section>
+
+    <section class="band" aria-labelledby="recent-title">
+        <div class="wrap">
+            <header class="section-heading">
+                <h2 id="recent-title" class="t-h1">
+                    最近更新
+                </h2>
+                <a class="btn btn-ghost btn-sm" href="/blog/">
+                    全部文章
+                </a>
+            </header>
+            {primary ? (
+                <div class:list={['recent-grid', { 'only-feature': !recent.length }]}>
+                    <article class="bezel lift">
+                        <a class="face feature-post" href={postUrl(primary.id)}>
+                            {primary.data.cover && (
+                                <Cover
+                                    cover={primary.data.cover}
+                                    label={categories[primary.data.category].name}
+                                    class="feature-cover"
+                                />
+                            )}
+                            <div class="feature-copy">
+                                <div class="metadata">
+                                    {primary.data.featured && (
+                                        <span class="chip chip-sun">精选</span>
+                                    )}
+                                    <time class="num" datetime={primary.data.published}>
+                                        {primary.data.published}
+                                    </time>
+                                </div>
+                                <h3 class="t-h2 hover-accent">{primary.data.title}</h3>
+                                <p class="ink-2">{primary.data.summary}</p>
+                            </div>
+                        </a>
+                    </article>
+                    {recent.length > 0 && (
+                        <ul class="home-list rows">
+                            {recent.map(({ id, data }) => (
+                                <li>
+                                    <div class="metadata">
+                                        <a
+                                            href={categoryUrl(data.category)}
+                                            class:list={['chip', categories[data.category].color]}
+                                        >
+                                            {categories[data.category].name}
+                                        </a>
+                                        <time datetime={data.published} class="num">
+                                            {data.published}
+                                        </time>
+                                    </div>
+                                    <h3 class="t-h3">
+                                        <a class="hover-accent" href={postUrl(id)}>
+                                            {data.title}
+                                        </a>
+                                    </h3>
+                                    <p class="ink-2">{data.summary}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            ) : (
+                <p class="panel empty-state">还没有发布的文章。</p>
+            )}
+        </div>
+    </section>
+
+    <section class="band band-deep" aria-labelledby="trending-title">
+        <div class="wrap home-band-grid">
+            <div>
+                <h2 id="trending-title" class="t-h1">
+                    AI 开源趋势
+                </h2>
+                <p class="t-lead ink-2">用 Stars 净增长观察已收录的 GitHub 项目。</p>
+                <a class="btn btn-light" href="/ai-trending/">
+                    查看完整榜单
+                </a>
+            </div>
+            <div class="bezel">
+                <div class="face dark-ranking">
+                    {snapshot && top.length ? (
+                        <>
+                            <header>
+                                <h3 class="t-h3">近 7 天 Stars 净增长</h3>
+                                <p class="t-small muted">
+                                    示例数据 ·{' '}
+                                    <time class="num" datetime={snapshot.date}>
+                                        {snapshot.date}
+                                    </time>{' '}
+                                    UTC
+                                </p>
+                            </header>
+                            <ol class="rows">
+                                {top.map((repo, index) => (
+                                    <li>
+                                        <a href={repoUrl(repo.slug)}>
+                                            <span class="mono muted">
+                                                {String(index + 1).padStart(2, '0')}
+                                            </span>
+                                            <span class="hover-accent">{repo.name}</span>
+                                            <strong class="mono">
+                                                {growth(repo.growth.stars[7])}
+                                            </strong>
+                                        </a>
+                                    </li>
+                                ))}
+                            </ol>
+                        </>
+                    ) : (
+                        <p class="ink-2">暂无榜单数据。</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {profile && (
+        <>
+            <section class="band band-mist" aria-labelledby="about-title">
+                <div class="wrap home-band-grid">
+                    <div>
+                        <h2 id="about-title" class="t-h1">
+                            关于我
+                        </h2>
+                        <p class="t-lead ink-2">{profile.summary}</p>
+                        <a class="btn btn-dark" href="/about/">
+                            查看个人档案
+                        </a>
+                    </div>
+                    {profile.focus.length > 0 && (
+                        <div class="panel home-focus">
+                            <h3 class="t-h3">最近关注</h3>
+                            <ul class="chips">
+                                {profile.focus.map((item) => (
+                                    <li class="chip chip-teal">{item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            </section>
+            {profile.links.length > 0 && (
+                <section class="band band-sun" aria-labelledby="contact-title">
+                    <div class="wrap">
+                        <h2 id="contact-title" class="t-h1">
+                            保持联系
+                        </h2>
+                        <div class="actions">
+                            {profile.links.map(({ label, url }) => (
+                                <a class="btn btn-dark" href={url}>
+                                    {label}
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            )}
+        </>
+    )}
+</SiteLayout>
+<script>
+    const sky = document.querySelector<HTMLElement>('.hero-sky');
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    if (sky && !reduced.matches) {
+        const hero = sky.closest('.hero');
+        let frame = 0;
+        window.addEventListener(
+            'scroll',
+            () => {
+                if (frame) return;
+                frame = requestAnimationFrame(() => {
+                    const limit = (hero?.clientHeight ?? 600) * 0.12;
+                    const movement = reduced.matches
+                        ? 0
+                        : Math.min(limit, Math.max(0, window.scrollY) * 0.16);
+                    sky.style.setProperty('--hero-drift', `${movement}px`);
+                    frame = 0;
+                });
+            },
+            { passive: true },
+        );
+    }
+</script>

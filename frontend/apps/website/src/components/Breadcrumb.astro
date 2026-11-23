@@ -1,0 +1,23 @@
+---
+interface Props {
+    section: { href: string; label: string };
+    current: string;
+}
+const { section, current } = Astro.props;
+---
+
+<nav aria-label="面包屑" class="breadcrumb t-small muted">
+    <ol>
+        <li>
+            <a class="hover-accent" href="/">
+                首页
+            </a>
+        </li>
+        <li>
+            <a class="hover-accent" href={section.href}>
+                {section.label}
+            </a>
+        </li>
+        <li aria-current="page">{current}</li>
+    </ol>
+</nav>

@@ -1,0 +1,68 @@
+---
+import type { Post } from '../lib/content';
+import { readingStats } from '../lib/content';
+import { categories } from '../data/taxonomy';
+import { categoryUrl, postUrl } from '../lib/site';
+import { monthLabel } from '../lib/format';
+import Cover from './Cover.astro';
+
+interface Props {
+    posts: Post[];
+    empty?: string;
+}
+const { posts, empty = '还没有发布的文章。' } = Astro.props;
+const groups = new Map<string, Post[]>();
+for (const post of posts) {
+    const month = post.data.published.slice(0, 7);
+    const group = groups.get(month);
+    if (group) group.push(post);
+    else groups.set(month, [post]);
+}
+---
+
+{groups.size === 0 ? (
+    <p class="panel empty-state ink-2">{empty}</p>
+) : (
+    <div class="archive">
+        {[...groups].map(([month, group]) => (
+            <section class="archive-month" aria-label={monthLabel(month)}>
+                <h3 class="month-title num">
+                    <time datetime={month}>{monthLabel(month)}</time>
+                </h3>
+                <ul class="archive-list rows">
+                    {group.map((post) => {
+                        const { title, summary, published, cover, category } = post.data;
+                        const taxonomy = categories[category];
+                        return (
+                            <li>
+                                <article class="archive-entry">
+                                    <div class="archive-copy">
+                                        <div class="metadata">
+                                            <a
+                                                href={categoryUrl(category)}
+                                                class:list={['chip', taxonomy.color]}
+                                            >
+                                                {taxonomy.name}
+                                            </a>
+                                            <time datetime={published} class="num">
+                                                {published}
+                                            </time>
+                                            <span>{readingStats(post.body).minutes} 分钟阅读</span>
+                                        </div>
+                                        <h4 class="t-h3">
+                                            <a class="hover-accent" href={postUrl(post.id)}>
+                                                {title}
+                                            </a>
+                                        </h4>
+                                        <p class="ink-2">{summary}</p>
+                                    </div>
+                                    {cover && <Cover cover={cover} class="archive-cover" small />}
+                                </article>
+                            </li>
+                        );
+                    })}
+                </ul>
+            </section>
+        ))}
+    </div>
+)}

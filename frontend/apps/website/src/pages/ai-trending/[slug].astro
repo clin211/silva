@@ -1,0 +1,123 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Breadcrumb from '../../components/Breadcrumb.astro';
+import SampleTable from '../../components/SampleTable.astro';
+import { historyFor, loadTrending } from '../../data/trending';
+import TrendChart from '../../islands/TrendChart';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { growth, growthClass, number } from '../../lib/format';
+
+export const getStaticPaths = (() => {
+    const snapshot = loadTrending();
+    if (!snapshot) return [];
+    return snapshot.repos.map((repo) => ({
+        params: { slug: repo.slug },
+        props: { repo, date: snapshot.date },
+    }));
+}) satisfies GetStaticPaths;
+
+const { repo, date } = Astro.props;
+const samples = historyFor(repo.slug);
+const recent = samples.slice(-14).reverse();
+const older = samples.slice(0, -14).reverse();
+const metrics = [
+    { label: 'Stars', value: number(repo.stars), className: undefined },
+    { label: 'Forks', value: number(repo.forks), className: undefined },
+    {
+        label: '近 7 天 Stars',
+        value: growth(repo.growth.stars[7]),
+        className: growthClass(repo.growth.stars[7]),
+    },
+    {
+        label: '近 30 天 Stars',
+        value: growth(repo.growth.stars[30]),
+        className: growthClass(repo.growth.stars[30]),
+    },
+];
+---
+
+<SiteLayout title={repo.name} description={repo.description} active="trending">
+    <div class="wrap page-content repo-detail">
+        <Breadcrumb section={{ href: '/ai-trending/', label: 'AI 趋势' }} current={repo.name} />
+        <header class="repo-hero">
+            <div>
+                <p class="metadata">
+                    <span class="chip chip-teal">{repo.category}</span>
+                    <span class="chip">{repo.language}</span>
+                </p>
+                <h1 class="t-h1">{repo.name}</h1>
+                <p class="t-lead ink-2">{repo.description}</p>
+                <ul class="chips" aria-label="Topics">
+                    {repo.topics.map((topic) => (
+                        <li class="chip hash">{topic}</li>
+                    ))}
+                </ul>
+                <div class="actions">
+                    <a class="btn btn-dark" href={`https://github.com/${repo.name}`}>
+                        在 GitHub 查看
+                    </a>
+                </div>
+            </div>
+            <div class="repo-status panel">
+                <p class="snapshot-notice t-small">
+                    示例数据 ·{' '}
+                    <time class="num" datetime={date}>
+                        {date}
+                    </time>{' '}
+                    UTC
+                </p>
+                <p class="t-small muted">
+                    示例仓库更新时间{' '}
+                    <time class="num" datetime={repo.updated}>
+                        {repo.updated}
+                    </time>
+                </p>
+            </div>
+        </header>
+
+        <section class="trend-section" aria-labelledby="metrics-title">
+            <h2 id="metrics-title" class="sr-only">
+                摘要指标
+            </h2>
+            <dl class="repo-metrics">
+                {metrics.map(({ label, value, className }) => (
+                    <div class="panel">
+                        <dt class="t-small muted">{label}</dt>
+                        <dd class:list={['num', className]}>{value}</dd>
+                    </div>
+                ))}
+            </dl>
+        </section>
+
+        <section class="trend-section" aria-labelledby="history-title">
+            <h2 id="history-title" class="t-h2">
+                历史趋势
+            </h2>
+            {samples.length >= 2 ? (
+                <TrendChart {samples} client:visible />
+            ) : (
+                <div class="panel empty-state">
+                    <h3 class="t-h3">历史样本不足</h3>
+                    <p class="ink-2">至少需要两个快照才能绘制趋势。</p>
+                </div>
+            )}
+            {recent.length > 0 && (
+                <div class="panel sample-data">
+                    <h3 class="t-h3">最近 {recent.length} 次快照</h3>
+                    <SampleTable samples={recent} label="近期仓库快照" />
+                    {older.length > 0 && (
+                        <details class="past-samples">
+                            <summary>查看更早的 {older.length} 次快照</summary>
+                            <SampleTable samples={older} label="早期仓库快照" />
+                        </details>
+                    )}
+                </div>
+            )}
+        </section>
+        <div class="actions">
+            <a class="btn btn-ghost" href="/ai-trending/">
+                返回 AI 趋势榜
+            </a>
+        </div>
+    </div>
+</SiteLayout>

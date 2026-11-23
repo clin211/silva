@@ -1,0 +1,221 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+import ArticleToc from '../../components/ArticleToc.astro';
+import Breadcrumb from '../../components/Breadcrumb.astro';
+import Cover from '../../components/Cover.astro';
+import Icon from '../../components/Icon.astro';
+import ShareDialog from '../../components/ShareDialog.astro';
+import { categories, tags } from '../../data/taxonomy';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { getProfile, listPosts, readingStats } from '../../lib/content';
+import { number } from '../../lib/format';
+import { categoryUrl, postUrl, tagUrl } from '../../lib/site';
+
+export const getStaticPaths = (async () => {
+    const posts = await listPosts();
+    return posts.map((post, index) => ({
+        params: { slug: post.id },
+        props: { post, newer: posts[index - 1], older: posts[index + 1] },
+    }));
+}) satisfies GetStaticPaths;
+
+const { post, newer, older } = Astro.props;
+const { title, summary, published, category, tags: postTags, cover } = post.data;
+const updated = post.data.updated !== published ? post.data.updated : undefined;
+const [profile, rendered] = await Promise.all([getProfile(), render(post)]);
+const { Content } = rendered;
+const headings = rendered.headings.filter(({ depth }) => depth === 2 || depth === 3);
+const { count, minutes } = readingStats(post.body);
+const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: title,
+    description: summary,
+    datePublished: published,
+    dateModified: updated ?? published,
+    mainEntityOfPage: new URL(postUrl(post.id), Astro.site ?? Astro.url).href,
+    author: profile && { '@type': 'Person', name: profile.data.name },
+};
+---
+
+<SiteLayout
+    {title}
+    description={summary}
+    active="blog"
+    type="article"
+    {published}
+    {updated}
+    {structuredData}
+>
+    <div class="wrap article-page">
+        <Breadcrumb section={{ href: '/blog/', label: '文章' }} current={title} />
+        <article>
+            <header class="article-header">
+                <a href={categoryUrl(category)} class:list={['chip', categories[category].color]}>
+                    {categories[category].name}
+                </a>
+                <h1>{title}</h1>
+                <div class="article-meta">
+                    <div class="metadata">
+                        {profile && (
+                            <a class="hover-accent" href="/about/">
+                                {profile.data.name}
+                            </a>
+                        )}
+                        <span>
+                            发布于{' '}
+                            <time datetime={published} class="num">
+                                {published}
+                            </time>
+                        </span>
+                        {updated && (
+                            <span>
+                                更新于{' '}
+                                <time datetime={updated} class="num">
+                                    {updated}
+                                </time>
+                            </span>
+                        )}
+                        <span class="article-reading">
+                            <Icon name="clock" size={14} />
+                            {minutes} 分钟阅读
+                        </span>
+                        <span>{number(count)} 字</span>
+                        {postTags.length > 0 && (
+                            <ul class="chips" aria-label="文章标签">
+                                {postTags.map((slug) => (
+                                    <li>
+                                        <a href={tagUrl(slug)} class="chip hash">
+                                            {tags[slug]}
+                                        </a>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        hidden
+                        class="btn btn-ghost btn-sm"
+                        data-share-open
+                        aria-haspopup="dialog"
+                        aria-controls="share-dialog"
+                    >
+                        <Icon name="share" size={16} />
+                        分享
+                    </button>
+                </div>
+                <p class="article-summary t-lead ink-2">{summary}</p>
+                {cover && (
+                    <Cover cover={cover} label={categories[category].name} class="article-cover" />
+                )}
+            </header>
+
+            <div class="reading-layout">
+                <div class="reading-main">
+                    {headings.length >= 2 && (
+                        <details class="panel toc-mobile">
+                            <summary>文章目录</summary>
+                            <ArticleToc {headings} mobile />
+                        </details>
+                    )}
+                    <div class="prose article-body">
+                        <Content />
+                    </div>
+                    <div class="article-actions">
+                        <a class="btn btn-ghost btn-sm" href="/blog/">
+                            返回文章列表
+                        </a>
+                        <button
+                            type="button"
+                            hidden
+                            class="btn btn-dark btn-sm"
+                            data-share-open
+                            aria-haspopup="dialog"
+                            aria-controls="share-dialog"
+                        >
+                            <Icon name="share" size={16} />
+                            分享这篇文章
+                        </button>
+                    </div>
+                    {(newer || older) && (
+                        <nav aria-label="相邻文章" class="article-neighbors">
+                            {newer && (
+                                <a href={postUrl(newer.id)} class="hover-accent">
+                                    <span class="muted">上一篇</span>
+                                    {newer.data.title}
+                                </a>
+                            )}
+                            {older && (
+                                <a href={postUrl(older.id)} class="hover-accent">
+                                    <span class="muted">下一篇</span>
+                                    {older.data.title}
+                                </a>
+                            )}
+                        </nav>
+                    )}
+                </div>
+                <aside class="reading-rail" aria-label="阅读辅助">
+                    <div>
+                        {headings.length >= 2 && (
+                            <section>
+                                <h2 class="t-small">文章目录</h2>
+                                <ArticleToc {headings} />
+                            </section>
+                        )}
+                        <section class="reading-indicator" hidden>
+                            <div>
+                                <label for="reading-progress">阅读进度</label>
+                                <output class="num" data-reading-percent>
+                                    0%
+                                </output>
+                            </div>
+                            <progress id="reading-progress" max="100" value="0">
+                                0%
+                            </progress>
+                        </section>
+                    </div>
+                </aside>
+            </div>
+        </article>
+    </div>
+    <ShareDialog />
+</SiteLayout>
+<script>
+    const body = document.querySelector('.article-body');
+    const progress = document.querySelector<HTMLProgressElement>('#reading-progress');
+    const readingLabel = document.querySelector<HTMLElement>('[data-reading-percent]');
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-heading]')];
+    const headings = [...new Set(links.map((link) => link.dataset.heading))].flatMap((id) => {
+        const heading = id && document.getElementById(id);
+        return heading ? [heading] : [];
+    });
+    let frame = 0;
+
+    if (body && progress && readingLabel) {
+        progress.closest<HTMLElement>('.reading-indicator')?.removeAttribute('hidden');
+        const update = () => {
+            const bounds = body.getBoundingClientRect();
+            const traveled = window.innerHeight - bounds.top;
+            const value = Math.round(Math.max(0, Math.min(1, traveled / bounds.height)) * 100);
+            progress.value = value;
+            readingLabel.textContent = `${value}%`;
+            const active = headings.findLast(
+                (heading) => heading.getBoundingClientRect().top <= 150,
+            );
+            for (const link of links) {
+                if (active && link.dataset.heading === active.id)
+                    link.setAttribute('aria-current', 'location');
+                else link.removeAttribute('aria-current');
+            }
+            frame = 0;
+        };
+        const schedule = () => {
+            if (!frame) frame = requestAnimationFrame(update);
+        };
+        update();
+        addEventListener('scroll', schedule, { passive: true });
+        addEventListener('resize', schedule, { passive: true });
+    }
+</script>

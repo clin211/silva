@@ -1,0 +1,57 @@
+---
+import PageIntro from '../../components/PageIntro.astro';
+import TrendingBoard from '../../islands/TrendingBoard';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { loadTrending } from '../../data/trending';
+
+const snapshot = loadTrending();
+const description = '观察已收录的 GitHub AI 开源项目，按 Stars 和 Forks 的净增长探索项目。';
+---
+
+<SiteLayout title="AI 开源趋势" {description} active="trending">
+    <div class="wrap page-content">
+        <PageIntro title="AI 开源趋势" {description}>
+            {snapshot && (
+                <p class="snapshot-notice t-small">
+                    示例榜单 · 快照日期{' '}
+                    <time class="num" datetime={snapshot.date}>
+                        {snapshot.date}
+                    </time>{' '}
+                    UTC
+                </p>
+            )}
+        </PageIntro>
+        {snapshot ? (
+            <TrendingBoard repos={snapshot.repos} client:load />
+        ) : (
+            <section class="panel empty-state trend-section">
+                <h2 class="t-h2">暂无榜单数据</h2>
+                <p class="ink-2">完整采集批次发布后，这里会展示榜单。</p>
+            </section>
+        )}
+    </div>
+    <section class="band band-mist" aria-labelledby="method-title">
+        <div class="wrap home-band-grid">
+            <div>
+                <h2 class="t-h1" id="method-title">
+                    增长怎么算
+                </h2>
+                <p class="t-lead ink-2">榜单按收录范围统计。</p>
+            </div>
+            <div class="method-grid">
+                <article class="panel">
+                    <h3 class="t-h3">两次快照相减</h3>
+                    <p class="ink-2">
+                        当天的 Stars 或 Forks 减去 7 天前或 30 天前的值。减少时保留负数。
+                    </p>
+                </article>
+                <article class="panel">
+                    <h3 class="t-h3">缺少快照</h3>
+                    <p class="ink-2">
+                        缺任意一天的记录时显示「数据不足」，按净增长排序时排在最后。
+                    </p>
+                </article>
+            </div>
+        </div>
+    </section>
+</SiteLayout>

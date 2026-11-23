@@ -1,0 +1,64 @@
+---
+import { getProfile } from '../lib/content';
+import { navigation, siteDescription } from '../lib/site';
+
+const profile = await getProfile();
+---
+
+<footer class="site-foot band-paper">
+    <div class="wrap">
+        <div class="foot-grid">
+            <div class="foot-brand">
+                <a class="foot-title hover-accent" href="/">
+                    Silva{profile ? ` · ${profile.data.name}` : ''}
+                </a>
+                <p class="t-small muted">{siteDescription}</p>
+            </div>
+            <div>
+                <h2>栏目</h2>
+                <ul>
+                    {navigation.slice(1).map(({ href, label }) => (
+                        <li>
+                            <a class="hover-accent" href={href}>
+                                {label}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+            <div>
+                <h2>订阅与索引</h2>
+                <ul>
+                    <li>
+                        <a class="hover-accent" href="/rss.xml">
+                            RSS 订阅
+                        </a>
+                    </li>
+                    <li>
+                        <a class="hover-accent" href="/sitemap-index.xml">
+                            站点地图
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {profile?.data.links.length ? (
+                <div>
+                    <h2>联系</h2>
+                    <ul>
+                        {profile.data.links.map(({ label, url }) => (
+                            <li>
+                                <a class="hover-accent" href={url}>
+                                    {label}
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                    {profile.data.location && <p class="t-small muted">{profile.data.location}</p>}
+                </div>
+            ) : null}
+        </div>
+        <p class="foot-note t-small muted">
+            © {new Date().getUTCFullYear()} {profile?.data.name ?? 'Silva'}
+        </p>
+    </div>
+</footer>

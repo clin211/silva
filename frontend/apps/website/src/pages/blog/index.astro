@@ -1,0 +1,11 @@
+---
+import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
+import { listPosts } from '../../lib/content';
+const posts = await listPosts();
+---
+
+<ArchiveLayout
+    title="技术文章"
+    description="记录工程实践、技术选型和踩过的坑。按月份回看，也可以从分类和标签开始阅读。"
+    {posts}
+/>

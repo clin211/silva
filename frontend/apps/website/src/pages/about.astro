@@ -1,0 +1,137 @@
+---
+import { render } from 'astro:content';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import Icon from '../components/Icon.astro';
+import PageIntro from '../components/PageIntro.astro';
+import { getProfile } from '../lib/content';
+
+const entry = await getProfile();
+const profile = entry?.data;
+const Content = entry ? (await render(entry)).Content : undefined;
+const structuredData = profile && {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: profile.name,
+    jobTitle: profile.title,
+    description: profile.summary,
+    sameAs: profile.links.map((link) => link.url),
+};
+---
+
+<SiteLayout title="关于我" description={profile?.summary} active="about" {structuredData}>
+    <div class="wrap page-content">
+        <PageIntro
+            title={profile ? '关于我' : '关于这个站点'}
+            description={
+                profile?.summary ?? 'Silva 是一个记录工程实践和 AI 开源趋势的个人技术门户。'
+            }
+        >
+            {Boolean(profile?.focus.length) && (
+                <ul class="chips intro-chips">
+                    {profile?.focus.map((item) => (
+                        <li class="chip chip-teal">{item}</li>
+                    ))}
+                </ul>
+            )}
+        </PageIntro>
+        {profile && (
+            <div class="about-layout">
+                <aside class="about-identity" aria-label="个人档案">
+                    <div class="profile-sticky">
+                        <span class="profile-monogram" aria-hidden="true">
+                            {profile.initials}
+                        </span>
+                        <h2 class="t-h3">{profile.name}</h2>
+                        <p class="muted">{profile.title}</p>
+                        {profile.location && (
+                            <p class="profile-location ink-2">
+                                <Icon name="pin" size={16} />
+                                {profile.location}
+                            </p>
+                        )}
+                        {profile.links.length > 0 && (
+                            <div class="actions">
+                                {profile.links.map(({ label, url }) => (
+                                    <a class="btn btn-ghost btn-sm" href={url}>
+                                        {label}
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </aside>
+                <div class="about-body">
+                    {Content && entry.body?.trim() && (
+                        <section aria-labelledby="bio-title">
+                            <h2 id="bio-title" class="t-h2">
+                                个人简介
+                            </h2>
+                            <div class="prose">
+                                <Content />
+                            </div>
+                        </section>
+                    )}
+                    {profile.experience.length > 0 && (
+                        <section aria-labelledby="work-title">
+                            <h2 id="work-title" class="t-h2">
+                                工作经历
+                            </h2>
+                            <ol class="rows jobs">
+                                {profile.experience.map(
+                                    ({ period, role, organization, description }) => (
+                                        <li>
+                                            <p class="num t-small muted">{period}</p>
+                                            <div>
+                                                <h3 class="t-h3">{role}</h3>
+                                                {organization && (
+                                                    <p class="t-small muted">{organization}</p>
+                                                )}
+                                                <p class="ink-2">{description}</p>
+                                            </div>
+                                        </li>
+                                    ),
+                                )}
+                            </ol>
+                        </section>
+                    )}
+                    {profile.skills.length > 0 && (
+                        <section aria-labelledby="skill-title">
+                            <h2 id="skill-title" class="t-h2">
+                                技术能力
+                            </h2>
+                            <div class="skills-grid">
+                                {profile.skills.map(({ group, items }) => (
+                                    <div class="panel">
+                                        <h3 class="t-h3">{group}</h3>
+                                        <ul class="chips">
+                                            {items.map((item) => (
+                                                <li class="chip">{item}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+                </div>
+            </div>
+        )}
+    </div>
+    <section class="band band-sun" aria-labelledby="contact-title">
+        <div class="wrap">
+            <h2 id="contact-title" class="t-h1">
+                {profile?.links.length ? '保持联系' : '继续阅读'}
+            </h2>
+            <div class="actions">
+                {profile?.links.map(({ label, url }) => (
+                    <a class="btn btn-dark" href={url}>
+                        {label}
+                    </a>
+                ))}
+                <a class="btn btn-ghost" href="/blog/">
+                    阅读文章
+                </a>
+            </div>
+        </div>
+    </section>
+</SiteLayout>

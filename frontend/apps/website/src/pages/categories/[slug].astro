@@ -1,0 +1,20 @@
+---
+import type { GetStaticPaths } from 'astro';
+import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
+import { categories, categorySlugs } from '../../data/taxonomy';
+import { listPosts } from '../../lib/content';
+
+export const getStaticPaths = (async () => {
+    const posts = await listPosts();
+    return categorySlugs.flatMap((slug) => {
+        const entries = posts.filter((post) => post.data.category === slug);
+        return entries.length ? [{ params: { slug }, props: { posts, entries } }] : [];
+    });
+}) satisfies GetStaticPaths;
+
+const slug = Astro.params.slug as keyof typeof categories;
+const { posts, entries } = Astro.props;
+const { name, description } = categories[slug];
+---
+
+<ArchiveLayout title={name} {description} {posts} {entries} category={slug} />

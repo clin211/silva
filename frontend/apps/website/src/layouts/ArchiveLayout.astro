@@ -1,0 +1,39 @@
+---
+import SiteLayout from './SiteLayout.astro';
+import Archive from '../components/Archive.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import PageIntro from '../components/PageIntro.astro';
+import TaxonomyLinks from '../components/TaxonomyLinks.astro';
+import type { Post } from '../lib/content';
+
+interface Props {
+    title: string;
+    description: string;
+    posts: Post[];
+    entries?: Post[];
+    category?: string;
+    tag?: string;
+}
+const { title, description, posts, entries = posts, category, tag } = Astro.props;
+const subsection = category || tag;
+---
+
+<SiteLayout {title} {description} active="blog">
+    <div class="wrap page-content">
+        {subsection && <Breadcrumb section={{ label: '文章', href: '/blog/' }} current={title} />}
+        <PageIntro
+            label={category ? '分类归档' : tag ? '标签归档' : undefined}
+            {title}
+            {description}
+        />
+        <section class="archive-layout" aria-labelledby="archive-title">
+            <h2 class="t-h2" id="archive-title">
+                {subsection ? `${entries.length} 篇文章` : '文章归档'}
+            </h2>
+            <TaxonomyLinks {posts} {category} {tag} />
+            <div class="archive-body">
+                <Archive posts={entries} empty={subsection ? '此归档暂无文章。' : undefined} />
+            </div>
+        </section>
+    </div>
+</SiteLayout>

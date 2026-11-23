@@ -1,0 +1,172 @@
+---
+import Icon from './Icon.astro';
+---
+
+<dialog id="share-dialog" aria-labelledby="share-title" class="share-dialog panel">
+    <div class="share-inner">
+        <header>
+            <h2 class="t-h3" id="share-title">
+                分享文章
+            </h2>
+            <form method="dialog">
+                <button class="icon-button" type="submit" aria-label="关闭分享" autofocus>
+                    <Icon name="close" size={20} />
+                </button>
+            </form>
+        </header>
+        <label class="sr-only" for="share-link">
+            文章链接
+        </label>
+        <div class="share-link-row">
+            <input id="share-link" class="input" type="url" readonly />
+            <button type="button" class="btn btn-dark btn-sm" data-copy>
+                复制链接
+            </button>
+        </div>
+        <div class="share-actions">
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                data-qr
+                aria-expanded="false"
+                aria-controls="share-qr"
+            >
+                微信二维码
+            </button>
+            <a
+                class="btn btn-ghost btn-sm"
+                data-share-platform="weibo"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                微博<span class="sr-only">（新窗口打开）</span>
+            </a>
+            <a
+                class="btn btn-ghost btn-sm"
+                data-share-platform="x"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                X<span class="sr-only">（新窗口打开）</span>
+            </a>
+            <a class="btn btn-ghost btn-sm" data-share-platform="mail">
+                邮件
+            </a>
+            <button type="button" class="btn btn-ghost btn-sm" data-native-share hidden>
+                系统分享
+            </button>
+        </div>
+        <div class="share-qr" id="share-qr" hidden>
+            <img alt="当前文章的分享二维码" width="160" height="160" />
+            <p class="t-small muted">用微信扫一扫打开文章</p>
+        </div>
+        <p class="t-small muted" data-share-status role="status"></p>
+    </div>
+</dialog>
+<script>
+    const dialog = document.querySelector<HTMLDialogElement>('#share-dialog');
+    const input = dialog?.querySelector<HTMLInputElement>('#share-link');
+    const status = dialog?.querySelector<HTMLElement>('[data-share-status]');
+    const qr = dialog?.querySelector<HTMLElement>('#share-qr');
+    const qrImage = qr?.querySelector('img');
+    const qrButton = dialog?.querySelector<HTMLButtonElement>('[data-qr]');
+    const nativeShare = dialog?.querySelector<HTMLButtonElement>('[data-native-share]');
+    const copy = dialog?.querySelector<HTMLButtonElement>('[data-copy]');
+    const media = matchMedia('(min-width: 768px)');
+    let opener: HTMLElement | undefined;
+
+    if (dialog && input && status && qr && qrImage && qrButton && nativeShare && copy) {
+        const articleUrl = new URL(window.location.pathname, window.location.origin).href;
+        const title = document.querySelector('h1')?.textContent?.trim() ?? document.title;
+        const urlParam = encodeURIComponent(articleUrl);
+        const titleParam = encodeURIComponent(title);
+        const targets: Record<string, string> = {
+            weibo: `https://service.weibo.com/share/share.php?url=${urlParam}&title=${titleParam}`,
+            x: `https://x.com/intent/tweet?url=${urlParam}&text=${titleParam}`,
+            mail: `mailto:?subject=${titleParam}&body=${urlParam}`,
+        };
+        input.value = articleUrl;
+        dialog.querySelectorAll<HTMLAnchorElement>('[data-share-platform]').forEach((link) => {
+            link.href = targets[link.dataset.sharePlatform ?? ''];
+        });
+        nativeShare.hidden = typeof navigator.share !== 'function';
+
+        function place() {
+            if (!dialog || !opener || !dialog.open || !media.matches) return;
+            const rect = opener.getBoundingClientRect();
+            const x = Math.min(
+                window.innerWidth - dialog.offsetWidth - 12,
+                Math.max(12, rect.right - dialog.offsetWidth),
+            );
+            const y =
+                rect.bottom + dialog.offsetHeight + 12 <= window.innerHeight
+                    ? rect.bottom + 8
+                    : rect.top - dialog.offsetHeight - 8;
+            dialog.style.setProperty('--share-left', `${x}px`);
+            dialog.style.setProperty('--share-top', `${Math.max(12, y)}px`);
+        }
+
+        for (const button of document.querySelectorAll<HTMLButtonElement>('[data-share-open]')) {
+            button.hidden = false;
+            button.addEventListener('click', () => {
+                opener = button;
+                status.textContent = '';
+                dialog.showModal();
+                place();
+            });
+        }
+        dialog.addEventListener('close', () => opener?.focus({ preventScroll: true }));
+        dialog.addEventListener('click', (event) => {
+            if (event.target === dialog) dialog.close();
+        });
+        window.addEventListener('resize', place, { passive: true });
+        input.addEventListener('click', () => input.select());
+
+        copy.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(input.value);
+                status.textContent = '链接已复制';
+            } catch {
+                input.focus();
+                input.select();
+                status.textContent = '请复制已选中的链接';
+            }
+        });
+
+        qrButton.addEventListener('click', async () => {
+            if (!qr.hidden) {
+                qr.hidden = true;
+                qrButton.setAttribute('aria-expanded', 'false');
+                place();
+                return;
+            }
+            qrButton.disabled = true;
+            try {
+                if (!qrImage.hasAttribute('src')) {
+                    const { default: createCode } = await import('qrcode-generator');
+                    const code = createCode(0, 'M');
+                    code.addData(input.value);
+                    code.make();
+                    qrImage.src = code.createDataURL(5, 20);
+                }
+                qr.hidden = false;
+                qrButton.setAttribute('aria-expanded', 'true');
+                place();
+            } catch {
+                status.textContent = '二维码生成失败，可以复制链接分享';
+            } finally {
+                qrButton.disabled = false;
+            }
+        });
+
+        nativeShare.addEventListener('click', async () => {
+            try {
+                await navigator.share({ title, url: input.value });
+            } catch (error) {
+                if (!(error instanceof DOMException && error.name === 'AbortError')) {
+                    status.textContent = '系统分享暂不可用，可以复制链接分享';
+                }
+            }
+        });
+    }
+</script>

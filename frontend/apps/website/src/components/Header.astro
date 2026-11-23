@@ -1,0 +1,59 @@
+---
+import { navigation, type Section } from '../lib/site';
+import Icon from './Icon.astro';
+
+interface Props {
+    active?: Section;
+}
+
+const { active } = Astro.props;
+const links = navigation.map((item) => {
+    const current: 'page' | 'true' | undefined =
+        item.key === active ? (Astro.url.pathname === item.href ? 'page' : 'true') : undefined;
+    return { ...item, current };
+});
+---
+
+<a href="#main" class="skip-link">
+    跳到正文
+</a>
+<header class="site-head">
+    <div class="glass head-bar">
+        <a href="/" class="wordmark" aria-label="Silva 首页">
+            <span aria-hidden="true">S</span>Silva
+        </a>
+        <nav class="nav-desktop" aria-label="主导航">
+            <ul class="nav-links">
+                {links.map(({ label, href, current }) => (
+                    <li>
+                        <a class="nav-link" href={href} aria-current={current}>
+                            {label}
+                        </a>
+                    </li>
+                ))}
+            </ul>
+        </nav>
+        <a href="/rss.xml" class="btn btn-dark btn-sm" aria-label="RSS 订阅">
+            <Icon name="rss" size={16} />
+            <span>RSS</span>
+        </a>
+    </div>
+</header>
+<nav class="nav-mobile" aria-label="主导航">
+    <ul class="glass nav-links">
+        {links.map(({ key, label, href, current }) => (
+            <li>
+                <a class="nav-link" href={href} aria-current={current}>
+                    <Icon name={key} size={20} />
+                    <span>{label}</span>
+                </a>
+            </li>
+        ))}
+    </ul>
+</nav>
+<script>
+    const header = document.querySelector<HTMLElement>('.site-head');
+    const setScrolled = () => header?.classList.toggle('scrolled', window.scrollY > 24);
+    setScrolled();
+    window.addEventListener('scroll', setScrolled, { passive: true });
+</script>

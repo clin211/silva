@@ -1,0 +1,16 @@
+---
+import type { Post } from '../lib/content';
+
+interface Props {
+    cover: NonNullable<Post['data']['cover']>;
+    label?: string;
+    small?: boolean;
+    class?: string;
+}
+const { cover, label, small, class: className } = Astro.props;
+---
+
+<div class:list={['cover', `c-${cover.color}`, className, { small }]} aria-hidden="true">
+    {label && <span class="cover-tag">{label}</span>}
+    <span class="cover-mark">{cover.mark}</span>
+</div>
