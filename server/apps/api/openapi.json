@@ -1085,6 +1085,9 @@
                                             "action": "auth.login",
                                             "resource_type": "user",
                                             "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "ip_address": "203.0.113.10",
+                                            "user_agent": "Mozilla/5.0",
+                                            "metadata": {},
                                             "created_at": "2026-11-21T08:00:00Z"
                                         }
                                     ],
@@ -1705,6 +1708,19 @@
                         "$ref": "#/components/schemas/NullableUuidV7",
                         "description": "关联资源 ID；无关联资源时为 null。"
                     },
+                    "ip_address": {
+                        "type": ["string", "null"],
+                        "description": "发起操作的直连客户端 IP；CLI 等非 HTTP 操作为 null。经反向代理部署时为代理地址。"
+                    },
+                    "user_agent": {
+                        "type": ["string", "null"],
+                        "maxLength": 512,
+                        "description": "客户端报告的 User-Agent，超过 512 字节时截断；未提供时为 null。"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "非敏感附加信息，例如 users.update 的变更字段名、状态和角色键；不包含密码或令牌。"
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
@@ -1717,6 +1733,9 @@
                     "action",
                     "resource_type",
                     "resource_id",
+                    "ip_address",
+                    "user_agent",
+                    "metadata",
                     "created_at"
                 ],
                 "examples": [
@@ -1726,6 +1745,9 @@
                         "action": "auth.login",
                         "resource_type": "user",
                         "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "ip_address": "203.0.113.10",
+                        "user_agent": "Mozilla/5.0",
+                        "metadata": {},
                         "created_at": "2026-11-21T08:00:00Z"
                     }
                 ]
@@ -1873,6 +1895,9 @@
                                 "action": "auth.login",
                                 "resource_type": "user",
                                 "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "ip_address": "203.0.113.10",
+                                "user_agent": "Mozilla/5.0",
+                                "metadata": {},
                                 "created_at": "2026-11-21T08:00:00Z"
                             }
                         ],

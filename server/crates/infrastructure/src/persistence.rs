@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use silva_application::ports::{IdentityRepository, LoginRecord, NewUser, UserChanges};
+use silva_application::ports::{
+    IdentityRepository, LoginRecord, NewUser, RequestMeta, UserChanges,
+};
 use silva_domain::identity::{AuditLog, Principal, ROLE_KEYS, Role, User, permissions_for_role};
 use silva_shared::metrics::METRICS;
 use silva_shared::{
@@ -136,10 +138,19 @@ fn db(error: sqlx::Error) -> AppError {
     }
     if let sqlx::Error::Database(database) = &error
         && database.is_unique_violation()
+        && let Some(code) = unique_conflict_code(database.constraint())
     {
-        return AppError::Conflict("email_in_use");
+        return AppError::Conflict(code);
     }
     AppError::Internal(error.into())
+}
+
+/// 只把已知的业务唯一约束映射为 409；未知约束说明实现缺少前置检查，按内部错误记录便于发现。
+fn unique_conflict_code(constraint: Option<&str>) -> Option<&'static str> {
+    match constraint? {
+        "users_email_key" | "users_email_lower_unique" => Some("email_in_use"),
+        _ => None,
+    }
 }
 
 fn read_user(row: &PgRow) -> std::result::Result<User, sqlx::Error> {
@@ -164,26 +175,45 @@ async fn user(connection: &mut PgConnection, id: Uuid) -> Result<User> {
     read_user(&row).map_err(db)
 }
 
+/// 审计写入的 User-Agent 上限，防止超长请求头膨胀审计表。
+const USER_AGENT_MAX_BYTES: usize = 512;
+
+/// 写入审计记录；metadata 只允许字段名、状态等非敏感值，不得包含密码或令牌。
 async fn audit(
     connection: &mut PgConnection,
     actor: Option<Uuid>,
     action: &str,
     resource: Uuid,
-) -> Result<()> {
-    audit_with(connection, actor, action, resource, serde_json::json!({})).await
-}
-
-/// 写入带附加信息的审计记录；metadata 只允许字段名、状态等非敏感值，不得包含密码或令牌。
-async fn audit_with(
-    connection: &mut PgConnection,
-    actor: Option<Uuid>,
-    action: &str,
-    resource: Uuid,
+    meta: &RequestMeta,
     metadata: serde_json::Value,
 ) -> Result<()> {
-    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1,$2,$3,'user',$4,$5)")
-        .bind(ids::new_id()).bind(actor).bind(action).bind(resource).bind(sqlx::types::Json(metadata)).execute(connection).await.map_err(db)?;
+    let user_agent = meta
+        .user_agent
+        .as_deref()
+        .map(|value| truncate_utf8(value, USER_AGENT_MAX_BYTES));
+    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata) VALUES ($1,$2,$3,'user',$4,$5::inet,$6,$7)")
+        .bind(ids::new_id())
+        .bind(actor)
+        .bind(action)
+        .bind(resource)
+        .bind(meta.ip_address.map(|ip| ip.to_string()))
+        .bind(user_agent)
+        .bind(sqlx::types::Json(metadata))
+        .execute(connection)
+        .await
+        .map_err(db)?;
     Ok(())
+}
+
+fn truncate_utf8(value: &str, max: usize) -> &str {
+    if value.len() <= max {
+        return value;
+    }
+    let mut end = max;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
 }
 
 /// 账户管理的串行化锁：可能减少管理员数量的修改必须先持有该锁，再检查剩余管理员。
@@ -249,6 +279,7 @@ impl IdentityRepository for PgIdentityRepository {
         user_id: Uuid,
         token_hash: &str,
         expires_at: DateTime<Utc>,
+        meta: &RequestMeta,
     ) -> Result<()> {
         let _timer = METRICS.db_operation("create_session");
         let mut tx = begin(&self.pool).await.map_err(db)?;
@@ -268,7 +299,15 @@ impl IdentityRepository for PgIdentityRepository {
             .execute(&mut *tx)
             .await
             .map_err(db)?;
-        audit(&mut tx, Some(user_id), "auth.login", user_id).await?;
+        audit(
+            &mut tx,
+            Some(user_id),
+            "auth.login",
+            user_id,
+            meta,
+            serde_json::json!({}),
+        )
+        .await?;
         tx.commit().await.map_err(db)?;
         Ok(())
     }
@@ -297,7 +336,7 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.revoke_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn revoke_session(&self, principal: &Principal) -> Result<()> {
+    async fn revoke_session(&self, principal: &Principal, meta: &RequestMeta) -> Result<()> {
         let _timer = METRICS.db_operation("revoke_session");
         let mut tx = begin(&self.pool).await.map_err(db)?;
         sqlx::query("DELETE FROM sessions WHERE id=$1")
@@ -310,6 +349,8 @@ impl IdentityRepository for PgIdentityRepository {
             Some(principal.user.id),
             "auth.logout",
             principal.user.id,
+            meta,
+            serde_json::json!({}),
         )
         .await?;
         tx.commit().await.map_err(db)?;
@@ -349,7 +390,12 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.create_user", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn create_user(&self, actor: Option<Uuid>, new: NewUser) -> Result<User> {
+    async fn create_user(
+        &self,
+        actor: Option<Uuid>,
+        new: NewUser,
+        meta: &RequestMeta,
+    ) -> Result<User> {
         let _timer = METRICS.db_operation("create_user");
         let mut tx = begin(&self.pool).await.map_err(db)?;
         sqlx::query("INSERT INTO users (id,email,password_hash,display_name) VALUES ($1,$2,$3,$4)")
@@ -370,6 +416,8 @@ impl IdentityRepository for PgIdentityRepository {
                 "users.bootstrap"
             },
             new.id,
+            meta,
+            serde_json::json!({ "roles": new.roles }),
         )
         .await?;
         let result = user(&mut tx, new.id).await?;
@@ -378,7 +426,13 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.update_user", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn update_user(&self, actor: Uuid, id: Uuid, changes: UserChanges) -> Result<User> {
+    async fn update_user(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        changes: UserChanges,
+        meta: &RequestMeta,
+    ) -> Result<User> {
         let _timer = METRICS.db_operation("update_user");
         let mut tx = begin(&self.pool).await.map_err(db)?;
         // 停用或改角色可能移除最后一个管理员；先取事务级锁，使并发修改依次检查。
@@ -430,7 +484,15 @@ impl IdentityRepository for PgIdentityRepository {
                 .await
                 .map_err(db)?;
         }
-        audit_with(&mut tx, Some(actor), "users.update", id, metadata.into()).await?;
+        audit(
+            &mut tx,
+            Some(actor),
+            "users.update",
+            id,
+            meta,
+            metadata.into(),
+        )
+        .await?;
         let result = user(&mut tx, id).await?;
         tx.commit().await.map_err(db)?;
         Ok(result)
@@ -464,7 +526,7 @@ impl IdentityRepository for PgIdentityRepository {
             .fetch_one(&mut *tx)
             .await
             .map_err(db)?;
-        let rows = sqlx::query("SELECT id,actor_user_id,action,resource_type,resource_id,created_at FROM audit_logs ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2")
+        let rows = sqlx::query("SELECT id,actor_user_id,action,resource_type,resource_id,host(ip_address) AS ip_address,user_agent,metadata,created_at FROM audit_logs ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2")
             .bind(i64::from(page.per_page)).bind(page.offset()).fetch_all(&mut *tx).await.map_err(db)?;
         let data = rows
             .into_iter()
@@ -475,6 +537,9 @@ impl IdentityRepository for PgIdentityRepository {
                     action: row.try_get("action")?,
                     resource_type: row.try_get("resource_type")?,
                     resource_id: row.try_get("resource_id")?,
+                    ip_address: row.try_get("ip_address")?,
+                    user_agent: row.try_get("user_agent")?,
+                    metadata: row.try_get("metadata")?,
                     created_at: row.try_get("created_at")?,
                 })
             })
@@ -537,4 +602,31 @@ async fn begin(pool: &PgPool) -> std::result::Result<Transaction<'static, Postgr
         record_db_error(error);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_known_unique_constraints_map_to_conflicts() {
+        assert_eq!(
+            unique_conflict_code(Some("users_email_key")),
+            Some("email_in_use")
+        );
+        assert_eq!(
+            unique_conflict_code(Some("users_email_lower_unique")),
+            Some("email_in_use")
+        );
+        assert_eq!(unique_conflict_code(Some("sessions_token_hash_key")), None);
+        assert_eq!(unique_conflict_code(None), None);
+    }
+
+    #[test]
+    fn user_agent_truncation_respects_utf8_boundaries() {
+        assert_eq!(truncate_utf8("abc", 5), "abc");
+        assert_eq!(truncate_utf8("abcdef", 3), "abc");
+        // “长”占 3 字节，截断点落在字符中间时向前退到边界。
+        assert_eq!(truncate_utf8("a长", 2), "a");
+    }
 }

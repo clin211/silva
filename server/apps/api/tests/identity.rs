@@ -4,17 +4,20 @@ mod support;
 use axum::{
     Router,
     body::{Body, to_bytes},
+    extract::ConnectInfo,
     http::{HeaderMap, Method, Request, StatusCode, header},
 };
 use serde_json::{Value, json};
 use silva_shared::{config::Config, ids};
 use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
-use std::{str::FromStr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tower::ServiceExt;
 use uuid::{Uuid, Variant};
 
 const ORIGIN: &str = "https://admin.example.test";
 const PASSWORD: &str = "acceptance-password-2026";
+const TEST_USER_AGENT: &str = "silva-acceptance/1.0";
+const TEST_PEER: &str = "[2001:db8::7]:40000";
 
 struct Response {
     status: StatusCode,
@@ -69,6 +72,10 @@ async fn raw_request(
     if let Some(value) = origin {
         builder = builder.header(header::ORIGIN, value);
     }
+    // 模拟真实连接的 peer 地址和浏览器 UA，验证审计来源信息。
+    builder = builder
+        .header(header::USER_AGENT, TEST_USER_AGENT)
+        .extension(ConnectInfo(TEST_PEER.parse::<SocketAddr>().unwrap()));
     let response = app
         .clone()
         .oneshot(
@@ -672,6 +679,14 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     .unwrap();
     assert_eq!(audit_metadata["fields"], json!(["roles"]));
     assert_eq!(audit_metadata["roles"], json!(["author"]));
+    let (audit_ip, audit_agent): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT host(ip_address), user_agent FROM audit_logs WHERE action = 'auth.login' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_ip.as_deref(), Some("2001:db8::7"));
+    assert_eq!(audit_agent.as_deref(), Some(TEST_USER_AGENT));
 
     let disabled = request(
         app,
@@ -781,6 +796,9 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     .await;
     assert_eq!(audit.status, StatusCode::OK, "{}", audit.json);
     assert!(!audit.json["data"].as_array().unwrap().is_empty());
+    let first_audit = &audit.json["data"][0];
+    assert!(first_audit["metadata"].is_object());
+    assert!(first_audit.get("ip_address").is_some());
     let serialized_audit = audit.json.to_string();
     for secret in [PASSWORD, token, &admin_csrf] {
         assert!(

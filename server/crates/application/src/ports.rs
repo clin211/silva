@@ -5,7 +5,15 @@ use silva_shared::{
     error::Result,
     pagination::{Page, PageRequest},
 };
+use std::net::IpAddr;
 use uuid::Uuid;
+
+/// 写入审计的请求来源信息；由 HTTP 边界提取，CLI 等内部操作使用默认值。
+#[derive(Clone, Debug, Default)]
+pub struct RequestMeta {
+    pub ip_address: Option<IpAddr>,
+    pub user_agent: Option<String>,
+}
 
 pub struct LoginRecord {
     pub id: Uuid,
@@ -35,15 +43,27 @@ pub trait IdentityRepository: Send + Sync {
         user_id: Uuid,
         token_hash: &str,
         expires_at: DateTime<Utc>,
+        meta: &RequestMeta,
     ) -> Result<()>;
     /// 重新读取账户状态和角色权限，不缓存登录时的授权结果。
     async fn principal(&self, token_hash: &str) -> Result<Principal>;
-    async fn revoke_session(&self, principal: &Principal) -> Result<()>;
+    async fn revoke_session(&self, principal: &Principal, meta: &RequestMeta) -> Result<()>;
     async fn list_users(&self, page: &PageRequest) -> Result<Page<User>>;
-    async fn create_user(&self, actor: Option<Uuid>, user: NewUser) -> Result<User>;
+    async fn create_user(
+        &self,
+        actor: Option<Uuid>,
+        user: NewUser,
+        meta: &RequestMeta,
+    ) -> Result<User>;
     /// 在同一事务中锁定账户、替换角色分配，并撤销已停用账户的会话。
     /// 修改后若不再有启用状态的 admin，返回 `Conflict("last_admin_required")` 并回滚。
-    async fn update_user(&self, actor: Uuid, id: Uuid, changes: UserChanges) -> Result<User>;
+    async fn update_user(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        changes: UserChanges,
+        meta: &RequestMeta,
+    ) -> Result<User>;
     async fn roles(&self) -> Result<Vec<Role>>;
     async fn audit_logs(&self, page: &PageRequest) -> Result<Page<AuditLog>>;
 }

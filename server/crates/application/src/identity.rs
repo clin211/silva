@@ -1,4 +1,4 @@
-use crate::ports::{Credentials, IdentityRepository, NewUser, UserChanges};
+use crate::ports::{Credentials, IdentityRepository, NewUser, RequestMeta, UserChanges};
 use chrono::Utc;
 use silva_domain::identity::{AuditLog, Principal, Role, User, validate_roles};
 use silva_shared::{
@@ -35,7 +35,12 @@ impl IdentityService {
     }
 
     #[tracing::instrument(name = "identity.login", skip_all)]
-    pub async fn login(&self, email: String, password: String) -> Result<LoginSession> {
+    pub async fn login(
+        &self,
+        email: String,
+        password: String,
+        meta: &RequestMeta,
+    ) -> Result<LoginSession> {
         if password.len() > 1024 || email.len() > 254 {
             return Err(AppError::InvalidCredentials);
         }
@@ -56,7 +61,7 @@ impl IdentityService {
         let lifetime = chrono::Duration::from_std(self.session_ttl)
             .map_err(|_| AppError::Validation("session lifetime too large".into()))?;
         self.repository
-            .create_session(user_id, &hash, Utc::now() + lifetime)
+            .create_session(user_id, &hash, Utc::now() + lifetime, meta)
             .await?;
         let principal = self.repository.principal(&hash).await?;
         Ok(LoginSession {
@@ -81,8 +86,8 @@ impl IdentityService {
     }
 
     #[tracing::instrument(name = "identity.logout", skip_all)]
-    pub async fn logout(&self, principal: &Principal) -> Result<()> {
-        self.repository.revoke_session(principal).await
+    pub async fn logout(&self, principal: &Principal, meta: &RequestMeta) -> Result<()> {
+        self.repository.revoke_session(principal, meta).await
     }
 
     #[tracing::instrument(name = "identity.users", skip_all)]
@@ -100,6 +105,7 @@ impl IdentityService {
         display_name: String,
         password: String,
         roles: Vec<String>,
+        meta: &RequestMeta,
     ) -> Result<User> {
         principal.require("users.manage")?;
         self.create(
@@ -108,6 +114,7 @@ impl IdentityService {
             display_name,
             password,
             roles,
+            meta,
         )
         .await
     }
@@ -120,8 +127,15 @@ impl IdentityService {
         display_name: String,
         password: String,
     ) -> Result<User> {
-        self.create(None, email, display_name, password, vec!["admin".into()])
-            .await
+        self.create(
+            None,
+            email,
+            display_name,
+            password,
+            vec!["admin".into()],
+            &RequestMeta::default(),
+        )
+        .await
     }
 
     #[tracing::instrument(name = "identity.create", skip_all)]
@@ -132,6 +146,7 @@ impl IdentityService {
         display_name: String,
         password: String,
         roles: Vec<String>,
+        meta: &RequestMeta,
     ) -> Result<User> {
         let email = email.trim().to_lowercase();
         if email.len() > 254
@@ -160,6 +175,7 @@ impl IdentityService {
                     password_hash,
                     roles,
                 },
+                meta,
             )
             .await
     }
@@ -170,6 +186,7 @@ impl IdentityService {
         principal: &Principal,
         id: Uuid,
         changes: UserChanges,
+        meta: &RequestMeta,
     ) -> Result<User> {
         principal.require("users.manage")?;
         if let Some(name) = &changes.display_name {
@@ -186,7 +203,7 @@ impl IdentityService {
             validate_roles(roles)?;
         }
         self.repository
-            .update_user(principal.user.id, id, changes)
+            .update_user(principal.user.id, id, changes, meta)
             .await
     }
 

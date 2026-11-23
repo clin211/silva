@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use silva_application::ports::UserChanges;
+use silva_application::ports::{RequestMeta, UserChanges};
 use silva_domain::identity::{Principal, User};
 use silva_infrastructure::persistence;
 use silva_shared::{
@@ -76,6 +76,29 @@ impl<S: Send + Sync> FromRequestParts<S> for PageInput {
             })?;
         page.validate().map_err(ApiError::from)?;
         Ok(Self(page))
+    }
+}
+
+/// 审计用的请求来源：直连 peer IP 与 User-Agent；不信任客户端提供的转发头。
+pub(crate) struct ClientMeta(RequestMeta);
+impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
+    type Rejection = std::convert::Infallible;
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let ip_address = parts
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|value| value.0.ip().to_canonical());
+        let user_agent = parts
+            .headers
+            .get(header::USER_AGENT)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        Ok(Self(RequestMeta {
+            ip_address,
+            user_agent,
+        }))
     }
 }
 
@@ -335,9 +358,13 @@ struct AuthResponse {
 
 pub(crate) async fn login(
     State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
     Input(input): Input<LoginInput>,
 ) -> HttpResult<Response> {
-    let session = state.identity.login(input.email, input.password).await?;
+    let session = state
+        .identity
+        .login(input.email, input.password, &meta)
+        .await?;
     let cookie = format!(
         "{SESSION_COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
         session.token,
@@ -372,10 +399,11 @@ pub(crate) async fn me(State(state): State<AppState>, headers: HeaderMap) -> Htt
 
 pub(crate) async fn logout(
     State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
     headers: HeaderMap,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, true).await?;
-    state.identity.logout(&principal).await?;
+    state.identity.logout(&principal, &meta).await?;
     let mut response = StatusCode::NO_CONTENT.into_response();
     response.headers_mut().insert(
         header::SET_COOKIE,
@@ -405,6 +433,7 @@ pub(crate) struct CreateUserInput {
 }
 pub(crate) async fn create_user(
     State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
     headers: HeaderMap,
     Input(input): Input<CreateUserInput>,
 ) -> HttpResult<Response> {
@@ -420,6 +449,7 @@ pub(crate) async fn create_user(
                     input.display_name,
                     input.password,
                     input.roles,
+                    &meta,
                 )
                 .await?,
         ),
@@ -436,6 +466,7 @@ pub(crate) struct UpdateUserInput {
 }
 pub(crate) async fn update_user(
     State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
     headers: HeaderMap,
     IdPath(id): IdPath,
     Input(input): Input<UpdateUserInput>,
@@ -452,6 +483,7 @@ pub(crate) async fn update_user(
                     status: input.status,
                     roles: input.roles,
                 },
+                &meta,
             )
             .await?,
     )

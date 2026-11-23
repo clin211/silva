@@ -52,8 +52,9 @@
 - 新账户密码为 12..1024 UTF-8 字节；用户邮箱去首尾空白后转小写，最大 254 字节；显示名去空白后非空，最大 100 字节。
 - Origin 失败：403 `origin_rejected`；CSRF 失败：403 `csrf_rejected`；凭据失败：401 `invalid_credentials`；无会话：401 `unauthorized`；无权限：403 `forbidden`。
 - 非 JSON：415 `unsupported_media_type`；JSON 解码或字段校验失败：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。
-- 账户邮箱重复：409 `email_in_use`。停用或改角色后若不再有启用状态的 admin：409 `last_admin_required`，整笔修改回滚。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
+- 账户邮箱重复：409 `email_in_use`（仅 users 邮箱唯一约束映射为该码，其他唯一冲突按 500 记录）。停用或改角色后若不再有启用状态的 admin：409 `last_admin_required`，整笔修改回滚。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
 - API 默认每 IP（IPv6 按 /64 前缀合并）每分钟 600 次，登录额外每 IP 每分钟 10 次，可通过环境变量配置；超额返回 429 `rate_limited` 及 `Retry-After: 60`。
+- 审计记录 `{id,actor_user_id,action,resource_type,resource_id,ip_address,user_agent,metadata,created_at}`：`ip_address` 为直连 peer IP（不信任 `X-Forwarded-For`，CLI 操作为 null），`user_agent` 截断到 512 字节，`metadata` 只含变更字段名、状态、角色键等非敏感信息。
 - User 为 `{id,email,display_name,status,roles,created_at,updated_at}`，不含 password/hash。角色列表直接返回 `[{id,key,name,permissions}]`。
 - `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
 

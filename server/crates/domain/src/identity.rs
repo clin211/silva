@@ -96,6 +96,12 @@ pub struct AuditLog {
     pub action: String,
     pub resource_type: String,
     pub resource_id: Option<Uuid>,
+    /// 发起操作的客户端 IP；CLI 等非 HTTP 操作为 None。
+    pub ip_address: Option<String>,
+    /// 客户端报告的 User-Agent，超长时截断。
+    pub user_agent: Option<String>,
+    /// 非敏感的附加信息，例如变更字段名。
+    pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
 }
 
