@@ -42,6 +42,7 @@ pub trait IdentityRepository: Send + Sync {
     async fn list_users(&self, page: &PageRequest) -> Result<Page<User>>;
     async fn create_user(&self, actor: Option<Uuid>, user: NewUser) -> Result<User>;
     /// 在同一事务中锁定账户、替换角色分配，并撤销已停用账户的会话。
+    /// 修改后若不再有启用状态的 admin，返回 `Conflict("last_admin_required")` 并回滚。
     async fn update_user(&self, actor: Uuid, id: Uuid, changes: UserChanges) -> Result<User>;
     async fn roles(&self) -> Result<Vec<Role>>;
     async fn audit_logs(&self, page: &PageRequest) -> Result<Page<AuditLog>>;

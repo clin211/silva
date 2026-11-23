@@ -613,6 +613,66 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         denied.json
     );
 
+    // 唯一启用的管理员不能被停用或移除 admin 角色，失败时整笔修改回滚且不写审计。
+    let admin_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE email = 'admin@example.test'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let audits_before: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    for body in [
+        json!({"status":"disabled"}),
+        json!({"roles":["editor"]}),
+        json!({"display_name":"Renamed","roles":["author"]}),
+    ] {
+        let response = request(
+            app,
+            Method::PATCH,
+            &format!("/api/v1/admin/users/{admin_id}"),
+            Some(body),
+            Some(&admin_cookie),
+            Some(&admin_csrf),
+            Some(ORIGIN),
+        )
+        .await;
+        assert_error(&response, StatusCode::CONFLICT, "last_admin_required");
+    }
+    let (admin_status, admin_name): (String, String) =
+        sqlx::query_as("SELECT status, display_name FROM users WHERE id = $1")
+            .bind(admin_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(admin_status, "active");
+    assert_ne!(admin_name, "Renamed", "rejected update must roll back");
+    let audits_after: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_logs")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(audits_before, audits_after);
+    let still_admin = request(
+        app,
+        Method::GET,
+        "/api/v1/admin/users",
+        None,
+        Some(&admin_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(still_admin.status, StatusCode::OK, "{}", still_admin.json);
+    let audit_metadata: Value = sqlx::query_scalar(
+        "SELECT metadata FROM audit_logs WHERE action = 'users.update' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_metadata["fields"], json!(["roles"]));
+    assert_eq!(audit_metadata["roles"], json!(["author"]));
+
     let disabled = request(
         app,
         Method::PATCH,

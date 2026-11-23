@@ -912,6 +912,33 @@
                         },
                         "x-error-codes": ["not_found"]
                     },
+                    "409": {
+                        "description": "修改会导致系统不再有启用状态的管理员（停用最后一个管理员或移除其 admin 角色）。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "last_admin_required",
+                                        "message": "last_admin_required",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["last_admin_required"]
+                    },
                     "413": {
                         "description": "JSON 请求正文超过 64 KiB。",
                         "headers": {

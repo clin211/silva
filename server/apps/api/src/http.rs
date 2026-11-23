@@ -24,7 +24,7 @@ use silva_shared::{
 };
 use std::{
     collections::HashMap,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -97,26 +97,68 @@ impl<S: Send + Sync> FromRequestParts<S> for IdPath {
     }
 }
 
+/// 限流表最多跟踪的客户端数量，防止大量来源地址耗尽内存。
+const RATE_LIMIT_MAX_KEYS: usize = 10_000;
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+
 #[derive(Default)]
 pub(crate) struct RateLimiter {
-    buckets: Mutex<HashMap<(IpAddr, bool), (Instant, u32)>>,
+    state: Mutex<RateLimiterState>,
 }
+
+#[derive(Default)]
+struct RateLimiterState {
+    buckets: HashMap<(IpAddr, bool), (Instant, u32)>,
+    last_sweep: Option<Instant>,
+}
+
 impl RateLimiter {
     fn allow(&self, ip: IpAddr, login: bool, limit: u32) -> bool {
-        let Ok(mut buckets) = self.buckets.lock() else {
-            return false;
-        };
+        // 计数器在任何中断点都保持一致，锁中毒时继续使用内部数据，避免全站永久 429。
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
-        buckets.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
-        if buckets.len() >= 10000 && !buckets.contains_key(&(ip, login)) {
+        let key = (rate_limit_key(ip), login);
+        // 过期窗口按需清理：表满或距上次清理超过一个窗口时才全表扫描，避免每个请求 O(n)。
+        let sweep_due = state
+            .last_sweep
+            .is_none_or(|last| now.duration_since(last) >= RATE_LIMIT_WINDOW);
+        if sweep_due || state.buckets.len() >= RATE_LIMIT_MAX_KEYS {
+            state
+                .buckets
+                .retain(|_, (start, _)| now.duration_since(*start) < RATE_LIMIT_WINDOW);
+            state.last_sweep = Some(now);
+        }
+        if state.buckets.len() >= RATE_LIMIT_MAX_KEYS && !state.buckets.contains_key(&key) {
             return false;
         }
-        let (_, count) = buckets.entry((ip, login)).or_insert((now, 0));
+        let (start, count) = state.buckets.entry(key).or_insert((now, 0));
+        if now.duration_since(*start) >= RATE_LIMIT_WINDOW {
+            *start = now;
+            *count = 0;
+        }
         if *count >= limit {
             return false;
         }
         *count += 1;
         true
+    }
+}
+
+/// IPv6 客户端通常拥有整个 /64，按前缀合并计数，避免单个客户端轮换地址绕过限流或占满限流表。
+fn rate_limit_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let mut segments = v6.segments();
+                segments[4..].fill(0);
+                IpAddr::V6(Ipv6Addr::from(segments))
+            }
+        },
     }
 }
 
@@ -468,4 +510,52 @@ pub(crate) async fn method_not_allowed() -> ApiError {
         "method_not_allowed",
         "Method not allowed",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rate_limit_groups_ipv6_by_64_prefix() {
+        let a: IpAddr = "2001:db8:1:2:aaaa::1".parse().unwrap();
+        let b: IpAddr = "2001:db8:1:2:bbbb::2".parse().unwrap();
+        let other: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+        assert_eq!(rate_limit_key(a), rate_limit_key(b));
+        assert_ne!(rate_limit_key(a), rate_limit_key(other));
+        let mapped: IpAddr = "::ffff:192.0.2.1".parse().unwrap();
+        assert_eq!(
+            rate_limit_key(mapped),
+            "192.0.2.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn rate_limit_rejects_after_limit_and_separates_login_bucket() {
+        let limiter = RateLimiter::default();
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        assert!(limiter.allow(ip, false, 2));
+        assert!(limiter.allow(ip, false, 2));
+        assert!(!limiter.allow(ip, false, 2));
+        assert!(limiter.allow(ip, true, 1));
+        assert!(!limiter.allow(ip, true, 1));
+        // IPv6 同一 /64 共享额度。
+        let v6a: IpAddr = "2001:db8::1".parse().unwrap();
+        let v6b: IpAddr = "2001:db8::2".parse().unwrap();
+        assert!(limiter.allow(v6a, false, 1));
+        assert!(!limiter.allow(v6b, false, 1));
+    }
+
+    #[test]
+    fn rate_limit_survives_poisoned_lock() {
+        let limiter = std::sync::Arc::new(RateLimiter::default());
+        let poisoner = limiter.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.state.lock().unwrap();
+            panic!("poison the limiter lock");
+        })
+        .join();
+        assert!(limiter.state.is_poisoned());
+        assert!(limiter.allow("192.0.2.9".parse().unwrap(), false, 1));
+    }
 }

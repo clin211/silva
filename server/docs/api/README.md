@@ -136,6 +136,7 @@ unset SILVA_API_CSRF
 | 403 | `forbidden` | 检查当前账户的权限 |
 | 404 | `not_found` | 检查资源或路径 |
 | 409 | `email_in_use` | 更换已存在的邮箱 |
+| 409 | `last_admin_required` | 至少保留一个启用状态的管理员，先为其他账户分配 admin 再停用或降级 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
 | 422 | `validation_error`、`invalid_uuid_v7` | 按字段约束修正输入 |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |

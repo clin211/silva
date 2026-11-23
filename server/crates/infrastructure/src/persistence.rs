@@ -170,9 +170,36 @@ async fn audit(
     action: &str,
     resource: Uuid,
 ) -> Result<()> {
-    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id) VALUES ($1,$2,$3,'user',$4)")
-        .bind(ids::new_id()).bind(actor).bind(action).bind(resource).execute(connection).await.map_err(db)?;
+    audit_with(connection, actor, action, resource, serde_json::json!({})).await
+}
+
+/// 写入带附加信息的审计记录；metadata 只允许字段名、状态等非敏感值，不得包含密码或令牌。
+async fn audit_with(
+    connection: &mut PgConnection,
+    actor: Option<Uuid>,
+    action: &str,
+    resource: Uuid,
+    metadata: serde_json::Value,
+) -> Result<()> {
+    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, metadata) VALUES ($1,$2,$3,'user',$4,$5)")
+        .bind(ids::new_id()).bind(actor).bind(action).bind(resource).bind(sqlx::types::Json(metadata)).execute(connection).await.map_err(db)?;
     Ok(())
+}
+
+/// 账户管理的串行化锁：可能减少管理员数量的修改必须先持有该锁，再检查剩余管理员。
+const ADMIN_GUARD_LOCK: i64 = 782_039_416;
+
+/// 至少保留一个启用状态的 admin 账户，避免后台被锁死后只能手工改库恢复。
+async fn ensure_active_admin(connection: &mut PgConnection) -> Result<()> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE r.key='admin' AND u.status='active')")
+        .fetch_one(connection)
+        .await
+        .map_err(db)?;
+    if exists {
+        Ok(())
+    } else {
+        Err(AppError::Conflict("last_admin_required"))
+    }
 }
 
 async fn assign_roles(connection: &mut PgConnection, id: Uuid, roles: &[String]) -> Result<()> {
@@ -354,6 +381,16 @@ impl IdentityRepository for PgIdentityRepository {
     async fn update_user(&self, actor: Uuid, id: Uuid, changes: UserChanges) -> Result<User> {
         let _timer = METRICS.db_operation("update_user");
         let mut tx = begin(&self.pool).await.map_err(db)?;
+        // 停用或改角色可能移除最后一个管理员；先取事务级锁，使并发修改依次检查。
+        let reduces_admins =
+            changes.roles.is_some() || changes.status.as_deref() == Some("disabled");
+        if reduces_admins {
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(ADMIN_GUARD_LOCK)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+        }
         let exists: Option<Uuid> =
             sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR UPDATE")
                 .bind(id)
@@ -363,10 +400,28 @@ impl IdentityRepository for PgIdentityRepository {
         if exists.is_none() {
             return Err(AppError::NotFound);
         }
+        // 审计只记录变更的字段名、状态和角色键，不记录其他资料值。
+        let mut metadata = serde_json::Map::new();
+        let mut fields = Vec::new();
+        if changes.display_name.is_some() {
+            fields.push("display_name");
+        }
+        if let Some(status) = &changes.status {
+            fields.push("status");
+            metadata.insert("status".into(), status.clone().into());
+        }
+        if let Some(roles) = &changes.roles {
+            fields.push("roles");
+            metadata.insert("roles".into(), roles.clone().into());
+        }
+        metadata.insert("fields".into(), fields.into());
         sqlx::query("UPDATE users SET display_name=COALESCE($2,display_name),status=COALESCE($3,status) WHERE id=$1")
             .bind(id).bind(changes.display_name.map(|s| s.trim().to_owned())).bind(&changes.status).execute(&mut *tx).await.map_err(db)?;
         if let Some(roles) = changes.roles {
             assign_roles(&mut tx, id, &roles).await?;
+        }
+        if reduces_admins {
+            ensure_active_admin(&mut tx).await?;
         }
         if changes.status.as_deref() == Some("disabled") {
             sqlx::query("DELETE FROM sessions WHERE user_id=$1")
@@ -375,7 +430,7 @@ impl IdentityRepository for PgIdentityRepository {
                 .await
                 .map_err(db)?;
         }
-        audit(&mut tx, Some(actor), "users.update", id).await?;
+        audit_with(&mut tx, Some(actor), "users.update", id, metadata.into()).await?;
         let result = user(&mut tx, id).await?;
         tx.commit().await.map_err(db)?;
         Ok(result)
