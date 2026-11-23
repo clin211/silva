@@ -9,6 +9,9 @@ pub enum AppError {
     Unauthorized,
     #[error("Invalid email or password")]
     InvalidCredentials,
+    /// 同一登录邮箱连续失败次数过多，锁定期内拒绝登录；`retry_after` 为剩余锁定时长。
+    #[error("Too many failed login attempts")]
+    LoginLocked { retry_after: std::time::Duration },
     #[error("Permission denied")]
     Forbidden,
     #[error("Resource not found")]

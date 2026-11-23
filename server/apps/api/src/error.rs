@@ -3,10 +3,11 @@
 
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use silva_application::login_lockout::retry_after_seconds;
 use silva_shared::error::{AppError, Conflict, FieldError};
 use uuid::Uuid;
 
@@ -77,6 +78,8 @@ pub(crate) struct ApiError {
     pub code: ErrorCode,
     pub message: String,
     pub details: Vec<FieldError>,
+    /// 设置时附带 `Retry-After` 响应头（秒）。
+    pub retry_after: Option<u64>,
 }
 
 impl ApiError {
@@ -85,6 +88,7 @@ impl ApiError {
             code,
             message: message.into(),
             details: Vec::new(),
+            retry_after: None,
         }
     }
 
@@ -94,6 +98,7 @@ impl ApiError {
             code: ErrorCode::ValidationError,
             message: "Request validation failed".into(),
             details,
+            retry_after: None,
         }
     }
 
@@ -113,6 +118,15 @@ impl From<AppError> for ApiError {
                 // 内部细节只进日志，响应中不暴露。
                 tracing::error!(error = %error, "request failed");
                 return Self::new(ErrorCode::InternalError, "Internal server error");
+            }
+            AppError::LoginLocked { retry_after } => {
+                return Self {
+                    retry_after: Some(retry_after_seconds(retry_after)),
+                    ..Self::new(
+                        ErrorCode::RateLimited,
+                        "Too many failed login attempts; try again later",
+                    )
+                };
             }
             AppError::Unauthorized => ErrorCode::Unauthorized,
             AppError::InvalidCredentials => ErrorCode::InvalidCredentials,
@@ -151,6 +165,12 @@ impl IntoResponse for ApiError {
                 request_id,
             },
         };
-        (self.code.status(), Json(body)).into_response()
+        let mut response = (self.code.status(), Json(body)).into_response();
+        if let Some(seconds) = self.retry_after {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(seconds));
+        }
+        response
     }
 }

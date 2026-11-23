@@ -448,6 +448,8 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         worker_interval: Duration::from_secs(60),
         api_rate_per_minute: 1000,
         login_rate_per_minute: 100,
+        login_lockout_threshold: 5,
+        login_lockout_duration: Duration::from_secs(900),
     };
     let app = silva_api::build_router(config, pool).await.unwrap();
     let spec = contract();

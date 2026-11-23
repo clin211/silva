@@ -1,4 +1,7 @@
-use crate::ports::{Credentials, IdentityRepository, NewUser, RequestMeta, UserChanges};
+use crate::{
+    login_lockout::{Admission, LoginLockout},
+    ports::{Credentials, IdentityRepository, LoginFailure, NewUser, RequestMeta, UserChanges},
+};
 use chrono::Utc;
 use silva_domain::identity::{AuditLog, Principal, Role, User, validate_roles};
 use silva_shared::{
@@ -6,13 +9,26 @@ use silva_shared::{
     ids,
     pagination::{Page, PageRequest},
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 pub struct IdentityService {
     repository: Arc<dyn IdentityRepository>,
     credentials: Arc<dyn Credentials>,
     session_ttl: Duration,
+    lockout: LoginLockout,
+}
+
+/// 一次已通过锁定检查的登录尝试结果。
+enum LoginAttempt {
+    Success(Box<LoginSession>),
+    Failed {
+        user_id: Option<Uuid>,
+        reason: LoginFailure,
+    },
 }
 
 /// 管理员修改账户的输入；密码为明文，由用例哈希后再交给仓储。
@@ -40,9 +56,20 @@ impl IdentityService {
             repository,
             credentials,
             session_ttl,
+            lockout: LoginLockout::default(),
         }
     }
 
+    /// 替换登录锁定策略；默认为 5 次失败锁定 900 秒。
+    pub fn with_login_lockout(mut self, lockout: LoginLockout) -> Self {
+        self.lockout = lockout;
+        self
+    }
+
+    /// 登录：按规范化邮箱执行连续失败锁定，凭据失败与锁定拒绝均写入 `auth.login_failed` 审计。
+    ///
+    /// 审计写入失败与其他管理操作一致按内部错误返回（500），不会因此放行登录；
+    /// 已发生的凭据失败仍然计入锁定。
     #[tracing::instrument(name = "identity.login", skip_all)]
     pub async fn login(
         &self,
@@ -50,34 +77,113 @@ impl IdentityService {
         password: String,
         meta: &RequestMeta,
     ) -> Result<LoginSession> {
-        if password.len() > 1024 || email.len() > 254 {
+        let key = email.trim().to_lowercase();
+        if key.len() > 254 {
+            // 超长邮箱不可能对应账户，不进入锁定表，避免超长键占用内存。
+            self.repository
+                .record_login_failure(None, LoginFailure::InvalidCredentials, meta)
+                .await?;
             return Err(AppError::InvalidCredentials);
         }
-        let record = self
-            .repository
-            .find_login(&email.trim().to_lowercase())
-            .await?;
-        let user_id = record.as_ref().map(|record| record.id);
-        let valid = self
-            .credentials
-            .verify_password(password, record.map(|record| record.password_hash))
-            .await?;
-        let user_id = user_id
-            .filter(|_| valid)
-            .ok_or(AppError::InvalidCredentials)?;
+        if let Admission::Locked {
+            retry_after,
+            first_rejection,
+        } = self.lockout.admit(&key, Instant::now())
+        {
+            // 锁定期内不校验密码；同一轮锁定只在首次被拒时写审计，防止审计表被刷爆。
+            if first_rejection {
+                let user_id = self.repository.find_login(&key).await?.map(|r| r.id);
+                self.repository
+                    .record_login_failure(user_id, LoginFailure::Locked, meta)
+                    .await?;
+            }
+            return Err(AppError::LoginLocked { retry_after });
+        }
+        let attempt = match self.attempt_login(&key, password, meta).await {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                // 基础设施故障不属于凭据失败，撤回预先计入的次数。
+                self.lockout.abandon(&key);
+                return Err(error);
+            }
+        };
+        match attempt {
+            LoginAttempt::Success(session) => {
+                self.lockout.succeed(&key);
+                Ok(*session)
+            }
+            LoginAttempt::Failed { user_id, reason } => {
+                self.repository
+                    .record_login_failure(user_id, reason, meta)
+                    .await?;
+                Err(AppError::InvalidCredentials)
+            }
+        }
+    }
+
+    /// 校验凭据并创建会话。账户不存在、停用或密码错误时都执行一次 Argon2 校验，
+    /// 对外统一返回 `invalid_credentials`，只在审计中区分原因。
+    async fn attempt_login(
+        &self,
+        email: &str,
+        password: String,
+        meta: &RequestMeta,
+    ) -> Result<LoginAttempt> {
+        let record = self.repository.find_login(email).await?;
+        let (account, password_hash) = record
+            .map(|record| ((record.id, record.active), record.password_hash))
+            .unzip();
+        let valid = password.len() <= 1024
+            && self
+                .credentials
+                .verify_password(password, password_hash)
+                .await?;
+        let user_id = match account {
+            None => {
+                return Ok(LoginAttempt::Failed {
+                    user_id: None,
+                    reason: LoginFailure::InvalidCredentials,
+                });
+            }
+            Some((id, _)) if !valid => {
+                return Ok(LoginAttempt::Failed {
+                    user_id: Some(id),
+                    reason: LoginFailure::InvalidCredentials,
+                });
+            }
+            Some((id, false)) => {
+                return Ok(LoginAttempt::Failed {
+                    user_id: Some(id),
+                    reason: LoginFailure::AccountDisabled,
+                });
+            }
+            Some((id, true)) => id,
+        };
         let token = self.credentials.new_session_token();
         let hash = self.credentials.token_hash(&token);
         let lifetime = chrono::Duration::from_std(self.session_ttl)
             .map_err(|_| AppError::Internal(anyhow::anyhow!("session lifetime too large")))?;
-        self.repository
+        match self
+            .repository
             .create_session(user_id, &hash, Utc::now() + lifetime, meta)
-            .await?;
+            .await
+        {
+            Ok(()) => {}
+            // 校验密码后账户被并发停用。
+            Err(AppError::InvalidCredentials) => {
+                return Ok(LoginAttempt::Failed {
+                    user_id: Some(user_id),
+                    reason: LoginFailure::AccountDisabled,
+                });
+            }
+            Err(error) => return Err(error),
+        }
         let principal = self.repository.principal(&hash).await?;
-        Ok(LoginSession {
+        Ok(LoginAttempt::Success(Box::new(LoginSession {
             csrf_token: self.credentials.csrf_token(&token),
             token,
             principal,
-        })
+        })))
     }
 
     #[tracing::instrument(name = "identity.authenticate", skip_all)]

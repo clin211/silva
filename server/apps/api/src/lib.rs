@@ -12,7 +12,7 @@ use axum::{
     middleware,
     routing::{get, post},
 };
-use silva_application::identity::IdentityService;
+use silva_application::{identity::IdentityService, login_lockout::LoginLockout};
 use silva_infrastructure::identity_service;
 use silva_shared::config::Config;
 use sqlx::PgPool;
@@ -28,7 +28,14 @@ pub(crate) struct AppState {
 }
 
 pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router> {
-    let identity = Arc::new(identity_service(pool.clone(), config.session_ttl).await?);
+    let identity = Arc::new(
+        identity_service(pool.clone(), config.session_ttl)
+            .await?
+            .with_login_lockout(LoginLockout::new(
+                config.login_lockout_threshold,
+                config.login_lockout_duration,
+            )),
+    );
     let state = AppState {
         config: Arc::new(config),
         pool,

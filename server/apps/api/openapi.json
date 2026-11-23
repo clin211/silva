@@ -241,7 +241,41 @@
                         }
                     },
                     "429": {
-                        "$ref": "#/components/responses/RateLimited"
+                        "description": "超过每 IP 的 API 或登录请求限额（message 为 Request limit exceeded，Retry-After 为 60），或该邮箱连续登录失败次数过多已被锁定（Retry-After 为剩余锁定秒数）。锁定按规范化邮箱计数，对存在与不存在的账户一致；锁定期内即使密码正确也拒绝。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Retry-After": {
+                                "description": "重试前需等待的秒数：固定窗口限流为 60；账户锁定为剩余锁定时长，向上取整且至少为 1。",
+                                "schema": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "example": 900
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "rate_limited",
+                                        "message": "Too many failed login attempts; try again later",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "rate_limited"
+                        ]
                     },
                     "default": {
                         "$ref": "#/components/responses/Error"
@@ -311,7 +345,7 @@
                         ]
                     },
                     "401": {
-                        "description": "账户不存在、已停用或密码错误，均返回相同错误。",
+                        "description": "账户不存在、已停用或密码错误，均返回相同错误；每次失败写入 auth.login_failed 审计并计入该邮箱的连续失败次数。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -421,7 +455,7 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从正文读取 csrf_token。无公开注册接口；登录同时受 API 限流和登录限流约束。"
+                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从正文读取 csrf_token。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
             }
         },
         "/api/v1/admin/auth/logout": {

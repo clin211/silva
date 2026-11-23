@@ -56,6 +56,8 @@
 - 非 JSON：415 `unsupported_media_type`；JSON 语法错误：400 `malformed_json`；字段缺失、未知、类型或约束不符：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。
 - 账户邮箱重复：409 `email_in_use`（仅 users 邮箱唯一约束映射为该码，其他唯一冲突按 500 记录）。停用或改角色后若不再有启用状态的 admin：409 `last_admin_required`，整笔修改回滚。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
 - API 默认每 IP（IPv6 按 /64 前缀合并）每分钟 600 次，登录额外每 IP 每分钟 10 次，可通过环境变量配置；超额返回 429 `rate_limited` 及 `Retry-After: 60`。
+- 登录按账户锁定：以规范化邮箱（去首尾空白后转小写）为键，不论账户是否存在都同样计数和锁定，响应不区分两者。15 分钟窗口内连续凭据失败（`invalid_credentials`，含停用账户）达到 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）。锁定期内即使密码正确也拒绝，且不校验密码，返回 429 `rate_limited`，`Retry-After` 为剩余锁定秒数（向上取整，至少 1）。成功登录清零；锁定到期后重新计数。Origin、JSON 与字段校验失败及服务端故障不计入。`POST /auth/password` 只共用每 IP 登录额度，不纳入账户锁定。计数保存在单个 API 进程内存中（最多跟踪 10000 个邮箱，满时淘汰最早的未锁定记录），多副本各自计数，重启清空。
+- 失败登录审计：`action = "auth.login_failed"`，`actor_user_id = null`，`resource_type = "user"`，账户存在时 `resource_id` 为其 ID，否则为 null；`metadata` 仅含 `{"reason": "invalid_credentials" | "account_disabled" | "locked"}`，不记录尝试的邮箱或密码。`account_disabled` 表示密码正确但账户已停用；`locked` 在同一轮锁定中只于首次被拒时记录一次。审计写入失败时与其他管理操作一致返回 500 `internal_error`，不会放行登录。
 - 审计记录 `{id,actor_user_id,action,resource_type,resource_id,ip_address,user_agent,metadata,created_at}`：`ip_address` 为直连 peer IP（不信任 `X-Forwarded-For`，CLI 操作为 null），`user_agent` 截断到 512 字节，`metadata` 只含变更字段名、状态、角色键等非敏感信息。
 - User 为 `{id,email,display_name,status,roles,created_at,updated_at}`，不含 password/hash。角色列表返回 `{"data":[{id,key,name,permissions}]}`。
 - `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
@@ -81,4 +83,5 @@
 5. Admin 创建账户、内置角色分配、停用账户后所有既有会话立即失效；审计可查且不含凭据。
 6. API 对 UUIDv4、错误变体、非连字符 UUID 返回 422 `validation_error`，字段错误为 `id`/`invalid_format`；真实 UUIDv7 可进入资源查询。
 7. 账户/审计列表默认分页、分页上限、无效分页与无效 JSON，路由不存在、方法不允许等错误保持统一错误结构。
-8. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。
+8. 同一邮箱连续登录失败达到阈值后返回 429 与剩余 `Retry-After`，锁定期内正确密码也被拒绝；不存在的账户同样锁定；失败审计按原因记录且不含邮箱、密码；锁定到期或成功登录后计数清零。
+9. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。

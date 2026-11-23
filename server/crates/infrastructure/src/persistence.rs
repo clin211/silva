@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use silva_application::ports::{
-    IdentityRepository, LoginRecord, NewUser, RequestMeta, UserChanges,
+    IdentityRepository, LoginFailure, LoginRecord, NewUser, RequestMeta, UserChanges,
 };
 use silva_domain::identity::{AuditLog, Principal, ROLE_KEYS, Role, User, permissions_for_role};
 use silva_shared::metrics::METRICS;
@@ -183,7 +183,7 @@ async fn audit(
     connection: &mut PgConnection,
     actor: Option<Uuid>,
     action: &str,
-    resource: Uuid,
+    resource: impl Into<Option<Uuid>>,
     meta: &RequestMeta,
     metadata: serde_json::Value,
 ) -> Result<()> {
@@ -195,7 +195,7 @@ async fn audit(
         .bind(ids::new_id())
         .bind(actor)
         .bind(action)
-        .bind(resource)
+        .bind(resource.into())
         .bind(meta.ip_address.map(|ip| ip.to_string()))
         .bind(user_agent)
         .bind(sqlx::types::Json(metadata))
@@ -261,18 +261,41 @@ impl IdentityRepository for PgIdentityRepository {
     #[tracing::instrument(name = "db.find_login", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn find_login(&self, email: &str) -> Result<Option<LoginRecord>> {
         let _timer = METRICS.db_operation("find_login");
-        sqlx::query("SELECT id,password_hash FROM users WHERE lower(email)=$1 AND status='active'")
-            .bind(email)
-            .fetch_optional(&mut *acquire(&self.pool).await.map_err(db)?)
-            .await
-            .map_err(db)?
-            .map(|row| {
-                Ok(LoginRecord {
-                    id: row.try_get("id").map_err(db)?,
-                    password_hash: row.try_get("password_hash").map_err(db)?,
-                })
+        sqlx::query(
+            "SELECT id,password_hash,status='active' AS active FROM users WHERE lower(email)=$1",
+        )
+        .bind(email)
+        .fetch_optional(&mut *acquire(&self.pool).await.map_err(db)?)
+        .await
+        .map_err(db)?
+        .map(|row| {
+            Ok(LoginRecord {
+                id: row.try_get("id").map_err(db)?,
+                password_hash: row.try_get("password_hash").map_err(db)?,
+                active: row.try_get("active").map_err(db)?,
             })
-            .transpose()
+        })
+        .transpose()
+    }
+
+    #[tracing::instrument(name = "db.record_login_failure", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn record_login_failure(
+        &self,
+        user_id: Option<Uuid>,
+        reason: LoginFailure,
+        meta: &RequestMeta,
+    ) -> Result<()> {
+        let _timer = METRICS.db_operation("record_login_failure");
+        let mut connection = acquire(&self.pool).await.map_err(db)?;
+        audit(
+            &mut connection,
+            None,
+            "auth.login_failed",
+            user_id,
+            meta,
+            serde_json::json!({"reason": reason.as_str()}),
+        )
+        .await
     }
 
     #[tracing::instrument(name = "db.create_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
