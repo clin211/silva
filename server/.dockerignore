@@ -1,0 +1,8 @@
+target/
+.env
+.env.*
+!.env.example
+.git/
+.DS_Store
+docs/
+README.md

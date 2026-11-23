@@ -1,0 +1,350 @@
+{
+  "uid": "silva-worker",
+  "title": "Silva · Worker",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "silva"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "总览",
+      "type": "link",
+      "url": "/d/silva-overview",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "API",
+      "type": "link",
+      "url": "/d/silva-api",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "数据库",
+      "type": "link",
+      "url": "/d/silva-db",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Worker",
+      "type": "link",
+      "url": "/d/silva-worker",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "发布与采集",
+      "type": "link",
+      "url": "/d/silva-business",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "告警规则",
+      "type": "link",
+      "url": "/alerting/list",
+      "targetBlank": false
+    },
+    {
+      "title": "告警静默",
+      "type": "link",
+      "url": "/alerting/silences?alertmanager=Alertmanager",
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "查看服务日志",
+      "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "title": "距上次成功秒数",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "time() - silva_worker_last_success_timestamp_seconds{job=\"silva-worker\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "维护周期",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_worker_interval_seconds{job=\"silva-worker\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "维护执行次数",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by(outcome)(increase(silva_worker_runs_total{job=\"silva-worker\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "维护 P95",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95,sum by(outcome,le)(rate(silva_worker_run_duration_seconds_bucket{job=\"silva-worker\"}[$__rate_interval])))",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "已清理会话",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_worker_deleted_sessions_total{job=\"silva-worker\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "指标监听可抓取",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"silva-worker\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "告警",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "silva-prometheus"
+        },
+        "enable": true,
+        "expr": "ALERTS{alertstate=\"firing\"}",
+        "titleFormat": "{{alertname}}",
+        "iconColor": "red"
+      }
+    ]
+  }
+}

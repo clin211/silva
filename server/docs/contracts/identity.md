@@ -1,0 +1,93 @@
+# Identity / RBAC 契约
+
+来源：`docs/01-product.md` §3；`docs/03-backend-technical.md` §3、§5、§9。此契约固定第一里程碑认证与账户管理的验收边界。业务内容、媒体与发布用例在对应里程碑实现。
+
+## 会话和输入边界
+
+- 密码使用 Argon2id；数据库不保存明文密码。
+- Session Cookie 固定要求 `HttpOnly; Secure; SameSite=Lax; Path=/`，host-only，不设置 `Domain`。数据库只保存会话 token hash。
+- `POST /api/v1/admin/auth/login` 是无需既有会话的入口，只接受 JSON 和配置的**精确同源 Origin**。缺失、不匹配 Origin 均拒绝；不启用管理 API 跨域凭证。
+- 其他管理写请求必须同时校验精确 Origin 和当前会话绑定的 `X-CSRF-Token`。CSRF token 由登录和 `GET /api/v1/admin/auth/me` 返回；另一个会话的 token 不可复用。
+- `POST /api/v1/admin/auth/logout` 撤销当前会话，成功 204，无响应体。
+- `GET /api/v1/admin/auth/me` 返回当前用户、当前权限、`csrf_token`。
+- 无有效会话返回 401；无权限或 CSRF 检查失败返回 403。
+- 停用账户立即撤销其全部会话；每次授权使用当前账户状态与当前角色，不能依赖登录时权限快照。
+- 认证响应与非公开预览使用 `Cache-Control: no-store`。登录和 API 均需限流，管理操作需审计，不记录密码、原始 session token 或敏感凭据。
+
+## 角色与归属
+
+| 角色 | 权限边界 |
+| --- | --- |
+| Visitor | 无需登录，只读已上线公开内容。 |
+| Author | 创建文章、读取和编辑自己的文章及修订、上传和引用自己的已校验媒体、提交审核。不能审核、发布或取消发布。 |
+| Editor | 管理所有文章及媒体、审核指定修订、发布/取消发布、维护分类标签及资源目录、调整 AI 展示、查看相关任务。 |
+| Admin | 包含 Editor 权限；额外管理账户、分配内置角色、触发采集、重试发布、查看审计及系统状态。 |
+
+- 即使只有一个管理员，也保留 `users`、`roles`、`permissions`、`user_roles`、`role_permissions`。
+- 允许 Editor/Admin 审核自己编写的修订，但必须显式审核；不能隐式跳过审批。
+- 服务端逐管理用例执行 RBAC 和资源归属授权；包含嵌套修订读取、上传确认、媒体引用。隐藏前端按钮不算授权。
+- 只提供内置角色分配、账户创建与停用，不提供公开注册或自定义角色编辑。
+
+## 第一里程碑管理端点
+
+以下路径相对于 `/api/v1/admin`：
+
+| 方法 | 路径 | 授权及结果 |
+| --- | --- | --- |
+| POST | `/auth/login` | JSON + 精确 Origin；返回会话 Cookie 与 CSRF token。 |
+| POST | `/auth/logout` | 有效会话 + Origin + CSRF；204。 |
+| GET | `/auth/me` | 有效会话；用户、权限、CSRF token。 |
+| GET, POST | `/users` | Admin；分页列表、创建账户。 |
+| PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
+| GET | `/roles` | Admin；内置角色。 |
+| GET | `/audit-logs` | Admin；审计记录。 |
+| GET | `/system/health` | Admin；系统健康状态。 |
+
+以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
+
+- Cookie 名称：`__Host-silva_session`。
+- 登录输入：`{email,password}`；登录和 `auth/me` 返回 `{user,permissions,csrf_token}`。
+- 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
+- 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...]}`，200 直接返回 User。角色必须是非空、无重复的内置键数组。
+- 新账户密码为 12..1024 UTF-8 字节；用户邮箱去首尾空白后转小写，最大 254 字节；显示名去空白后非空，最大 100 字节。
+- Origin 失败：403 `origin_rejected`；CSRF 失败：403 `csrf_rejected`；凭据失败：401 `invalid_credentials`；无会话：401 `unauthorized`；无权限：403 `forbidden`。
+- 非 JSON：415 `unsupported_media_type`；JSON 解码或字段校验失败：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。
+- 账户邮箱重复：409 `email_in_use`。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
+- API 默认每 IP 每分钟 600 次，登录额外每 IP 每分钟 10 次，可通过环境变量配置；超额返回 429 `rate_limited` 及 `Retry-After: 60`。
+- User 为 `{id,email,display_name,status,roles,created_at,updated_at}`，不含 password/hash。角色列表直接返回 `[{id,key,name,permissions}]`。
+- `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
+
+## UUIDv7 和响应契约
+
+- 实体 ID、外键实体引用、Outbox ID、审计 ID、服务端 `request_id` 均为 UUIDv7，由 `shared::ids` / `Uuid::now_v7()` 统一生成；测试和种子同样遵守。
+- API 在路径、查询及 JSON 接受标准连字符 UUID 字符串。格式、版本位或变体位不符统一返回 **422 `invalid_uuid_v7`**。
+- OpenAPI 对业务 ID 定义 `type: string`、`format: uuid` 和同时约束版本位、变体位的 `pattern`。
+- DB 原生 uuid 类型外，使用 `is_uuid_v7()` 校验实体主键和无法经外键保证的引用。普通/复合外键继承已校验主键约束。
+- 外部来源原生 ID、slug、角色键、generation、revision_no、会话/租约 token 不属于实体 ID。
+- 成功直接返回资源或分页对象；分页默认 `page=1`、`per_page=20`、最大 100，稳定 ID 打破排序同分。
+
+```json
+{"data": [], "pagination": {"page": 1, "per_page": 20, "total": 0, "total_pages": 0}}
+```
+
+- 错误统一字段为 `error.code`、`error.message`、`error.details`、`error.request_id`。示例：
+
+```json
+{"error":{"code":"validation_error","message":"Request validation failed","details":[],"request_id":"017f22e2-79b0-7cc3-98c4-dc0c0c07398f"}}
+```
+
+- 状态码含义：401 无有效会话；403 无权限/CSRF 失败；409 当前状态或版本冲突；422 字段输入无效；429 限流；500 内部失败；503 依赖/站点未就绪。
+- 公开接口未来只读 `active_generation` 公开投影；尚未上线时返回 503 `site_not_ready`，不得假装空数据。
+
+## 测试锚点
+
+使用真实临时 PostgreSQL 执行全部迁移后测试：
+
+1. 登录成功 Cookie 属性、CSRF token、`auth/me`、登出 204 和登出后 401；DB 只含 token hash。
+2. 缺失/错误 Origin、非 JSON 登录、缺失/错误/其他会话 CSRF token 均被拒绝，错误响应统一且包含合法 UUIDv7 request_id。
+3. 不存在用户、错误密码、无效/过期会话不获得登录或授权；密码不能明文保存。
+4. Author 无法读取账户/角色/审计/系统信息或创建账户；当前角色变更立即影响授权。
+5. Admin 创建账户、内置角色分配、停用账户后所有既有会话立即失效；审计可查且不含凭据。
+6. API 对 UUIDv4、错误变体、非连字符 UUID 返回 422 `invalid_uuid_v7`；真实 UUIDv7 可进入资源查询。
+7. 账户/审计列表默认分页、分页上限、无效分页与无效 JSON，路由不存在、方法不允许等错误保持统一错误结构。
+8. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。

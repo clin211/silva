@@ -1,0 +1,46 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: silva-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+      manageAlerts: true
+      alertmanagerUid: silva-alertmanager
+  - name: Alertmanager
+    uid: silva-alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false
+  - name: Loki
+    uid: silva-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: silva-tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: 查看链路
+  - name: Tempo
+    uid: silva-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: silva-loki
+        spanStartTimeShift: -1m
+        spanEndTimeShift: 1m
+        tags: [{key: service.name, value: service_name}]
+        filterByTraceID: true
+        filterBySpanID: false

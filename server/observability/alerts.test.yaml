@@ -1,0 +1,88 @@
+rule_files: [/etc/prometheus/alerts.yaml]
+evaluation_interval: 15s
+tests:
+  - name: 低流量错误不会触发错误率告警
+    interval: 30s
+    input_series:
+      - series: silva_http_requests_total{job="silva-api",traffic="application",status="500"}
+        values: 0+1x30
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaHighErrorRate",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+  - name: 健康探测错误不计入业务错误率
+    interval: 30s
+    input_series:
+      - series: silva_http_requests_total{job="silva-api",traffic="operations",status="500"}
+        values: 0+100x30
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaHighErrorRate",alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+  - name: 持续业务错误触发告警
+    interval: 30s
+    input_series:
+      - series: silva_http_requests_total{job="silva-api",traffic="application",status="500"}
+        values: 0+20x30
+      - series: silva_http_requests_total{job="silva-api",traffic="application",status="200"}
+        values: 0+80x30
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaHighErrorRate",alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaHighErrorRate",alertstate="firing",severity="critical"}'
+            value: 1
+  - name: Worker 启动宽限后检测多个实例停滞
+    interval: 30s
+    input_series:
+      - series: silva_worker_last_success_timestamp_seconds{job="silva-worker",instance="a"}
+        values: 0+0x20
+      - series: silva_process_start_time_seconds{job="silva-worker",instance="a"}
+        values: 0+0x20
+      - series: silva_worker_interval_seconds{job="silva-worker",instance="a"}
+        values: 60+0x20
+      - series: up{job="silva-worker",instance="a"}
+        values: 1+0x20
+      - series: silva_worker_last_success_timestamp_seconds{job="silva-worker",instance="b"}
+        values: 0+0x20
+      - series: silva_process_start_time_seconds{job="silva-worker",instance="b"}
+        values: 0+0x20
+      - series: silva_worker_interval_seconds{job="silva-worker",instance="b"}
+        values: 60+0x20
+      - series: up{job="silva-worker",instance="b"}
+        values: 1+0x20
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaWorkerStalled",alertstate="firing"}
+        eval_time: 2m
+        exp_samples: []
+      - expr: ALERTS{alertname="SilvaWorkerStalled",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaWorkerStalled",alertstate="firing",severity="critical",job="silva-worker",instance="a"}'
+            value: 1
+          - labels: '{__name__="ALERTS",alertname="SilvaWorkerStalled",alertstate="firing",severity="critical",job="silva-worker",instance="b"}'
+            value: 1
+  - name: 业务状态过期时不使用旧值触发发布告警
+    interval: 30s
+    input_series:
+      - series: silva_publish_delayed{job="silva-api",instance="a"}
+        values: 1+0x20
+      - series: silva_business_metrics_up{job="silva-api",instance="a"}
+        values: 0+0x20
+      - series: silva_business_metrics_last_success_timestamp_seconds{job="silva-api",instance="a"}
+        values: 0+0x20
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaPublishDelayed",alertstate="firing"}
+        eval_time: 5m
+        exp_samples: []
+  - name: 只有日志导出失败也能触发告警
+    interval: 30s
+    input_series:
+      - series: otelcol_exporter_send_failed_log_records{exporter="otlp_http/loki"}
+        values: 0+10x30
+    promql_expr_test:
+      - expr: ALERTS{alertname="SilvaTelemetryExportFailed",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaTelemetryExportFailed",alertstate="firing",severity="warning",exporter="otlp_http/loki"}'
+            value: 1

@@ -1,0 +1,1936 @@
+{
+    "openapi": "3.1.0",
+    "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+    "info": {
+        "title": "Silva 后台 API",
+        "version": "0.1.0",
+        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再使用返回的 CSRF Token 进行写操作。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。"
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "浏览器使用当前同源入口；写操作的 Origin 必须与 SILVA_ADMIN_ORIGIN 精确一致。"
+        }
+    ],
+    "security": [
+        {
+            "SessionCookie": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "身份认证",
+            "description": "身份认证、会话和当前权限"
+        },
+        {
+            "name": "账户管理",
+            "description": "账户管理、内置角色与审计"
+        },
+        {
+            "name": "运维监控",
+            "description": "健康检查、监控与接口文档"
+        }
+    ],
+    "paths": {
+        "/health/live": {
+            "get": {
+                "operationId": "liveness",
+                "summary": "检查进程存活",
+                "tags": ["运维监控"],
+                "responses": {
+                    "200": {
+                        "description": "API 进程正在运行。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Liveness"
+                                },
+                                "example": {
+                                    "status": "ok"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/health/ready": {
+            "get": {
+                "operationId": "readiness",
+                "summary": "检查数据库就绪",
+                "tags": ["运维监控"],
+                "responses": {
+                    "200": {
+                        "description": "数据库连接正常。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SystemHealth"
+                                },
+                                "example": {
+                                    "status": "ok",
+                                    "database": "up"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/Unavailable"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/metrics": {
+            "get": {
+                "operationId": "metrics",
+                "summary": "读取 Prometheus 运维指标",
+                "tags": ["运维监控"],
+                "responses": {
+                    "200": {
+                        "description": "Prometheus 文本指标，仅限运维网络访问。",
+                        "content": {
+                            "text/plain": {
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "example": "# HELP silva_http_requests_total HTTP 请求计数\n# TYPE silva_http_requests_total counter\n"
+                            }
+                        },
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "security": [],
+                "description": "部署入口应限制此路径的访问。指标不包含密码或会话令牌；数据库故障时仍可读取。业务状态每 15 秒采样，读取队列值前先检查 silva_business_metrics_up 和最后成功时间。"
+            }
+        },
+        "/openapi.json": {
+            "get": {
+                "operationId": "openApi",
+                "summary": "下载当前 OpenAPI 契约",
+                "tags": ["运维监控"],
+                "responses": {
+                    "200": {
+                        "description": "当前运行版本的 OpenAPI 3.1 文档。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/api/v1/admin/auth/login": {
+            "post": {
+                "operationId": "login",
+                "summary": "登录并创建后台会话",
+                "tags": ["身份认证"],
+                "responses": {
+                    "200": {
+                        "description": "认证成功；响应正文包含与当前会话绑定的 CSRF Token。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "Set-Cookie": {
+                                "description": "会话 Cookie 名为 __Host-silva_session，固定为 HttpOnly、Secure、SameSite=Lax、Path=/，没有 Domain。数据库仅保存令牌哈希；有效期由 SILVA_SESSION_TTL_SECONDS 决定。",
+                                "schema": {
+                                    "type": "string"
+                                },
+                                "example": "__Host-silva_session=<opaque-token>; Path=/; HttpOnly; Secure; SameSite=Lax"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                },
+                                "example": {
+                                    "user": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": ["author"],
+                                        "created_at": "2026-11-21T08:00:00Z",
+                                        "updated_at": "2026-11-21T08:00:00Z"
+                                    },
+                                    "permissions": [
+                                        "posts.create",
+                                        "posts.read_own",
+                                        "posts.edit_own",
+                                        "posts.submit_own",
+                                        "media.manage_own",
+                                        "jobs.read_own"
+                                    ],
+                                    "csrf_token": "example-session-bound-csrf-token"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "415": {
+                        "description": "Content-Type 必须为 application/json。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["unsupported_media_type"]
+                    },
+                    "422": {
+                        "description": "JSON 格式错误、字段类型不兼容或输入不符合约束。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Invalid JSON request",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["validation_error"]
+                    },
+                    "401": {
+                        "description": "账户不存在、已停用或密码错误，均返回相同错误。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "invalid_credentials",
+                                        "message": "Invalid email or password",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["invalid_credentials"]
+                    },
+                    "403": {
+                        "description": "缺少 Origin 或与 SILVA_ADMIN_ORIGIN 不完全一致。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "origin_rejected",
+                                        "message": "Origin must match the configured admin origin",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["origin_rejected"]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["payload_too_large"]
+                    }
+                },
+                "security": [],
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Origin"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginInput"
+                            },
+                            "example": {
+                                "email": "admin@example.com",
+                                "password": "example-password-only"
+                            }
+                        }
+                    }
+                },
+                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从正文读取 csrf_token。无公开注册接口；登录同时受 API 限流和登录限流约束。"
+            }
+        },
+        "/api/v1/admin/auth/logout": {
+            "post": {
+                "operationId": "logout",
+                "summary": "退出并撤销当前会话",
+                "tags": ["身份认证"],
+                "responses": {
+                    "204": {
+                        "description": "会话已撤销，无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "Set-Cookie": {
+                                "description": "使用相同安全属性使 __Host-silva_session Cookie 过期。",
+                                "schema": {
+                                    "type": "string"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                },
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Origin"
+                    },
+                    {
+                        "$ref": "#/components/parameters/CsrfToken"
+                    }
+                ],
+                "description": "要求当前会话 Cookie、精确匹配的 Origin 及该会话绑定的 CSRF Token。无需请求正文。"
+            }
+        },
+        "/api/v1/admin/auth/me": {
+            "get": {
+                "operationId": "me",
+                "summary": "读取当前账户、权限和 CSRF Token",
+                "tags": ["身份认证"],
+                "responses": {
+                    "200": {
+                        "description": "返回当前账户状态与当前角色权限，每次读取最新数据。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthResponse"
+                                },
+                                "example": {
+                                    "user": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": ["author"],
+                                        "created_at": "2026-11-21T08:00:00Z",
+                                        "updated_at": "2026-11-21T08:00:00Z"
+                                    },
+                                    "permissions": [
+                                        "posts.create",
+                                        "posts.read_own",
+                                        "posts.edit_own",
+                                        "posts.submit_own",
+                                        "media.manage_own",
+                                        "jobs.read_own"
+                                    ],
+                                    "csrf_token": "example-session-bound-csrf-token"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "operationId": "listUsers",
+                "summary": "分页查询账户",
+                "tags": ["账户管理"],
+                "responses": {
+                    "200": {
+                        "description": "账户按 created_at DESC、id DESC 排序。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "email": "author@example.com",
+                                            "display_name": "示例作者",
+                                            "status": "active",
+                                            "roles": ["author"],
+                                            "created_at": "2026-11-21T08:00:00Z",
+                                            "updated_at": "2026-11-21T08:00:00Z"
+                                        }
+                                    ],
+                                    "pagination": {
+                                        "page": 1,
+                                        "per_page": 20,
+                                        "total": 1,
+                                        "total_pages": 1
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "分页参数无效。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Invalid JSON request",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["validation_error"]
+                    }
+                },
+                "x-required-permission": "users.manage",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Page"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PerPage"
+                    }
+                ],
+                "description": " 需要权限 `users.manage`。"
+            },
+            "post": {
+                "operationId": "createUser",
+                "summary": "创建账户并分配内置角色",
+                "tags": ["账户管理"],
+                "responses": {
+                    "201": {
+                        "description": "账户创建成功，不返回密码及其哈希。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                },
+                                "example": {
+                                    "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                    "email": "author@example.com",
+                                    "display_name": "示例作者",
+                                    "status": "active",
+                                    "roles": ["author"],
+                                    "created_at": "2026-11-21T08:00:00Z",
+                                    "updated_at": "2026-11-21T08:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "415": {
+                        "description": "Content-Type 必须为 application/json。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["unsupported_media_type"]
+                    },
+                    "422": {
+                        "description": "JSON 格式错误、字段类型不兼容或输入不符合约束。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Invalid JSON request",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["validation_error"]
+                    },
+                    "409": {
+                        "description": "规范化后的邮箱已被其他账户使用。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "email_in_use",
+                                        "message": "email_in_use",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["email_in_use"]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["payload_too_large"]
+                    }
+                },
+                "x-required-permission": "users.manage",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Origin"
+                    },
+                    {
+                        "$ref": "#/components/parameters/CsrfToken"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateUserInput"
+                            },
+                            "example": {
+                                "email": "author@example.com",
+                                "display_name": "示例作者",
+                                "password": "example-password-only",
+                                "roles": ["author"]
+                            }
+                        }
+                    }
+                },
+                "description": " 需要权限 `users.manage`。"
+            }
+        },
+        "/api/v1/admin/users/{id}": {
+            "patch": {
+                "operationId": "updateUser",
+                "summary": "更新账户资料、状态或角色",
+                "tags": ["账户管理"],
+                "responses": {
+                    "200": {
+                        "description": "返回更新后的账户。停用账户会原子撤销其全部会话。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                },
+                                "example": {
+                                    "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                    "email": "author@example.com",
+                                    "display_name": "示例作者",
+                                    "status": "active",
+                                    "roles": ["author"],
+                                    "created_at": "2026-11-21T08:00:00Z",
+                                    "updated_at": "2026-11-21T08:00:00Z"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "415": {
+                        "description": "Content-Type 必须为 application/json。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["unsupported_media_type"]
+                    },
+                    "422": {
+                        "description": "UUIDv7 或输入字段无效。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Invalid JSON request",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["invalid_uuid_v7", "validation_error"]
+                    },
+                    "404": {
+                        "description": "账户不存在。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["not_found"]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["payload_too_large"]
+                    }
+                },
+                "x-required-permission": "users.manage",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/UserId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/Origin"
+                    },
+                    {
+                        "$ref": "#/components/parameters/CsrfToken"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateUserInput"
+                            },
+                            "example": {
+                                "display_name": "新的显示名称",
+                                "status": "active",
+                                "roles": ["editor"]
+                            }
+                        }
+                    }
+                },
+                "description": "仅更新已提供的非 null 字段；省略或 null 保持原值。roles 会替换整组角色。后续请求按当前账户状态与角色授权，不使用登录时的权限快照。 需要权限 `users.manage`。"
+            }
+        },
+        "/api/v1/admin/roles": {
+            "get": {
+                "operationId": "listRoles",
+                "summary": "查询内置角色及其权限",
+                "tags": ["账户管理"],
+                "responses": {
+                    "200": {
+                        "description": "内置 author、editor 和 admin 角色。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Role"
+                                    }
+                                },
+                                "example": [
+                                    {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "key": "author",
+                                        "name": "author",
+                                        "permissions": [
+                                            "posts.create",
+                                            "posts.read_own",
+                                            "posts.edit_own",
+                                            "posts.submit_own",
+                                            "media.manage_own",
+                                            "jobs.read_own"
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                },
+                "x-required-permission": "roles.read",
+                "description": " 需要权限 `roles.read`。"
+            }
+        },
+        "/api/v1/admin/audit-logs": {
+            "get": {
+                "operationId": "listAuditLogs",
+                "summary": "分页查询后台审计日志",
+                "tags": ["账户管理"],
+                "responses": {
+                    "200": {
+                        "description": "审计记录按 created_at DESC、id DESC 排序，不包含凭据内容。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditLogPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "action": "auth.login",
+                                            "resource_type": "user",
+                                            "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "created_at": "2026-11-21T08:00:00Z"
+                                        }
+                                    ],
+                                    "pagination": {
+                                        "page": 1,
+                                        "per_page": 20,
+                                        "total": 1,
+                                        "total_pages": 1
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "分页参数无效。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Invalid JSON request",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": ["validation_error"]
+                    }
+                },
+                "x-required-permission": "audit.read",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Page"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PerPage"
+                    }
+                ],
+                "description": " 需要权限 `audit.read`。"
+            }
+        },
+        "/api/v1/admin/system/health": {
+            "get": {
+                "operationId": "systemHealth",
+                "summary": "读取受权限保护的系统健康状态",
+                "tags": ["运维监控"],
+                "responses": {
+                    "200": {
+                        "description": "API 与数据库运行正常。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SystemHealth"
+                                },
+                                "example": {
+                                    "status": "ok",
+                                    "database": "up"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/Unavailable"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                },
+                "x-required-permission": "system.read",
+                "description": " 需要权限 `system.read`。"
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "SessionCookie": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "__Host-silva_session",
+                "description": "使用 HttpOnly、Secure、SameSite=Lax、Path=/ 且无 Domain 的会话 Cookie。服务端仅保存令牌哈希，不接受 Authorization Bearer 认证。浏览器自动管理 Cookie，无需在文档认证面板手工填写。"
+            }
+        },
+        "headers": {
+            "RequestId": {
+                "description": "服务端生成的 UUIDv7 请求标识，不信任调用方传入的标识。",
+                "schema": {
+                    "$ref": "#/components/schemas/UuidV7"
+                }
+            },
+            "TraceId": {
+                "description": "W3C trace ID，来自有效 traceparent 或由服务端生成，用于链路查询，不是实体 ID 或 UUID。",
+                "schema": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                },
+                "example": "12345678901234567890123456789012"
+            }
+        },
+        "parameters": {
+            "Origin": {
+                "name": "Origin",
+                "in": "header",
+                "required": true,
+                "description": "登录及所有管理写操作必填。必须与 SILVA_ADMIN_ORIGIN 的协议、主机和端口精确一致；缺失、尾部斜杠或其他 Origin 均拒绝。浏览器自动设置，手工修改请求头不能绕过同源要求。",
+                "schema": {
+                    "type": "string"
+                },
+                "example": "http://localhost:5173"
+            },
+            "CsrfToken": {
+                "name": "X-CSRF-Token",
+                "in": "header",
+                "required": true,
+                "description": "从当前会话的登录或 auth/me 响应取得。登录以外的管理写操作必填，不接受其他会话的 Token。",
+                "schema": {
+                    "type": "string"
+                },
+                "example": "example-session-bound-csrf-token"
+            },
+            "UserId": {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "description": "服务端分配的账户 UUIDv7；非标准格式、v4 或无效变体位返回 422 invalid_uuid_v7。",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "Page": {
+                "name": "page",
+                "in": "query",
+                "required": false,
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4294967295,
+                    "default": 1
+                },
+                "description": "页码，从 1 开始，默认 1。"
+            },
+            "PerPage": {
+                "name": "per_page",
+                "in": "query",
+                "required": false,
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 20
+                },
+                "description": "每页条数，默认 20，最多 100。"
+            }
+        },
+        "responses": {
+            "Error": {
+                "description": "统一 JSON 错误结构。常见状态为 400、401、403、404、405、409、413、415、422、429、500 和 503。204 没有正文。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "internal_error",
+                                "message": "Internal server error",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                }
+            },
+            "Unauthorized": {
+                "description": "会话缺失、无效、过期、已撤销或账户已停用。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "unauthorized",
+                                "message": "Authentication required",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                },
+                "x-error-codes": ["unauthorized"]
+            },
+            "Forbidden": {
+                "description": "当前权限不足、Origin 被拒绝，或会话绑定的 CSRF Token 缺失或无效。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "forbidden",
+                                "message": "Permission denied",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                },
+                "x-error-codes": [
+                    "forbidden",
+                    "origin_rejected",
+                    "csrf_rejected"
+                ]
+            },
+            "RateLimited": {
+                "description": "超过 API 或登录请求限额。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "Retry-After": {
+                        "description": "固定窗口限流的重试等待秒数。",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "example": 60
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "rate_limited",
+                                "message": "Request limit exceeded",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                },
+                "x-error-codes": ["rate_limited"]
+            },
+            "Unavailable": {
+                "description": "必要的服务依赖不可用。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "service_unavailable",
+                                "message": "Service dependency unavailable",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                },
+                "x-error-codes": ["service_unavailable"]
+            }
+        },
+        "schemas": {
+            "UuidV7": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                "description": "带连字符且具有 RFC 变体位的 RFC 9562 UUIDv7，由服务端通过 silva_shared::ids 生成。",
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "NullableUuidV7": {
+                "anyOf": [
+                    {
+                        "$ref": "#/components/schemas/UuidV7"
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "RoleKey": {
+                "type": "string",
+                "enum": ["author", "editor", "admin"]
+            },
+            "RoleAssignments": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/components/schemas/RoleKey"
+                },
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "description": "内置角色键组成的集合，至少一个且不能重复。"
+            },
+            "Permission": {
+                "type": "string",
+                "description": "服务端权限键。Editor 包含 Author 权限，Admin 包含 Editor 权限。"
+            },
+            "AccountStatus": {
+                "type": "string",
+                "enum": ["active", "disabled"]
+            },
+            "DisplayName": {
+                "type": "string",
+                "description": "去除首尾空白后不能为空，最多 100 个 UTF-8 字节。",
+                "x-min-bytes": 1,
+                "x-max-bytes": 100
+            },
+            "LoginInput": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "description": "查找前去除首尾空白并转为小写。过长输入按凭据错误处理。",
+                        "example": "admin@example.com"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password",
+                        "writeOnly": true,
+                        "description": "最多 1024 个 UTF-8 字节。账户不存在、已停用或密码错误均返回相同凭据错误。"
+                    }
+                },
+                "required": ["email", "password"],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "email": "admin@example.com",
+                        "password": "example-password-only"
+                    }
+                ]
+            },
+            "CreateUserInput": {
+                "type": "object",
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "description": "有效非空邮箱，包含 @、不含空白，最多 254 个 UTF-8 字节；存储前去除首尾空白并转为小写。",
+                        "x-max-bytes": 254,
+                        "example": "author@example.com"
+                    },
+                    "display_name": {
+                        "$ref": "#/components/schemas/DisplayName",
+                        "description": "账户显示名称。"
+                    },
+                    "password": {
+                        "type": "string",
+                        "format": "password",
+                        "writeOnly": true,
+                        "description": "12–1024 个 UTF-8 字节，使用 Argon2id 哈希保存。",
+                        "x-min-bytes": 12,
+                        "x-max-bytes": 1024
+                    },
+                    "roles": {
+                        "$ref": "#/components/schemas/RoleAssignments",
+                        "description": "账户的内置角色键。"
+                    }
+                },
+                "required": ["email", "display_name", "password", "roles"],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "email": "author@example.com",
+                        "display_name": "示例作者",
+                        "password": "example-password-only",
+                        "roles": ["author"]
+                    }
+                ]
+            },
+            "UpdateUserInput": {
+                "type": "object",
+                "properties": {
+                    "display_name": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/DisplayName"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "省略或传 null 均保持原值。"
+                    },
+                    "status": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/AccountStatus"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "省略或传 null 均保持原值。"
+                    },
+                    "roles": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/RoleAssignments"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "省略或传 null 均保持原值。"
+                    }
+                },
+                "required": [],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "display_name": "新的显示名称",
+                        "status": "active",
+                        "roles": ["editor"]
+                    }
+                ]
+            },
+            "User": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "服务端分配的 UUIDv7 标识。"
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "账户邮箱。"
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "description": "账户显示名称。"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AccountStatus",
+                        "description": "账户状态：active 为启用，disabled 为停用。"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RoleKey"
+                        },
+                        "description": "账户的内置角色键。"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "创建时间，RFC 3339 格式。"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "最后更新时间，RFC 3339 格式。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "display_name",
+                    "status",
+                    "roles",
+                    "created_at",
+                    "updated_at"
+                ],
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "email": "author@example.com",
+                        "display_name": "示例作者",
+                        "status": "active",
+                        "roles": ["author"],
+                        "created_at": "2026-11-21T08:00:00Z",
+                        "updated_at": "2026-11-21T08:00:00Z"
+                    }
+                ]
+            },
+            "Role": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "服务端分配的 UUIDv7 标识。"
+                    },
+                    "key": {
+                        "$ref": "#/components/schemas/RoleKey",
+                        "description": "内置角色键。"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "角色名称。"
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Permission"
+                        },
+                        "description": "当前角色授予的权限键。"
+                    }
+                },
+                "required": ["id", "key", "name", "permissions"],
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "key": "author",
+                        "name": "author",
+                        "permissions": [
+                            "posts.create",
+                            "posts.read_own",
+                            "posts.edit_own",
+                            "posts.submit_own",
+                            "media.manage_own",
+                            "jobs.read_own"
+                        ]
+                    }
+                ]
+            },
+            "AuditLog": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "服务端分配的 UUIDv7 标识。"
+                    },
+                    "actor_user_id": {
+                        "$ref": "#/components/schemas/NullableUuidV7",
+                        "description": "执行操作的账户 ID；无关联账户时为 null。"
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "审计操作名称。"
+                    },
+                    "resource_type": {
+                        "type": "string",
+                        "description": "关联资源类型。"
+                    },
+                    "resource_id": {
+                        "$ref": "#/components/schemas/NullableUuidV7",
+                        "description": "关联资源 ID；无关联资源时为 null。"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "创建时间，RFC 3339 格式。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "actor_user_id",
+                    "action",
+                    "resource_type",
+                    "resource_id",
+                    "created_at"
+                ],
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "action": "auth.login",
+                        "resource_type": "user",
+                        "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "created_at": "2026-11-21T08:00:00Z"
+                    }
+                ]
+            },
+            "AuthResponse": {
+                "type": "object",
+                "properties": {
+                    "user": {
+                        "$ref": "#/components/schemas/User",
+                        "description": "当前登录账户。"
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Permission"
+                        },
+                        "description": "当前角色授予的权限键。"
+                    },
+                    "csrf_token": {
+                        "type": "string",
+                        "description": "绑定当前会话的不透明令牌，管理写操作通过 X-CSRF-Token 发送。"
+                    }
+                },
+                "required": ["user", "permissions", "csrf_token"],
+                "examples": [
+                    {
+                        "user": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "author@example.com",
+                            "display_name": "示例作者",
+                            "status": "active",
+                            "roles": ["author"],
+                            "created_at": "2026-11-21T08:00:00Z",
+                            "updated_at": "2026-11-21T08:00:00Z"
+                        },
+                        "permissions": [
+                            "posts.create",
+                            "posts.read_own",
+                            "posts.edit_own",
+                            "posts.submit_own",
+                            "media.manage_own",
+                            "jobs.read_own"
+                        ],
+                        "csrf_token": "example-session-bound-csrf-token"
+                    }
+                ]
+            },
+            "Pagination": {
+                "type": "object",
+                "properties": {
+                    "page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "当前页码，从 1 开始。"
+                    },
+                    "per_page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "每页条数。"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "format": "int64",
+                        "minimum": 0,
+                        "description": "匹配的数据总数。"
+                    },
+                    "total_pages": {
+                        "type": "integer",
+                        "format": "int64",
+                        "minimum": 0,
+                        "description": "总页数；无数据时为 0。"
+                    }
+                },
+                "required": ["page", "per_page", "total", "total_pages"],
+                "examples": [
+                    {
+                        "page": 1,
+                        "per_page": 20,
+                        "total": 1,
+                        "total_pages": 1
+                    }
+                ]
+            },
+            "UserPage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/User"
+                        },
+                        "description": "当前页的数据。"
+                    },
+                    "pagination": {
+                        "$ref": "#/components/schemas/Pagination",
+                        "description": "分页统计。"
+                    }
+                },
+                "required": ["data", "pagination"],
+                "examples": [
+                    {
+                        "data": [
+                            {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "email": "author@example.com",
+                                "display_name": "示例作者",
+                                "status": "active",
+                                "roles": ["author"],
+                                "created_at": "2026-11-21T08:00:00Z",
+                                "updated_at": "2026-11-21T08:00:00Z"
+                            }
+                        ],
+                        "pagination": {
+                            "page": 1,
+                            "per_page": 20,
+                            "total": 1,
+                            "total_pages": 1
+                        }
+                    }
+                ]
+            },
+            "AuditLogPage": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AuditLog"
+                        },
+                        "description": "当前页的数据。"
+                    },
+                    "pagination": {
+                        "$ref": "#/components/schemas/Pagination",
+                        "description": "分页统计。"
+                    }
+                },
+                "required": ["data", "pagination"],
+                "examples": [
+                    {
+                        "data": [
+                            {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "action": "auth.login",
+                                "resource_type": "user",
+                                "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "created_at": "2026-11-21T08:00:00Z"
+                            }
+                        ],
+                        "pagination": {
+                            "page": 1,
+                            "per_page": 20,
+                            "total": 1,
+                            "total_pages": 1
+                        }
+                    }
+                ]
+            },
+            "Liveness": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "const": "ok",
+                        "description": "账户状态：active 为启用，disabled 为停用。"
+                    }
+                },
+                "required": ["status"],
+                "examples": [
+                    {
+                        "status": "ok"
+                    }
+                ]
+            },
+            "SystemHealth": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "const": "ok",
+                        "description": "账户状态：active 为启用，disabled 为停用。"
+                    },
+                    "database": {
+                        "type": "string",
+                        "const": "up"
+                    }
+                },
+                "required": ["status", "database"],
+                "examples": [
+                    {
+                        "status": "ok",
+                        "database": "up"
+                    }
+                ]
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "稳定的机器可读错误码，用于客户端判断错误类型。"
+                            },
+                            "message": {
+                                "type": "string"
+                            },
+                            "details": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "request_id": {
+                                "$ref": "#/components/schemas/UuidV7"
+                            }
+                        },
+                        "required": ["code", "message", "details", "request_id"]
+                    }
+                },
+                "required": ["error"],
+                "examples": [
+                    {
+                        "error": {
+                            "code": "unauthorized",
+                            "message": "Authentication required",
+                            "details": [],
+                            "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}

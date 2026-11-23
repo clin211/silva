@@ -1,0 +1,1045 @@
+{
+  "uid": "silva-overview",
+  "title": "Silva · 总览",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "silva"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "总览",
+      "type": "link",
+      "url": "/d/silva-overview",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "API",
+      "type": "link",
+      "url": "/d/silva-api",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "数据库",
+      "type": "link",
+      "url": "/d/silva-db",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Worker",
+      "type": "link",
+      "url": "/d/silva-worker",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "发布与采集",
+      "type": "link",
+      "url": "/d/silva-business",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "告警规则",
+      "type": "link",
+      "url": "/alerting/list",
+      "targetBlank": false
+    },
+    {
+      "title": "告警静默",
+      "type": "link",
+      "url": "/alerting/silences?alertmanager=Alertmanager",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "API 就绪",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "probe_success{job=\"readiness\"}",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-api?from=${__from}&to=${__to}",
+              "targetBlank": false
+            },
+            {
+              "title": "API 日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "异常",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "正常",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "PostgreSQL 连接",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "pg_up{job=\"postgres\"}",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-db?from=${__from}&to=${__to}",
+              "targetBlank": false
+            }
+          ],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "异常",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "正常",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Worker 距上次成功",
+      "type": "stat",
+      "description": "从未成功时显示无数据；结合 Worker 告警及维护周期判断是否停滞。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "time() - (silva_worker_last_success_timestamp_seconds{job=\"silva-worker\"} > 0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-worker?from=${__from}&to=${__to}",
+              "targetBlank": false
+            },
+            {
+              "title": "Worker 日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-worker%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "业务采集新鲜度",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "(silva_business_metrics_up{job=\"silva-api\"} == bool 1) * on(job,instance) (time() - silva_business_metrics_last_success_timestamp_seconds{job=\"silva-api\"} < bool 60)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-business?from=${__from}&to=${__to}",
+              "targetBlank": false
+            }
+          ],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "采集失败或过期",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "一分钟内更新",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "title": "严重告警",
+      "type": "stat",
+      "description": "仅统计 firing；无告警时须确认 Prometheus 可抓取才显示 0。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",alertname=~\"Silva.*\",severity=\"critical\"}) or (0 * max(up{job=\"prometheus\"} == 1))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "查看告警规则",
+              "url": "/alerting/list",
+              "targetBlank": false
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "警告",
+      "type": "stat",
+      "description": "仅统计 firing；无告警时须确认 Prometheus 可抓取才显示 0。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\",alertname=~\"Silva.*\",severity=\"warning\"}) or (0 * max(up{job=\"prometheus\"} == 1))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "查看告警规则",
+              "url": "/alerting/list",
+              "targetBlank": false
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "业务请求 / 秒",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(silva_http_requests_total{job=\"silva-api\",traffic=\"application\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "查看该路由日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%20%7C%20route%3D%5C%22${__field.labels.route:percentencode}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            },
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-api?from=${__from}&to=${__to}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "业务 5xx 比例",
+      "type": "timeseries",
+      "description": "无业务流量时比例无定义，不补零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "(sum(rate(silva_http_requests_total{job=\"silva-api\",traffic=\"application\",status=~\"5..\"}[$__rate_interval])) or (0 * sum(rate(silva_http_requests_total{job=\"silva-api\",traffic=\"application\"}[$__rate_interval])))) / sum(rate(silva_http_requests_total{job=\"silva-api\",traffic=\"application\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-api?from=${__from}&to=${__to}",
+              "targetBlank": false
+            },
+            {
+              "title": "API 日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "各路由 P95",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (route,le) (rate(silva_http_request_duration_seconds_bucket{job=\"silva-api\",traffic=\"application\"}[$__rate_interval])))",
+          "refId": "A",
+          "legendFormat": "{{route}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "查看该路由日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%20%7C%20route%3D%5C%22${__field.labels.route:percentencode}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            },
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-api?from=${__from}&to=${__to}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "当前告警（含等待触发）",
+      "type": "table",
+      "description": "所选时间范围终点的即时状态。空表表示没有活动告警或指标不可用，请同时确认抓取状态。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "ALERTS{alertname=~\"Silva.*\",alertstate=~\"pending|firing\"}",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "查看告警规则",
+              "url": "/alerting/list",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "alertname": "告警",
+              "severity": "级别",
+              "alertstate": "状态",
+              "job": "服务",
+              "instance": "实例",
+              "Value": "值"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "监控目标抓取状态",
+      "type": "table",
+      "description": "0 为抓取失败；目标从配置中消失时不会出现，需结合 SilvaTargetsMissing 告警。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "up",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "异常",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "正常",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "alertname": "告警",
+              "severity": "级别",
+              "alertstate": "状态",
+              "job": "服务",
+              "instance": "实例",
+              "Value": "值"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "未完成任务（仅新鲜快照）",
+      "type": "timeseries",
+      "description": "采集失败或超过一分钟未更新时不展示旧值。发布、采集及 Outbox 消费尚未实现，空队列不代表业务链路就绪。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "silva_queue_pending{job=\"silva-api\"} and on(job,instance) (silva_business_metrics_up{job=\"silva-api\"} == 1) and on(job,instance) (time()-silva_business_metrics_last_success_timestamp_seconds{job=\"silva-api\"} < 60)",
+          "refId": "A",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-business?from=${__from}&to=${__to}",
+              "targetBlank": false
+            },
+            {
+              "title": "采集日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Collector 导出 / 入队失败速率",
+      "type": "timeseries",
+      "description": "单位：条或 span / 秒。无数据不能解释为零。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "sum by (exporter) (rate({job=\"otel-collector\",__name__=~\"otelcol_exporter_(send|enqueue)_failed_(spans|log_records)(_total)?\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{exporter}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Collector 队列使用率",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 20,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "otelcol_exporter_queue_size{job=\"otel-collector\"} / otelcol_exporter_queue_capacity{job=\"otel-collector\"}",
+          "refId": "A",
+          "legendFormat": "{{exporter}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "无数据",
+          "links": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "通知投递失败 / 秒",
+      "type": "timeseries",
+      "description": "接收器只记录本地通知，不能作为外部通知已送达的证据。",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(alertmanager_notifications_failed_total{job=\"alertmanager\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "告警静默",
+              "url": "/alerting/silences?alertmanager=Alertmanager",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Worker 维护周期",
+      "type": "stat",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 27,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "expr": "silva_worker_interval_seconds{job=\"silva-worker\"}",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "无数据",
+          "links": [
+            {
+              "title": "打开专项看板",
+              "url": "/d/silva-worker?from=${__from}&to=${__to}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 17,
+      "title": "排障路径与数据口径",
+      "type": "text",
+      "gridPos": {
+        "x": 16,
+        "y": 27,
+        "w": 8,
+        "h": 7
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "先确认采集与抓取状态，再定位异常路由。点击曲线数据点可查看同时间范围的服务 / 路由日志；日志的 trace_id 可打开链路。\n\n顶部卡片和告警表显示所选时间范围终点的即时值。无数据不等于正常。\n\nWorker 当前仅维护会话；发布、采集及 Outbox 消费尚未实现。通知接收器仅记录本地事件。"
+      }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "告警",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "silva-prometheus"
+        },
+        "enable": true,
+        "expr": "ALERTS{alertstate=\"firing\"}",
+        "titleFormat": "{{alertname}}",
+        "iconColor": "red"
+      }
+    ]
+  }
+}

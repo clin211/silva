@@ -1,0 +1,139 @@
+groups:
+  - name: silva
+    rules:
+      - alert: SilvaTargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "监控目标不可抓取：{{ $labels.job }}"
+          description: "检查容器状态、监听端口和网络；恢复条件为 up=1。"
+          dashboard: http://localhost:3001/d/silva-api
+          runbook: server/observability/README.md
+      - alert: SilvaTargetsMissing
+        expr: absent(up{job="silva-api"}) or absent(up{job="silva-worker"}) or absent(up{job="otel-collector"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Silva 核心监控目标配置或数据缺失
+          description: "检查 prometheus.yaml 目标及抓取状态；恢复条件为目标重新出现。"
+          runbook: server/observability/README.md
+      - alert: SilvaReadinessFailed
+        expr: probe_success{job="readiness"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Silva API 就绪探测失败
+          description: "检查数据库、迁移版本及 API 日志；恢复条件为 /health/ready 返回 200。"
+          dashboard: http://localhost:3001/d/silva-db
+          runbook: server/observability/README.md
+      - alert: SilvaHighErrorRate
+        expr: (sum(rate(silva_http_requests_total{job="silva-api",traffic="application",status=~"5.."}[5m])) / sum(rate(silva_http_requests_total{job="silva-api",traffic="application"}[5m])) > 0.01) and (sum(increase(silva_http_requests_total{job="silva-api",traffic="application"}[5m])) >= 100)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Silva 业务请求 5xx 超过 1%
+          description: "过去五分钟至少 100 个业务请求，错误率持续超标；按路由和 trace_id 查看错误。"
+          dashboard: http://localhost:3001/d/silva-api
+          runbook: server/observability/README.md
+      - alert: SilvaHighLatency
+        expr: (histogram_quantile(0.95, sum by (le) (rate(silva_http_request_duration_seconds_bucket{job="silva-api",traffic="application"}[5m]))) > 1) and (sum(increase(silva_http_requests_total{job="silva-api",traffic="application"}[5m])) >= 100)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Silva 业务请求 P95 持续超过一秒
+          description: "检查慢路由、数据库操作和连接池等待；恢复条件为 P95 回到一秒以内。"
+          dashboard: http://localhost:3001/d/silva-api
+          runbook: server/observability/README.md
+      - alert: SilvaDatabaseDown
+        expr: pg_up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: PostgreSQL 无法连接
+          description: "检查数据库容器、凭据与磁盘；恢复条件为 pg_up=1。"
+          dashboard: http://localhost:3001/d/silva-db
+          runbook: server/observability/README.md
+      - alert: SilvaDatabaseAcquireTimeout
+        expr: sum by (job) (increase(silva_db_errors_total{kind="acquire_timeout"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 数据库连接获取超时
+          description: "检查连接池饱和、慢事务和 PostgreSQL 连接上限；恢复条件为五分钟内没有新超时。"
+          dashboard: http://localhost:3001/d/silva-db
+          runbook: server/observability/README.md
+      - alert: SilvaWorkerStalled
+        expr: (time() - (silva_worker_last_success_timestamp_seconds{job="silva-worker"} > 0 or on(job,instance) silva_process_start_time_seconds{job="silva-worker"}) > on(job,instance) (3 * silva_worker_interval_seconds{job="silva-worker"})) and on(job,instance) (up{job="silva-worker"} == 1)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Worker 连续三个周期没有成功维护
+          description: "监听仍可访问，但任务没有成功；检查 Worker 日志与数据库。成功执行后恢复。"
+          dashboard: http://localhost:3001/d/silva-worker
+          runbook: server/observability/README.md
+      - alert: SilvaWorkerFailures
+        expr: sum(increase(silva_worker_runs_total{job="silva-worker",outcome="error"}[10m])) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker 十分钟内至少失败三次
+          description: "检查维护任务的错误日志；十分钟错误窗口清空后恢复。"
+          dashboard: http://localhost:3001/d/silva-worker
+          runbook: server/observability/README.md
+      - alert: SilvaBusinessMetricsStale
+        expr: (silva_business_metrics_up{job="silva-api"} == 0) or (time() - silva_business_metrics_last_success_timestamp_seconds{job="silva-api"} > 60)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 业务状态采集失败或超过一分钟未更新
+          description: "队列面板可能显示旧值；检查数据库与采集日志。成功采集后恢复。"
+          dashboard: http://localhost:3001/d/silva-business
+          runbook: server/observability/README.md
+      - alert: SilvaPublishDelayed
+        expr: (silva_publish_delayed{job="silva-api"} > 0) and on(job,instance) (silva_business_metrics_up{job="silva-api"} == 1) and on(job,instance) (time() - silva_business_metrics_last_success_timestamp_seconds{job="silva-api"} < 60)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 存在超过五分钟未上线的发布变更
+          description: "检查 desired/active generation 与发布任务；当前里程碑尚未实现发布消费者。目标激活后恢复。"
+          dashboard: http://localhost:3001/d/silva-business
+          runbook: server/observability/README.md
+      - alert: SilvaTelemetryExportFailed
+        expr: sum by (exporter) (rate({__name__=~"otelcol_exporter_(send|enqueue)_failed_(spans|log_records)(_total)?"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Collector 向存储导出遥测失败
+          description: "检查 Loki、Tempo、Collector 日志与持久队列；失败速率归零后恢复。"
+          runbook: server/observability/README.md
+      - alert: SilvaNotificationFailed
+        expr: sum(rate(alertmanager_notifications_failed_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 告警通知投递失败
+          description: "检查 alert-receiver 健康与 Alertmanager 日志；通过 9093 查看未投递告警。"
+          runbook: server/observability/README.md
+      - alert: SilvaTelemetryQueueFull
+        expr: otelcol_exporter_queue_size / otelcol_exporter_queue_capacity > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Collector 持久队列使用率超过 80%
+          description: "检查下游存储和导出速率；队列回落到 80% 以下后恢复。"
+          runbook: server/observability/README.md

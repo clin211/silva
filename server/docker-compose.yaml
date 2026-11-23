@@ -1,0 +1,82 @@
+name: silva
+
+x-backend: &backend
+  image: silva-backend:local
+  build:
+    context: .
+  init: true
+  environment: &backend-env
+    DATABASE_URL: postgres://silva:silva@postgres:5432/silva
+    SILVA_BIND: 0.0.0.0:8088
+    SILVA_ADMIN_ORIGIN: ${SILVA_ADMIN_ORIGIN:-http://localhost:5173}
+    SILVA_ENV: development
+    SILVA_DB_MAX_CONNECTIONS: ${SILVA_DB_MAX_CONNECTIONS:-10}
+    SILVA_SESSION_TTL_SECONDS: ${SILVA_SESSION_TTL_SECONDS:-43200}
+    SILVA_WORKER_INTERVAL_SECONDS: ${SILVA_WORKER_INTERVAL_SECONDS:-60}
+    SILVA_API_RATE_PER_MINUTE: ${SILVA_API_RATE_PER_MINUTE:-600}
+    SILVA_LOGIN_RATE_PER_MINUTE: ${SILVA_LOGIN_RATE_PER_MINUTE:-10}
+    RUST_LOG: ${RUST_LOG:-info}
+  profiles: [app]
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: silva
+      POSTGRES_USER: silva
+      POSTGRES_PASSWORD: silva
+    ports:
+      - "127.0.0.1:55439:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U silva -d silva"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *backend
+    command: [silva-cli, migrate]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *backend
+    command: [silva-api]
+    ports:
+      - "127.0.0.1:8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8088/health/ready]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: [silva-worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

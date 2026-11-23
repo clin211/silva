@@ -1,0 +1,326 @@
+{
+  "uid": "silva-business",
+  "title": "Silva · 发布与采集",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "silva"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "总览",
+      "type": "link",
+      "url": "/d/silva-overview",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "API",
+      "type": "link",
+      "url": "/d/silva-api",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "数据库",
+      "type": "link",
+      "url": "/d/silva-db",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "Worker",
+      "type": "link",
+      "url": "/d/silva-worker",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "发布与采集",
+      "type": "link",
+      "url": "/d/silva-business",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "告警规则",
+      "type": "link",
+      "url": "/alerting/list",
+      "targetBlank": false
+    },
+    {
+      "title": "告警静默",
+      "type": "link",
+      "url": "/alerting/silences?alertmanager=Alertmanager",
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "查看服务日志",
+      "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "title": "能力范围与数据口径",
+      "options": {
+        "mode": "markdown",
+        "content": "当前 Worker 仅执行会话维护。发布、采集与 Outbox 消费尚未实现，空队列不代表业务链路已就绪。队列每 15 秒刷新，失败保留旧值，请先检查采集状态。采集等待时间以 started_at 或 UTC slot_date 起点估算。"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "业务状态采集成功",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_business_metrics_up{job=\"silva-api\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bool",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "距业务采集成功秒数",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "time()-silva_business_metrics_last_success_timestamp_seconds{job=\"silva-api\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "未完成任务",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_queue_pending{job=\"silva-api\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "最老未完成任务年龄",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_queue_oldest_age_seconds{job=\"silva-api\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "待上线超过五分钟",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "silva_publish_delayed{job=\"silva-api\"}",
+          "refId": "A",
+          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "告警",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "silva-prometheus"
+        },
+        "enable": true,
+        "expr": "ALERTS{alertstate=\"firing\"}",
+        "titleFormat": "{{alertname}}",
+        "iconColor": "red"
+      }
+    ]
+  }
+}
