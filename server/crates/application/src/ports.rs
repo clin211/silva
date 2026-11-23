@@ -67,7 +67,7 @@ pub trait IdentityRepository: Send + Sync {
         meta: &RequestMeta,
     ) -> Result<User>;
     /// 在同一事务中锁定账户、替换角色分配，并撤销已停用账户的会话。
-    /// 修改后若不再有启用状态的 admin，返回 `Conflict("last_admin_required")` 并回滚。
+    /// 修改后若不再有启用状态的 admin，返回 `Conflict(Conflict::LastAdminRequired)` 并回滚。
     async fn update_user(
         &self,
         actor: Uuid,

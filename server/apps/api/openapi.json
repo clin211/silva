@@ -4,7 +4,7 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再使用返回的 CSRF Token 进行写操作。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。"
+        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再使用返回的 CSRF Token 进行写操作。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\", \"request_id\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
     },
     "servers": [
         {
@@ -36,7 +36,9 @@
             "get": {
                 "operationId": "liveness",
                 "summary": "检查进程存活",
-                "tags": ["运维监控"],
+                "tags": [
+                    "运维监控"
+                ],
                 "responses": {
                     "200": {
                         "description": "API 进程正在运行。",
@@ -70,7 +72,9 @@
             "get": {
                 "operationId": "readiness",
                 "summary": "检查数据库就绪",
-                "tags": ["运维监控"],
+                "tags": [
+                    "运维监控"
+                ],
                 "responses": {
                     "200": {
                         "description": "数据库连接正常。",
@@ -108,7 +112,9 @@
             "get": {
                 "operationId": "metrics",
                 "summary": "读取 Prometheus 运维指标",
-                "tags": ["运维监控"],
+                "tags": [
+                    "运维监控"
+                ],
                 "responses": {
                     "200": {
                         "description": "Prometheus 文本指标，仅限运维网络访问。",
@@ -141,7 +147,9 @@
             "get": {
                 "operationId": "openApi",
                 "summary": "下载当前 OpenAPI 契约",
-                "tags": ["运维监控"],
+                "tags": [
+                    "运维监控"
+                ],
                 "responses": {
                     "200": {
                         "description": "当前运行版本的 OpenAPI 3.1 文档。",
@@ -172,7 +180,9 @@
             "post": {
                 "operationId": "login",
                 "summary": "登录并创建后台会话",
-                "tags": ["身份认证"],
+                "tags": [
+                    "身份认证"
+                ],
                 "responses": {
                     "200": {
                         "description": "认证成功；响应正文包含与当前会话绑定的 CSRF Token。",
@@ -204,24 +214,28 @@
                                     "$ref": "#/components/schemas/AuthResponse"
                                 },
                                 "example": {
-                                    "user": {
-                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                        "email": "author@example.com",
-                                        "display_name": "示例作者",
-                                        "status": "active",
-                                        "roles": ["author"],
-                                        "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z"
-                                    },
-                                    "permissions": [
-                                        "posts.create",
-                                        "posts.read_own",
-                                        "posts.edit_own",
-                                        "posts.submit_own",
-                                        "media.manage_own",
-                                        "jobs.read_own"
-                                    ],
-                                    "csrf_token": "example-session-bound-csrf-token"
+                                    "data": {
+                                        "user": {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "email": "author@example.com",
+                                            "display_name": "示例作者",
+                                            "status": "active",
+                                            "roles": [
+                                                "author"
+                                            ],
+                                            "created_at": "2026-11-21T08:00:00Z",
+                                            "updated_at": "2026-11-21T08:00:00Z"
+                                        },
+                                        "permissions": [
+                                            "posts.create",
+                                            "posts.read_own",
+                                            "posts.edit_own",
+                                            "posts.submit_own",
+                                            "media.manage_own",
+                                            "jobs.read_own"
+                                        ],
+                                        "csrf_token": "example-session-bound-csrf-token"
+                                    }
                                 }
                             }
                         }
@@ -257,10 +271,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["unsupported_media_type"]
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
                     },
                     "422": {
-                        "description": "JSON 格式错误、字段类型不兼容或输入不符合约束。",
+                        "description": "字段缺失、未知字段或类型不符。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -277,14 +293,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "Invalid JSON request",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "password",
+                                                "code": "required",
+                                                "message": "field is required"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     },
                     "401": {
                         "description": "账户不存在、已停用或密码错误，均返回相同错误。",
@@ -311,7 +335,9 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["invalid_credentials"]
+                        "x-error-codes": [
+                            "invalid_credentials"
+                        ]
                     },
                     "403": {
                         "description": "缺少 Origin 或与 SILVA_ADMIN_ORIGIN 不完全一致。",
@@ -338,7 +364,9 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["origin_rejected"]
+                        "x-error-codes": [
+                            "origin_rejected"
+                        ]
                     },
                     "413": {
                         "description": "JSON 请求正文超过 64 KiB。",
@@ -365,7 +393,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["payload_too_large"]
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
                     }
                 },
                 "security": [],
@@ -395,7 +428,9 @@
             "post": {
                 "operationId": "logout",
                 "summary": "退出并撤销当前会话",
-                "tags": ["身份认证"],
+                "tags": [
+                    "身份认证"
+                ],
                 "responses": {
                     "204": {
                         "description": "会话已撤销，无响应正文。",
@@ -449,7 +484,9 @@
             "get": {
                 "operationId": "me",
                 "summary": "读取当前账户、权限和 CSRF Token",
-                "tags": ["身份认证"],
+                "tags": [
+                    "身份认证"
+                ],
                 "responses": {
                     "200": {
                         "description": "返回当前账户状态与当前角色权限，每次读取最新数据。",
@@ -474,24 +511,28 @@
                                     "$ref": "#/components/schemas/AuthResponse"
                                 },
                                 "example": {
-                                    "user": {
-                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                        "email": "author@example.com",
-                                        "display_name": "示例作者",
-                                        "status": "active",
-                                        "roles": ["author"],
-                                        "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z"
-                                    },
-                                    "permissions": [
-                                        "posts.create",
-                                        "posts.read_own",
-                                        "posts.edit_own",
-                                        "posts.submit_own",
-                                        "media.manage_own",
-                                        "jobs.read_own"
-                                    ],
-                                    "csrf_token": "example-session-bound-csrf-token"
+                                    "data": {
+                                        "user": {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "email": "author@example.com",
+                                            "display_name": "示例作者",
+                                            "status": "active",
+                                            "roles": [
+                                                "author"
+                                            ],
+                                            "created_at": "2026-11-21T08:00:00Z",
+                                            "updated_at": "2026-11-21T08:00:00Z"
+                                        },
+                                        "permissions": [
+                                            "posts.create",
+                                            "posts.read_own",
+                                            "posts.edit_own",
+                                            "posts.submit_own",
+                                            "media.manage_own",
+                                            "jobs.read_own"
+                                        ],
+                                        "csrf_token": "example-session-bound-csrf-token"
+                                    }
                                 }
                             }
                         }
@@ -515,7 +556,9 @@
             "post": {
                 "operationId": "changePassword",
                 "summary": "修改当前账户密码",
-                "tags": ["身份认证"],
+                "tags": [
+                    "身份认证"
+                ],
                 "responses": {
                     "204": {
                         "description": "密码已更新；当前会话保留，该账户的其他会话全部撤销。无响应正文。",
@@ -572,10 +615,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["unsupported_media_type"]
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
                     },
                     "422": {
-                        "description": "当前密码错误、新密码长度不符或与当前密码相同。",
+                        "description": "字段缺失或类型不符、当前密码错误、新密码长度不符或与当前密码相同。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -592,14 +637,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "current password is incorrect",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "current_password",
+                                                "code": "incorrect",
+                                                "message": "current password is incorrect"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     },
                     "413": {
                         "description": "JSON 请求正文超过 64 KiB。",
@@ -626,7 +679,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["payload_too_large"]
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
                     }
                 },
                 "parameters": [
@@ -658,7 +716,9 @@
             "get": {
                 "operationId": "listUsers",
                 "summary": "分页查询账户",
-                "tags": ["账户管理"],
+                "tags": [
+                    "账户管理"
+                ],
                 "responses": {
                     "200": {
                         "description": "账户按 created_at DESC、id DESC 排序。",
@@ -682,16 +742,20 @@
                                             "email": "author@example.com",
                                             "display_name": "示例作者",
                                             "status": "active",
-                                            "roles": ["author"],
+                                            "roles": [
+                                                "author"
+                                            ],
                                             "created_at": "2026-11-21T08:00:00Z",
                                             "updated_at": "2026-11-21T08:00:00Z"
                                         }
                                     ],
-                                    "pagination": {
-                                        "page": 1,
-                                        "per_page": 20,
-                                        "total": 1,
-                                        "total_pages": 1
+                                    "meta": {
+                                        "pagination": {
+                                            "page": 1,
+                                            "per_page": 20,
+                                            "total": 1,
+                                            "total_pages": 1
+                                        }
                                     }
                                 }
                             }
@@ -727,14 +791,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "Invalid JSON request",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "per_page",
+                                                "code": "out_of_range",
+                                                "message": "per_page must be between 1 and 100"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     }
                 },
                 "x-required-permission": "users.manage",
@@ -751,7 +823,9 @@
             "post": {
                 "operationId": "createUser",
                 "summary": "创建账户并分配内置角色",
-                "tags": ["账户管理"],
+                "tags": [
+                    "账户管理"
+                ],
                 "responses": {
                     "201": {
                         "description": "账户创建成功，不返回密码及其哈希。",
@@ -766,16 +840,20 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/User"
+                                    "$ref": "#/components/schemas/UserResponse"
                                 },
                                 "example": {
-                                    "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                    "email": "author@example.com",
-                                    "display_name": "示例作者",
-                                    "status": "active",
-                                    "roles": ["author"],
-                                    "created_at": "2026-11-21T08:00:00Z",
-                                    "updated_at": "2026-11-21T08:00:00Z"
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": [
+                                            "author"
+                                        ],
+                                        "created_at": "2026-11-21T08:00:00Z",
+                                        "updated_at": "2026-11-21T08:00:00Z"
+                                    }
                                 }
                             }
                         }
@@ -817,10 +895,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["unsupported_media_type"]
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
                     },
                     "422": {
-                        "description": "JSON 格式错误、字段类型不兼容或输入不符合约束。",
+                        "description": "字段缺失、未知字段、类型不符或输入不符合约束。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -837,14 +917,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "Invalid JSON request",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "email",
+                                                "code": "invalid_format",
+                                                "message": "email must be a valid address of at most 254 bytes"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     },
                     "409": {
                         "description": "规范化后的邮箱已被其他账户使用。",
@@ -864,14 +952,16 @@
                                 "example": {
                                     "error": {
                                         "code": "email_in_use",
-                                        "message": "email_in_use",
+                                        "message": "Email is already in use",
                                         "details": [],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["email_in_use"]
+                        "x-error-codes": [
+                            "email_in_use"
+                        ]
                     },
                     "413": {
                         "description": "JSON 请求正文超过 64 KiB。",
@@ -898,7 +988,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["payload_too_large"]
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
                     }
                 },
                 "x-required-permission": "users.manage",
@@ -921,7 +1016,9 @@
                                 "email": "author@example.com",
                                 "display_name": "示例作者",
                                 "password": "example-password-only",
-                                "roles": ["author"]
+                                "roles": [
+                                    "author"
+                                ]
                             }
                         }
                     }
@@ -933,7 +1030,9 @@
             "patch": {
                 "operationId": "updateUser",
                 "summary": "更新账户资料、状态或角色",
-                "tags": ["账户管理"],
+                "tags": [
+                    "账户管理"
+                ],
                 "responses": {
                     "200": {
                         "description": "返回更新后的账户。停用账户会原子撤销其全部会话。",
@@ -948,16 +1047,20 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/User"
+                                    "$ref": "#/components/schemas/UserResponse"
                                 },
                                 "example": {
-                                    "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                    "email": "author@example.com",
-                                    "display_name": "示例作者",
-                                    "status": "active",
-                                    "roles": ["author"],
-                                    "created_at": "2026-11-21T08:00:00Z",
-                                    "updated_at": "2026-11-21T08:00:00Z"
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": [
+                                            "author"
+                                        ],
+                                        "created_at": "2026-11-21T08:00:00Z",
+                                        "updated_at": "2026-11-21T08:00:00Z"
+                                    }
                                 }
                             }
                         }
@@ -999,10 +1102,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["unsupported_media_type"]
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
                     },
                     "422": {
-                        "description": "UUIDv7 或输入字段无效。",
+                        "description": "路径 id 不是 UUIDv7，或输入字段无效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1019,14 +1124,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "Invalid JSON request",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "roles[1]",
+                                                "code": "duplicate",
+                                                "message": "role is listed more than once"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["invalid_uuid_v7", "validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     },
                     "404": {
                         "description": "账户不存在。",
@@ -1053,7 +1166,9 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["not_found"]
+                        "x-error-codes": [
+                            "not_found"
+                        ]
                     },
                     "409": {
                         "description": "修改会导致系统不再有启用状态的管理员（停用最后一个管理员或移除其 admin 角色）。",
@@ -1073,14 +1188,16 @@
                                 "example": {
                                     "error": {
                                         "code": "last_admin_required",
-                                        "message": "last_admin_required",
+                                        "message": "At least one active administrator is required",
                                         "details": [],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["last_admin_required"]
+                        "x-error-codes": [
+                            "last_admin_required"
+                        ]
                     },
                     "413": {
                         "description": "JSON 请求正文超过 64 KiB。",
@@ -1107,7 +1224,12 @@
                                 }
                             }
                         },
-                        "x-error-codes": ["payload_too_large"]
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
                     }
                 },
                 "x-required-permission": "users.manage",
@@ -1132,7 +1254,9 @@
                             "example": {
                                 "display_name": "新的显示名称",
                                 "status": "active",
-                                "roles": ["editor"]
+                                "roles": [
+                                    "editor"
+                                ]
                             }
                         }
                     }
@@ -1144,7 +1268,9 @@
             "get": {
                 "operationId": "listRoles",
                 "summary": "查询内置角色及其权限",
-                "tags": ["账户管理"],
+                "tags": [
+                    "账户管理"
+                ],
                 "responses": {
                     "200": {
                         "description": "内置 author、editor 和 admin 角色。",
@@ -1159,26 +1285,25 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Role"
-                                    }
+                                    "$ref": "#/components/schemas/RoleList"
                                 },
-                                "example": [
-                                    {
-                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                        "key": "author",
-                                        "name": "author",
-                                        "permissions": [
-                                            "posts.create",
-                                            "posts.read_own",
-                                            "posts.edit_own",
-                                            "posts.submit_own",
-                                            "media.manage_own",
-                                            "jobs.read_own"
-                                        ]
-                                    }
-                                ]
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "key": "author",
+                                            "name": "author",
+                                            "permissions": [
+                                                "posts.create",
+                                                "posts.read_own",
+                                                "posts.edit_own",
+                                                "posts.submit_own",
+                                                "media.manage_own",
+                                                "jobs.read_own"
+                                            ]
+                                        }
+                                    ]
+                                }
                             }
                         }
                     },
@@ -1203,7 +1328,9 @@
             "get": {
                 "operationId": "listAuditLogs",
                 "summary": "分页查询后台审计日志",
-                "tags": ["账户管理"],
+                "tags": [
+                    "账户管理"
+                ],
                 "responses": {
                     "200": {
                         "description": "审计记录按 created_at DESC、id DESC 排序，不包含凭据内容。",
@@ -1234,11 +1361,13 @@
                                             "created_at": "2026-11-21T08:00:00Z"
                                         }
                                     ],
-                                    "pagination": {
-                                        "page": 1,
-                                        "per_page": 20,
-                                        "total": 1,
-                                        "total_pages": 1
+                                    "meta": {
+                                        "pagination": {
+                                            "page": 1,
+                                            "per_page": 20,
+                                            "total": 1,
+                                            "total_pages": 1
+                                        }
                                     }
                                 }
                             }
@@ -1274,14 +1403,22 @@
                                 "example": {
                                     "error": {
                                         "code": "validation_error",
-                                        "message": "Invalid JSON request",
-                                        "details": [],
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "page",
+                                                "code": "out_of_range",
+                                                "message": "page must be at least 1"
+                                            }
+                                        ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                                     }
                                 }
                             }
                         },
-                        "x-error-codes": ["validation_error"]
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
                     }
                 },
                 "x-required-permission": "audit.read",
@@ -1300,7 +1437,9 @@
             "get": {
                 "operationId": "systemHealth",
                 "summary": "读取受权限保护的系统健康状态",
-                "tags": ["运维监控"],
+                "tags": [
+                    "运维监控"
+                ],
                 "responses": {
                     "200": {
                         "description": "API 与数据库运行正常。",
@@ -1315,11 +1454,13 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/SystemHealth"
+                                    "$ref": "#/components/schemas/SystemHealthResponse"
                                 },
                                 "example": {
-                                    "status": "ok",
-                                    "database": "up"
+                                    "data": {
+                                        "status": "ok",
+                                        "database": "up"
+                                    }
                                 }
                             }
                         }
@@ -1395,7 +1536,7 @@
                 "name": "id",
                 "in": "path",
                 "required": true,
-                "description": "服务端分配的账户 UUIDv7；非标准格式、v4 或无效变体位返回 422 invalid_uuid_v7。",
+                "description": "服务端分配的账户 UUIDv7；非标准格式、v4 或无效变体位返回 422 validation_error，字段错误为 id/invalid_format。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -1430,7 +1571,7 @@
         },
         "responses": {
             "Error": {
-                "description": "统一 JSON 错误结构。常见状态为 400、401、403、404、405、409、413、415、422、429、500 和 503。204 没有正文。",
+                "description": "统一 JSON 错误结构，见 ErrorResponse 与 ErrorCode。204 没有正文。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
@@ -1480,7 +1621,9 @@
                         }
                     }
                 },
-                "x-error-codes": ["unauthorized"]
+                "x-error-codes": [
+                    "unauthorized"
+                ]
             },
             "Forbidden": {
                 "description": "当前权限不足、Origin 被拒绝，或会话绑定的 CSRF Token 缺失或无效。",
@@ -1546,7 +1689,9 @@
                         }
                     }
                 },
-                "x-error-codes": ["rate_limited"]
+                "x-error-codes": [
+                    "rate_limited"
+                ]
             },
             "Unavailable": {
                 "description": "必要的服务依赖不可用。",
@@ -1573,7 +1718,38 @@
                         }
                     }
                 },
-                "x-error-codes": ["service_unavailable"]
+                "x-error-codes": [
+                    "service_unavailable"
+                ]
+            },
+            "MalformedJson": {
+                "description": "请求体不是合法 JSON（语法错误、空正文或尾随内容）。",
+                "headers": {
+                    "X-Request-Id": {
+                        "$ref": "#/components/headers/RequestId"
+                    },
+                    "X-Trace-Id": {
+                        "$ref": "#/components/headers/TraceId"
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        },
+                        "example": {
+                            "error": {
+                                "code": "malformed_json",
+                                "message": "Request body is not valid JSON",
+                                "details": [],
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            }
+                        }
+                    }
+                },
+                "x-error-codes": [
+                    "malformed_json"
+                ]
             }
         },
         "schemas": {
@@ -1596,7 +1772,11 @@
             },
             "RoleKey": {
                 "type": "string",
-                "enum": ["author", "editor", "admin"]
+                "enum": [
+                    "author",
+                    "editor",
+                    "admin"
+                ]
             },
             "RoleAssignments": {
                 "type": "array",
@@ -1614,7 +1794,10 @@
             },
             "AccountStatus": {
                 "type": "string",
-                "enum": ["active", "disabled"]
+                "enum": [
+                    "active",
+                    "disabled"
+                ]
             },
             "DisplayName": {
                 "type": "string",
@@ -1637,7 +1820,10 @@
                         "description": "最多 1024 个 UTF-8 字节。账户不存在、已停用或密码错误均返回相同凭据错误。"
                     }
                 },
-                "required": ["email", "password"],
+                "required": [
+                    "email",
+                    "password"
+                ],
                 "additionalProperties": false,
                 "examples": [
                     {
@@ -1672,14 +1858,21 @@
                         "description": "账户的内置角色键。"
                     }
                 },
-                "required": ["email", "display_name", "password", "roles"],
+                "required": [
+                    "email",
+                    "display_name",
+                    "password",
+                    "roles"
+                ],
                 "additionalProperties": false,
                 "examples": [
                     {
                         "email": "author@example.com",
                         "display_name": "示例作者",
                         "password": "example-password-only",
-                        "roles": ["author"]
+                        "roles": [
+                            "author"
+                        ]
                     }
                 ]
             },
@@ -1701,7 +1894,10 @@
                         "x-max-bytes": 1024
                     }
                 },
-                "required": ["current_password", "new_password"],
+                "required": [
+                    "current_password",
+                    "new_password"
+                ],
                 "additionalProperties": false,
                 "examples": [
                     {
@@ -1768,7 +1964,9 @@
                     {
                         "display_name": "新的显示名称",
                         "status": "active",
-                        "roles": ["editor"]
+                        "roles": [
+                            "editor"
+                        ]
                     }
                 ]
             },
@@ -1824,7 +2022,9 @@
                         "email": "author@example.com",
                         "display_name": "示例作者",
                         "status": "active",
-                        "roles": ["author"],
+                        "roles": [
+                            "author"
+                        ],
                         "created_at": "2026-11-21T08:00:00Z",
                         "updated_at": "2026-11-21T08:00:00Z"
                     }
@@ -1853,7 +2053,12 @@
                         "description": "当前角色授予的权限键。"
                     }
                 },
-                "required": ["id", "key", "name", "permissions"],
+                "required": [
+                    "id",
+                    "key",
+                    "name",
+                    "permissions"
+                ],
                 "examples": [
                     {
                         "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
@@ -1894,11 +2099,17 @@
                         "description": "关联资源 ID；无关联资源时为 null。"
                     },
                     "ip_address": {
-                        "type": ["string", "null"],
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "description": "发起操作的直连客户端 IP；CLI 等非 HTTP 操作为 null。经反向代理部署时为代理地址。"
                     },
                     "user_agent": {
-                        "type": ["string", "null"],
+                        "type": [
+                            "string",
+                            "null"
+                        ],
                         "maxLength": 512,
                         "description": "客户端报告的 User-Agent，超过 512 字节时截断；未提供时为 null。"
                     },
@@ -1937,49 +2148,6 @@
                     }
                 ]
             },
-            "AuthResponse": {
-                "type": "object",
-                "properties": {
-                    "user": {
-                        "$ref": "#/components/schemas/User",
-                        "description": "当前登录账户。"
-                    },
-                    "permissions": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/Permission"
-                        },
-                        "description": "当前角色授予的权限键。"
-                    },
-                    "csrf_token": {
-                        "type": "string",
-                        "description": "绑定当前会话的不透明令牌，管理写操作通过 X-CSRF-Token 发送。"
-                    }
-                },
-                "required": ["user", "permissions", "csrf_token"],
-                "examples": [
-                    {
-                        "user": {
-                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                            "email": "author@example.com",
-                            "display_name": "示例作者",
-                            "status": "active",
-                            "roles": ["author"],
-                            "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z"
-                        },
-                        "permissions": [
-                            "posts.create",
-                            "posts.read_own",
-                            "posts.edit_own",
-                            "posts.submit_own",
-                            "media.manage_own",
-                            "jobs.read_own"
-                        ],
-                        "csrf_token": "example-session-bound-csrf-token"
-                    }
-                ]
-            },
             "Pagination": {
                 "type": "object",
                 "properties": {
@@ -2007,7 +2175,12 @@
                         "description": "总页数；无数据时为 0。"
                     }
                 },
-                "required": ["page", "per_page", "total", "total_pages"],
+                "required": [
+                    "page",
+                    "per_page",
+                    "total",
+                    "total_pages"
+                ],
                 "examples": [
                     {
                         "page": 1,
@@ -2027,12 +2200,14 @@
                         },
                         "description": "当前页的数据。"
                     },
-                    "pagination": {
-                        "$ref": "#/components/schemas/Pagination",
-                        "description": "分页统计。"
+                    "meta": {
+                        "$ref": "#/components/schemas/ListMeta"
                     }
                 },
-                "required": ["data", "pagination"],
+                "required": [
+                    "data",
+                    "meta"
+                ],
                 "examples": [
                     {
                         "data": [
@@ -2041,19 +2216,24 @@
                                 "email": "author@example.com",
                                 "display_name": "示例作者",
                                 "status": "active",
-                                "roles": ["author"],
+                                "roles": [
+                                    "author"
+                                ],
                                 "created_at": "2026-11-21T08:00:00Z",
                                 "updated_at": "2026-11-21T08:00:00Z"
                             }
                         ],
-                        "pagination": {
-                            "page": 1,
-                            "per_page": 20,
-                            "total": 1,
-                            "total_pages": 1
+                        "meta": {
+                            "pagination": {
+                                "page": 1,
+                                "per_page": 20,
+                                "total": 1,
+                                "total_pages": 1
+                            }
                         }
                     }
-                ]
+                ],
+                "additionalProperties": false
             },
             "AuditLogPage": {
                 "type": "object",
@@ -2065,12 +2245,14 @@
                         },
                         "description": "当前页的数据。"
                     },
-                    "pagination": {
-                        "$ref": "#/components/schemas/Pagination",
-                        "description": "分页统计。"
+                    "meta": {
+                        "$ref": "#/components/schemas/ListMeta"
                     }
                 },
-                "required": ["data", "pagination"],
+                "required": [
+                    "data",
+                    "meta"
+                ],
                 "examples": [
                     {
                         "data": [
@@ -2086,14 +2268,17 @@
                                 "created_at": "2026-11-21T08:00:00Z"
                             }
                         ],
-                        "pagination": {
-                            "page": 1,
-                            "per_page": 20,
-                            "total": 1,
-                            "total_pages": 1
+                        "meta": {
+                            "pagination": {
+                                "page": 1,
+                                "per_page": 20,
+                                "total": 1,
+                                "total_pages": 1
+                            }
                         }
                     }
-                ]
+                ],
+                "additionalProperties": false
             },
             "Liveness": {
                 "type": "object",
@@ -2101,10 +2286,12 @@
                     "status": {
                         "type": "string",
                         "const": "ok",
-                        "description": "账户状态：active 为启用，disabled 为停用。"
+                        "description": "服务状态，正常时为 ok。"
                     }
                 },
-                "required": ["status"],
+                "required": [
+                    "status"
+                ],
                 "examples": [
                     {
                         "status": "ok"
@@ -2117,14 +2304,18 @@
                     "status": {
                         "type": "string",
                         "const": "ok",
-                        "description": "账户状态：active 为启用，disabled 为停用。"
+                        "description": "服务状态，正常时为 ok。"
                     },
                     "database": {
                         "type": "string",
-                        "const": "up"
+                        "const": "up",
+                        "description": "数据库连通状态。"
                     }
                 },
-                "required": ["status", "database"],
+                "required": [
+                    "status",
+                    "database"
+                ],
                 "examples": [
                     {
                         "status": "ok",
@@ -2134,29 +2325,43 @@
             },
             "ErrorResponse": {
                 "type": "object",
+                "additionalProperties": false,
+                "description": "所有 4xx/5xx 响应的统一结构。",
                 "properties": {
                     "error": {
                         "type": "object",
+                        "additionalProperties": false,
                         "properties": {
                             "code": {
-                                "type": "string",
-                                "description": "稳定的机器可读错误码，用于客户端判断错误类型。"
+                                "$ref": "#/components/schemas/ErrorCode"
                             },
                             "message": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "面向开发者的英文说明，可能调整措辞，不作为分支条件，也不直接展示给终端用户。"
                             },
                             "details": {
                                 "type": "array",
-                                "items": {}
+                                "items": {
+                                    "$ref": "#/components/schemas/FieldError"
+                                },
+                                "description": "字段级错误；没有时为空数组，永不省略。"
                             },
                             "request_id": {
-                                "$ref": "#/components/schemas/UuidV7"
+                                "$ref": "#/components/schemas/UuidV7",
+                                "description": "与响应头 X-Request-Id 相同，用于排障。"
                             }
                         },
-                        "required": ["code", "message", "details", "request_id"]
+                        "required": [
+                            "code",
+                            "message",
+                            "details",
+                            "request_id"
+                        ]
                     }
                 },
-                "required": ["error"],
+                "required": [
+                    "error"
+                ],
                 "examples": [
                     {
                         "error": {
@@ -2165,6 +2370,275 @@
                             "details": [],
                             "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
                         }
+                    }
+                ]
+            },
+            "ErrorCode": {
+                "type": "string",
+                "enum": [
+                    "malformed_json",
+                    "unauthorized",
+                    "invalid_credentials",
+                    "forbidden",
+                    "origin_rejected",
+                    "csrf_rejected",
+                    "not_found",
+                    "method_not_allowed",
+                    "email_in_use",
+                    "last_admin_required",
+                    "payload_too_large",
+                    "unsupported_media_type",
+                    "validation_error",
+                    "rate_limited",
+                    "internal_error",
+                    "service_unavailable"
+                ],
+                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。客户端按错误码分支，不解析 message。新增错误码属于向后兼容变更，客户端须把未知错误码按 HTTP 状态兜底处理。\n\n- `malformed_json`：400：请求体不是合法 JSON。\n- `unauthorized`：401：会话缺失、无效、过期、已撤销或账户已停用。\n- `invalid_credentials`：401：登录邮箱或密码错误。\n- `forbidden`：403：当前账户缺少所需权限。\n- `origin_rejected`：403：写操作的 Origin 与 SILVA_ADMIN_ORIGIN 不一致。\n- `csrf_rejected`：403：X-CSRF-Token 缺失或与当前会话不匹配。\n- `not_found`：404：路径或资源不存在。\n- `method_not_allowed`：405：路径存在但不支持该方法。\n- `email_in_use`：409：规范化后的邮箱已被占用。\n- `last_admin_required`：409：操作会导致系统没有启用状态的管理员。\n- `payload_too_large`：413：请求体超过 64 KiB。\n- `unsupported_media_type`：415：Content-Type 不是 application/json。\n- `validation_error`：422：输入不满足约束，details 列出每个字段错误。\n- `rate_limited`：429：超过请求限额，按 Retry-After 等待。\n- `internal_error`：500：服务端内部错误，细节只记录在日志中。\n- `service_unavailable`：503：必要的服务依赖不可用。",
+                "examples": [
+                    "validation_error"
+                ]
+            },
+            "FieldErrorCode": {
+                "type": "string",
+                "enum": [
+                    "required",
+                    "unknown_field",
+                    "invalid_type",
+                    "invalid_format",
+                    "out_of_range",
+                    "invalid_value",
+                    "duplicate",
+                    "incorrect",
+                    "unchanged"
+                ],
+                "description": "字段级错误码。\n\n- `required`：缺少必填字段。\n- `unknown_field`：出现未定义的字段。\n- `invalid_type`：JSON 类型不符。\n- `invalid_format`：格式不符，如邮箱或 UUIDv7。\n- `out_of_range`：长度、数量或数值超出范围。\n- `invalid_value`：不在允许的取值集合内。\n- `duplicate`：集合或查询参数中出现重复。\n- `incorrect`：与服务端保存的值不符，如当前密码错误。\n- `unchanged`：新值必须与原值不同。",
+                "examples": [
+                    "out_of_range"
+                ]
+            },
+            "FieldError": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "字段级错误。目前只出现在 validation_error 中。",
+                "properties": {
+                    "field": {
+                        "type": "string",
+                        "description": "出错位置。请求体字段用点号与下标表示（如 `roles[1]`），查询参数和路径参数使用参数名（如 `per_page`、`id`）；空字符串表示整个请求体或查询串。"
+                    },
+                    "code": {
+                        "$ref": "#/components/schemas/FieldErrorCode"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "面向开发者的英文说明，不作为分支条件。"
+                    }
+                },
+                "required": [
+                    "field",
+                    "code",
+                    "message"
+                ],
+                "examples": [
+                    {
+                        "field": "display_name",
+                        "code": "out_of_range",
+                        "message": "display_name must contain 1 to 100 bytes"
+                    }
+                ]
+            },
+            "AuthSession": {
+                "type": "object",
+                "properties": {
+                    "user": {
+                        "$ref": "#/components/schemas/User",
+                        "description": "当前登录账户。"
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Permission"
+                        },
+                        "description": "当前角色授予的权限键。"
+                    },
+                    "csrf_token": {
+                        "type": "string",
+                        "description": "绑定当前会话的不透明令牌，管理写操作通过 X-CSRF-Token 发送。"
+                    }
+                },
+                "required": [
+                    "user",
+                    "permissions",
+                    "csrf_token"
+                ],
+                "examples": [
+                    {
+                        "user": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "author@example.com",
+                            "display_name": "示例作者",
+                            "status": "active",
+                            "roles": [
+                                "author"
+                            ],
+                            "created_at": "2026-11-21T08:00:00Z",
+                            "updated_at": "2026-11-21T08:00:00Z"
+                        },
+                        "permissions": [
+                            "posts.create",
+                            "posts.read_own",
+                            "posts.edit_own",
+                            "posts.submit_own",
+                            "media.manage_own",
+                            "jobs.read_own"
+                        ],
+                        "csrf_token": "example-session-bound-csrf-token"
+                    }
+                ],
+                "description": "当前会话视图。"
+            },
+            "AuthResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "登录或读取会话的响应。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AuthSession"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "user": {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "email": "author@example.com",
+                                "display_name": "示例作者",
+                                "status": "active",
+                                "roles": [
+                                    "author"
+                                ],
+                                "created_at": "2026-11-21T08:00:00Z",
+                                "updated_at": "2026-11-21T08:00:00Z"
+                            },
+                            "permissions": [
+                                "posts.create",
+                                "posts.read_own",
+                                "posts.edit_own",
+                                "posts.submit_own",
+                                "media.manage_own",
+                                "jobs.read_own"
+                            ],
+                            "csrf_token": "example-session-bound-csrf-token"
+                        }
+                    }
+                ]
+            },
+            "UserResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "单个账户。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/User"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "author@example.com",
+                            "display_name": "示例作者",
+                            "status": "active",
+                            "roles": [
+                                "author"
+                            ],
+                            "created_at": "2026-11-21T08:00:00Z",
+                            "updated_at": "2026-11-21T08:00:00Z"
+                        }
+                    }
+                ]
+            },
+            "ListMeta": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "列表元数据。",
+                "properties": {
+                    "pagination": {
+                        "$ref": "#/components/schemas/Pagination"
+                    }
+                },
+                "required": [
+                    "pagination"
+                ],
+                "examples": [
+                    {
+                        "pagination": {
+                            "page": 1,
+                            "per_page": 20,
+                            "total": 1,
+                            "total_pages": 1
+                        }
+                    }
+                ]
+            },
+            "SystemHealthResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "系统健康状态。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/SystemHealth"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "status": "ok",
+                            "database": "up"
+                        }
+                    }
+                ]
+            },
+            "RoleList": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "内置角色集合，未分页。",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Role"
+                        }
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": [
+                            {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "key": "author",
+                                "name": "author",
+                                "permissions": [
+                                    "posts.create",
+                                    "posts.read_own",
+                                    "posts.edit_own",
+                                    "posts.submit_own",
+                                    "media.manage_own",
+                                    "jobs.read_own"
+                                ]
+                            }
+                        ]
                     }
                 ]
             }

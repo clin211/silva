@@ -4,7 +4,7 @@
 
 ## OpenAPI 交付与 Apifox 导入
 
-接口字段、约束和请求/响应示例统一维护在 [OpenAPI 文件](../../apps/api/openapi.json) 中。将 `server/apps/api/openapi.json` 作为 OpenAPI 3.1 文件导入 Apifox，进行预览与调试。
+接口字段、约束和请求/响应示例统一维护在 [OpenAPI 文件](../../apps/api/openapi.json) 中。成功与失败的响应结构、错误码登记表见 [API 响应结构规范](../contracts/api-response.md)。将 `server/apps/api/openapi.json` 作为 OpenAPI 3.1 文件导入 Apifox，进行预览与调试。
 
 运行服务后，也可从 `/openapi.json` 下载当前运行版本的契约：
 
@@ -18,7 +18,7 @@ curl --fail --output silva-openapi.json http://127.0.0.1:8088/openapi.json
 
 在 Apifox 中将请求地址设置为目标环境，登录及管理写操作显式携带与 `SILVA_ADMIN_ORIGIN` 精确匹配的 `Origin`。例如配置为 `https://admin.example.com` 时，请求头也使用该值，不带尾部斜杠。
 
-登录成功后保存并回传 `__Host-silva_session` Cookie，并从登录响应的 `csrf_token` 字段取得 Token。登录之外的管理写操作还要携带 `X-CSRF-Token`；可通过 `GET /api/v1/admin/auth/me` 重新获取当前会话的 Token。Apifox 中的 Cookie 和 Token 传递由调试配置维护。
+登录成功后保存并回传 `__Host-silva_session` Cookie，并从登录响应的 `data.csrf_token` 字段取得 Token。登录之外的管理写操作还要携带 `X-CSRF-Token`；可通过 `GET /api/v1/admin/auth/me` 重新获取当前会话的 Token。Apifox 中的 Cookie 和 Token 传递由调试配置维护。
 
 会话 Cookie 具有 HttpOnly、Secure、SameSite=Lax、Path=/ 属性且没有 Domain。请使用 HTTPS 入口调试，以便客户端按 Secure 属性回传 Cookie。服务端不接受 Bearer Token。
 
@@ -48,14 +48,14 @@ jq -nc '{email: env.SILVA_API_EMAIL, password: env.SILVA_API_PASSWORD}' \
       --cookie-jar "$SILVA_API_TMP/cookies" \
       --data-binary @- > "$SILVA_API_TMP/login.json"
 unset SILVA_API_PASSWORD
-SILVA_API_CSRF=$(jq -er '.csrf_token' "$SILVA_API_TMP/login.json")
+SILVA_API_CSRF=$(jq -er '.data.csrf_token' "$SILVA_API_TMP/login.json")
 
 curl --fail-with-body --silent --show-error \
   "$SILVA_API_BASE/api/v1/admin/auth/me" \
   --cookie "$SILVA_API_TMP/cookies"
 ```
 
-登录响应包含 `user`、`permissions`、`csrf_token`，并通过 `Set-Cookie` 设置会话。CSRF Token 绑定当前会话，不能混用不同登录会话的 Token。
+登录响应为 `{"data": {"user", "permissions", "csrf_token"}}`，并通过 `Set-Cookie` 设置会话。CSRF Token 绑定当前会话，不能混用不同登录会话的 Token。
 
 ## 查询列表与更新账户
 
@@ -67,7 +67,7 @@ curl --fail-with-body --silent --show-error \
   --cookie "$SILVA_API_TMP/cookies"
 ```
 
-分页响应为 `{ "data": [...], "pagination": { "page": 1, "per_page": 20, "total": 1, "total_pages": 1 } }`。`page` 从 1 开始，默认 1；`per_page` 默认 20，范围 1–100。账户和审计列表按 `created_at DESC, id DESC` 排序。
+分页响应为 `{ "data": [...], "meta": { "pagination": { "page": 1, "per_page": 20, "total": 1, "total_pages": 1 } } }`。`page` 从 1 开始，默认 1；`per_page` 默认 20，范围 1–100。账户和审计列表按 `created_at DESC, id DESC` 排序。
 
 将 `SILVA_API_USER_ID` 替换为列表中的实际账户 UUIDv7；更新会修改真实数据：
 
@@ -111,34 +111,37 @@ unset SILVA_API_CSRF
 
 内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。目前账户、角色、审计和系统健康接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
 
-## 错误与排障
+## 响应结构与排障
 
-错误统一返回：
+成功时 HTTP 状态为 2xx，正文为 `{"data": ...}`，分页列表另有 `meta.pagination`；204 没有正文。失败时正文统一为：
 
 ```json
 {
   "error": {
-    "code": "unauthorized",
-    "message": "Authentication required",
-    "details": [],
+    "code": "validation_error",
+    "message": "Request validation failed",
+    "details": [
+      { "field": "display_name", "code": "out_of_range", "message": "display_name must contain 1 to 100 bytes" }
+    ],
     "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
   }
 }
 ```
 
-客户端根据 HTTP 状态和 `error.code` 判断错误，`message` 用于展示和排障，不作为稳定分支条件。
+客户端根据 HTTP 状态和 `error.code` 判断错误；`message` 用于排障，不作为判断条件。`details` 只在 422 中有内容，按 `field` 定位到具体输入。完整的错误码和字段错误码见 [API 响应结构规范](../contracts/api-response.md#5-错误码登记表)。
 
 | HTTP 状态 | 常见错误码 | 处理 |
 | --- | --- | --- |
+| 400 | `malformed_json` | 检查请求体是否为合法 JSON |
 | 401 | `invalid_credentials`、`unauthorized` | 检查凭据，或重新登录 |
 | 403 | `origin_rejected` | 检查页面 Origin 与服务端配置是否精确一致 |
 | 403 | `csrf_rejected` | 从当前会话的 `auth/me` 重新获取 Token |
 | 403 | `forbidden` | 检查当前账户的权限 |
-| 404 | `not_found` | 检查资源或路径 |
+| 404 / 405 | `not_found` / `method_not_allowed` | 检查资源、路径或方法 |
 | 409 | `email_in_use` | 更换已存在的邮箱 |
 | 409 | `last_admin_required` | 至少保留一个启用状态的管理员，先为其他账户分配 admin 再停用或降级 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
-| 422 | `validation_error`、`invalid_uuid_v7` | 按字段约束修正输入 |
+| 422 | `validation_error` | 按 `details` 中的字段与字段错误码修正输入；路径 ID 不是 UUIDv7 时 `field` 为 `id` |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 / 503 | `internal_error` / `service_unavailable` | 记录请求标识并排查服务依赖 |
 

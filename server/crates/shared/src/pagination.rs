@@ -1,4 +1,4 @@
-use crate::error::{AppError, Result};
+use crate::error::{AppError, FieldError, FieldErrorCode, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -19,12 +19,26 @@ impl Default for PageRequest {
 
 impl PageRequest {
     pub fn validate(&self) -> Result<()> {
-        if self.page == 0 || !(1..=100).contains(&self.per_page) {
-            return Err(AppError::Validation(
-                "page must be positive and per_page must be 1..100".into(),
+        let mut errors = Vec::new();
+        if self.page == 0 {
+            errors.push(FieldError::new(
+                "page",
+                FieldErrorCode::OutOfRange,
+                "page must be at least 1",
             ));
         }
-        Ok(())
+        if !(1..=100).contains(&self.per_page) {
+            errors.push(FieldError::new(
+                "per_page",
+                FieldErrorCode::OutOfRange,
+                "per_page must be between 1 and 100",
+            ));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(AppError::Validation(errors))
+        }
     }
 
     pub fn offset(&self) -> i64 {
@@ -49,8 +63,9 @@ pub struct Pagination {
     pub total_pages: i64,
 }
 
-#[derive(Debug, Serialize)]
+/// 一页查询结果；API 层将其序列化为 `{"data": items, "meta": {"pagination": ...}}`。
+#[derive(Debug)]
 pub struct Page<T> {
-    pub data: Vec<T>,
+    pub items: Vec<T>,
     pub pagination: Pagination,
 }

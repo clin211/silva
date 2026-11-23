@@ -1,7 +1,10 @@
 mod error;
 mod http;
 mod metrics;
+mod response;
+pub use error::ErrorCode;
 pub use metrics::sample_metrics;
+pub use silva_shared::error::FieldErrorCode;
 
 use axum::{
     Router,

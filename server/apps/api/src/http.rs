@@ -1,13 +1,12 @@
 use crate::{
     AppState,
-    error::{ApiError, REQUEST_ID},
+    error::{ApiError, ErrorCode, REQUEST_ID},
+    response,
 };
 use axum::{
     Json,
-    extract::{
-        ConnectInfo, FromRequest, FromRequestParts, Path, Query, Request, State,
-        rejection::JsonRejection,
-    },
+    body::Bytes,
+    extract::{ConnectInfo, FromRequest, FromRequestParts, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -18,7 +17,7 @@ use silva_application::{identity::UserUpdate, ports::RequestMeta};
 use silva_domain::identity::{Principal, User};
 use silva_infrastructure::persistence;
 use silva_shared::{
-    error::AppError,
+    error::{AppError, FieldError, FieldErrorCode},
     ids::{self, EntityId},
     pagination::PageRequest,
 };
@@ -35,49 +34,151 @@ const SESSION_COOKIE: &str = "__Host-silva_session";
 const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/password"];
 type HttpResult<T> = Result<T, ApiError>;
 
+/// JSON 请求体提取器：语法错误返回 400 `malformed_json`；类型、缺失或未知字段返回
+/// 422 `validation_error`，并在 `details` 中给出字段路径。
 pub(crate) struct Input<T>(T);
 impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Input<T> {
     type Rejection = ApiError;
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        Json::<T>::from_request(req, state)
-            .await
-            .map(|Json(value)| Self(value))
-            .map_err(|rejection: JsonRejection| {
-                let status = rejection.status();
-                if status == StatusCode::UNSUPPORTED_MEDIA_TYPE {
-                    ApiError::new(
-                        status,
-                        "unsupported_media_type",
-                        "Expected application/json",
-                    )
-                } else if status == StatusCode::PAYLOAD_TOO_LARGE {
-                    ApiError::new(status, "payload_too_large", "Request body exceeds 64 KiB")
-                } else {
-                    ApiError::new(
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        "validation_error",
-                        "Invalid JSON request",
-                    )
-                }
-            })
+        if !is_json_content_type(req.headers()) {
+            return Err(ApiError::new(
+                ErrorCode::UnsupportedMediaType,
+                "Expected application/json",
+            ));
+        }
+        let bytes = Bytes::from_request(req, state).await.map_err(|rejection| {
+            if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                ApiError::new(ErrorCode::PayloadTooLarge, "Request body exceeds 64 KiB")
+            } else {
+                ApiError::new(ErrorCode::MalformedJson, "Request body could not be read")
+            }
+        })?;
+        let malformed =
+            || ApiError::new(ErrorCode::MalformedJson, "Request body is not valid JSON");
+        let mut deserializer = serde_json::Deserializer::from_slice(&bytes);
+        let value = serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+            if error.inner().classify() == serde_json::error::Category::Data {
+                ApiError::validation(vec![json_field_error(
+                    &error.path().to_string(),
+                    &error.inner().to_string(),
+                )])
+            } else {
+                malformed()
+            }
+        })?;
+        deserializer.end().map_err(|_| malformed())?;
+        Ok(Self(value))
     }
 }
 
+/// 接受 `application/json` 与 `application/*+json`，参数（如 charset）忽略。
+fn is_json_content_type(headers: &HeaderMap) -> bool {
+    let Some(value) = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    let essence = value
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    essence == "application/json"
+        || essence
+            .strip_prefix("application/")
+            .is_some_and(|subtype| subtype.ends_with("+json"))
+}
+
+/// 将 serde 的数据错误转换为字段错误。只使用路径和字段名，不回显输入值，避免泄露密码等敏感内容。
+fn json_field_error(path: &str, message: &str) -> FieldError {
+    let parent = (path != "." && path != "?").then_some(path);
+    // 缺失字段报在父级路径上；未知字段的路径已包含字段名本身。
+    let join = |name: &str| match parent {
+        Some(parent) if parent == name || parent.ends_with(&format!(".{name}")) => {
+            parent.to_owned()
+        }
+        Some(parent) => format!("{parent}.{name}"),
+        None => name.to_owned(),
+    };
+    let named = |prefix: &str| {
+        message
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split('`').next())
+    };
+    if let Some(name) = named("missing field `") {
+        FieldError::new(join(name), FieldErrorCode::Required, "field is required")
+    } else if let Some(name) = named("unknown field `") {
+        FieldError::new(
+            join(name),
+            FieldErrorCode::UnknownField,
+            "field is not allowed",
+        )
+    } else {
+        FieldError::new(
+            parent.unwrap_or("").to_owned(),
+            FieldErrorCode::InvalidType,
+            "value has an invalid type",
+        )
+    }
+}
+
+/// 分页查询参数：`page`、`per_page` 为十进制整数，重复或越界均返回字段错误；其他参数忽略。
 pub(crate) struct PageInput(PageRequest);
 impl<S: Send + Sync> FromRequestParts<S> for PageInput {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
-        let Query(page) = Query::<PageRequest>::from_request_parts(parts, state)
+        let Query(pairs) = Query::<Vec<(String, String)>>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
-                ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "validation_error",
-                    "Invalid pagination",
-                )
+                ApiError::validation(vec![FieldError::new(
+                    "",
+                    FieldErrorCode::InvalidFormat,
+                    "query string is not valid URL encoding",
+                )])
             })?;
-        page.validate().map_err(ApiError::from)?;
-        Ok(Self(page))
+        let mut page = PageRequest::default();
+        let mut seen = [false; 2];
+        let mut errors = Vec::new();
+        for (key, value) in pairs {
+            let (slot, index) = match key.as_str() {
+                "page" => (&mut page.page, 0),
+                "per_page" => (&mut page.per_page, 1),
+                _ => continue,
+            };
+            if std::mem::replace(&mut seen[index], true) {
+                errors.push(FieldError::new(
+                    key,
+                    FieldErrorCode::Duplicate,
+                    "parameter is given more than once",
+                ));
+                continue;
+            }
+            match value.parse::<u32>() {
+                Ok(parsed) => *slot = parsed,
+                Err(_) if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
+                    errors.push(FieldError::new(
+                        key,
+                        FieldErrorCode::OutOfRange,
+                        "value is too large",
+                    ));
+                }
+                Err(_) => errors.push(FieldError::new(
+                    key,
+                    FieldErrorCode::InvalidType,
+                    "value must be a non-negative integer",
+                )),
+            }
+        }
+        if let Err(AppError::Validation(range)) = page.validate() {
+            errors.extend(range);
+        }
+        if errors.is_empty() {
+            Ok(Self(page))
+        } else {
+            Err(ApiError::validation(errors))
+        }
     }
 }
 
@@ -109,11 +210,11 @@ impl<S: Send + Sync> FromRequestParts<S> for IdPath {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
         let invalid = || {
-            ApiError::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "invalid_uuid_v7",
-                "Expected a hyphenated UUIDv7 entity ID",
-            )
+            ApiError::validation(vec![FieldError::new(
+                "id",
+                FieldErrorCode::InvalidFormat,
+                "id must be a hyphenated UUIDv7",
+            )])
         };
         let Path(value) = Path::<String>::from_request_parts(parts, state)
             .await
@@ -238,20 +339,15 @@ pub(crate) async fn context(
         let origin_ok =
             !admin_write || exact_header(req.headers(), "origin", &state.config.admin_origin);
         let mut response = if !rate_ok {
-            let mut response = ApiError::new(
-                StatusCode::TOO_MANY_REQUESTS,
-                "rate_limited",
-                "Request limit exceeded",
-            )
-            .into_response();
+            let mut response =
+                ApiError::new(ErrorCode::RateLimited, "Request limit exceeded").into_response();
             response
                 .headers_mut()
                 .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
             response
         } else if !origin_ok {
             ApiError::new(
-                StatusCode::FORBIDDEN,
-                "origin_rejected",
+                ErrorCode::OriginRejected,
                 "Origin must match the configured admin origin",
             )
             .into_response()
@@ -336,8 +432,7 @@ async fn authorize(
             || headers.get_all("x-csrf-token").iter().count() != 1
         {
             return Err(ApiError::new(
-                StatusCode::FORBIDDEN,
-                "csrf_rejected",
+                ErrorCode::CsrfRejected,
                 "CSRF token does not match session",
             ));
         }
@@ -351,8 +446,9 @@ pub(crate) struct LoginInput {
     email: String,
     password: String,
 }
+/// 登录与读取会话共用的会话视图，作为 `data` 返回。
 #[derive(Serialize)]
-struct AuthResponse {
+struct AuthSession {
     user: User,
     permissions: Vec<String>,
     csrf_token: String,
@@ -372,12 +468,11 @@ pub(crate) async fn login(
         session.token,
         state.config.session_ttl.as_secs()
     );
-    let mut response = Json(AuthResponse {
+    let mut response = response::ok(AuthSession {
         user: session.principal.user,
         permissions: session.principal.permissions,
         csrf_token: session.csrf_token,
-    })
-    .into_response();
+    });
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie).map_err(|_| {
@@ -391,12 +486,11 @@ pub(crate) async fn login(
 
 pub(crate) async fn me(State(state): State<AppState>, headers: HeaderMap) -> HttpResult<Response> {
     let (principal, csrf_token) = authorize(&state, &headers, false).await?;
-    Ok(Json(AuthResponse {
+    Ok(response::ok(AuthSession {
         user: principal.user,
         permissions: principal.permissions,
         csrf_token,
-    })
-    .into_response())
+    }))
 }
 
 pub(crate) async fn logout(
@@ -406,7 +500,7 @@ pub(crate) async fn logout(
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, true).await?;
     state.identity.logout(&principal, &meta).await?;
-    let mut response = StatusCode::NO_CONTENT.into_response();
+    let mut response = response::no_content();
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_static(
@@ -438,7 +532,7 @@ pub(crate) async fn change_password(
             &meta,
         )
         .await?;
-    Ok(StatusCode::NO_CONTENT.into_response())
+    Ok(response::no_content())
 }
 
 pub(crate) async fn users(
@@ -447,7 +541,9 @@ pub(crate) async fn users(
     PageInput(page): PageInput,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
-    Ok(Json(state.identity.users(&principal, &page).await?).into_response())
+    Ok(response::page(
+        state.identity.users(&principal, &page).await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -465,23 +561,18 @@ pub(crate) async fn create_user(
     Input(input): Input<CreateUserInput>,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, true).await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(
-            state
-                .identity
-                .create_user(
-                    &principal,
-                    input.email,
-                    input.display_name,
-                    input.password,
-                    input.roles,
-                    &meta,
-                )
-                .await?,
-        ),
-    )
-        .into_response())
+    let user = state
+        .identity
+        .create_user(
+            &principal,
+            input.email,
+            input.display_name,
+            input.password,
+            input.roles,
+            &meta,
+        )
+        .await?;
+    Ok(response::created(user))
 }
 
 #[derive(Deserialize)]
@@ -500,23 +591,21 @@ pub(crate) async fn update_user(
     Input(input): Input<UpdateUserInput>,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, true).await?;
-    Ok(Json(
-        state
-            .identity
-            .update_user(
-                &principal,
-                id.as_uuid(),
-                UserUpdate {
-                    display_name: input.display_name,
-                    status: input.status,
-                    roles: input.roles,
-                    password: input.password,
-                },
-                &meta,
-            )
-            .await?,
-    )
-    .into_response())
+    let user = state
+        .identity
+        .update_user(
+            &principal,
+            id.as_uuid(),
+            UserUpdate {
+                display_name: input.display_name,
+                status: input.status,
+                roles: input.roles,
+                password: input.password,
+            },
+            &meta,
+        )
+        .await?;
+    Ok(response::ok(user))
 }
 
 pub(crate) async fn roles(
@@ -524,7 +613,7 @@ pub(crate) async fn roles(
     headers: HeaderMap,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
-    Ok(Json(state.identity.roles(&principal).await?).into_response())
+    Ok(response::ok(state.identity.roles(&principal).await?))
 }
 
 pub(crate) async fn audit_logs(
@@ -533,27 +622,34 @@ pub(crate) async fn audit_logs(
     PageInput(page): PageInput,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
-    Ok(Json(state.identity.audit_logs(&principal, &page).await?).into_response())
+    Ok(response::page(
+        state.identity.audit_logs(&principal, &page).await?,
+    ))
 }
 
 pub(crate) async fn system_health(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> HttpResult<Json<Value>> {
+) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
     principal.require("system.read")?;
-    ready(State(state)).await
+    Ok(response::ok(dependency_health(&state).await?))
 }
 
+// `/health/*` 是给负载均衡与编排系统的探针，按惯例返回裸 JSON，不套 `data` 信封。
 pub(crate) async fn live() -> Json<Value> {
     Json(json!({"status":"ok"}))
 }
 pub(crate) async fn ready(State(state): State<AppState>) -> HttpResult<Json<Value>> {
+    Ok(Json(dependency_health(&state).await?))
+}
+
+async fn dependency_health(state: &AppState) -> HttpResult<Value> {
     persistence::ready(&state.pool).await.map_err(|error| {
         tracing::warn!(%error, "readiness check failed");
         ApiError::unavailable()
     })?;
-    Ok(Json(json!({"status":"ok", "database":"up"})))
+    Ok(json!({"status":"ok", "database":"up"}))
 }
 
 pub(crate) async fn openapi() -> impl IntoResponse {
@@ -563,14 +659,10 @@ pub(crate) async fn openapi() -> impl IntoResponse {
     )
 }
 pub(crate) async fn not_found() -> ApiError {
-    ApiError::new(StatusCode::NOT_FOUND, "not_found", "Resource not found")
+    ApiError::new(ErrorCode::NotFound, "Resource not found")
 }
 pub(crate) async fn method_not_allowed() -> ApiError {
-    ApiError::new(
-        StatusCode::METHOD_NOT_ALLOWED,
-        "method_not_allowed",
-        "Method not allowed",
-    )
+    ApiError::new(ErrorCode::MethodNotAllowed, "Method not allowed")
 }
 
 #[cfg(test)]
@@ -605,6 +697,49 @@ mod tests {
         let v6b: IpAddr = "2001:db8::2".parse().unwrap();
         assert!(limiter.allow(v6a, false, 1));
         assert!(!limiter.allow(v6b, false, 1));
+    }
+
+    #[test]
+    fn json_content_type_accepts_json_and_structured_suffix() {
+        let headers = |value: &str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(value).unwrap());
+            headers
+        };
+        for accepted in [
+            "application/json",
+            "Application/JSON; charset=utf-8",
+            "application/merge-patch+json",
+        ] {
+            assert!(is_json_content_type(&headers(accepted)), "{accepted}");
+        }
+        for rejected in ["text/json", "application/jsonp", "text/plain"] {
+            assert!(!is_json_content_type(&headers(rejected)), "{rejected}");
+        }
+        assert!(!is_json_content_type(&HeaderMap::new()));
+    }
+
+    #[test]
+    fn json_field_error_uses_path_without_echoing_input() {
+        let missing = json_field_error(".", "missing field `email` at line 1 column 2");
+        assert_eq!(
+            (missing.field.as_ref(), missing.code),
+            ("email", FieldErrorCode::Required)
+        );
+        let nested = json_field_error("profile", "unknown field `x`, expected `a`");
+        assert_eq!(
+            (nested.field.as_ref(), nested.code),
+            ("profile.x", FieldErrorCode::UnknownField)
+        );
+        let typed = json_field_error(
+            "roles[1]",
+            "invalid type: string \"secret\", expected u32 at line 1 column 9",
+        );
+        assert_eq!(
+            (typed.field.as_ref(), typed.code),
+            ("roles[1]", FieldErrorCode::InvalidType)
+        );
+        assert!(!typed.message.contains("secret"));
     }
 
     #[test]

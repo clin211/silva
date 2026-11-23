@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use silva_shared::error::{AppError, Result};
+use silva_shared::error::{AppError, FieldError, FieldErrorCode, Result};
 use uuid::Uuid;
 
 pub const AUTHOR_PERMISSIONS: &[&str] = &[
@@ -106,19 +106,35 @@ pub struct AuditLog {
 }
 
 pub fn validate_roles(roles: &[String]) -> Result<()> {
-    if roles.is_empty()
-        || roles.iter().any(|r| !ROLE_KEYS.contains(&r.as_str()))
-        || roles.len()
-            != roles
-                .iter()
-                .collect::<std::collections::BTreeSet<_>>()
-                .len()
-    {
-        return Err(AppError::Validation(
-            "roles must contain distinct built-in keys: author, editor, admin".into(),
+    if roles.is_empty() {
+        return Err(AppError::invalid(
+            "roles",
+            FieldErrorCode::OutOfRange,
+            "roles must contain at least one role",
         ));
     }
-    Ok(())
+    let mut seen = std::collections::BTreeSet::new();
+    let mut errors = Vec::new();
+    for (index, role) in roles.iter().enumerate() {
+        if !ROLE_KEYS.contains(&role.as_str()) {
+            errors.push(FieldError::new(
+                format!("roles[{index}]"),
+                FieldErrorCode::InvalidValue,
+                "role must be one of: author, editor, admin",
+            ));
+        } else if !seen.insert(role) {
+            errors.push(FieldError::new(
+                format!("roles[{index}]"),
+                FieldErrorCode::Duplicate,
+                "role is listed more than once",
+            ));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Validation(errors))
+    }
 }
 
 #[cfg(test)]

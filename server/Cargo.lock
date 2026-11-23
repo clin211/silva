@@ -2449,6 +2449,7 @@ dependencies = [
  "jsonschema",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "silva-application",
  "silva-domain",
  "silva-infrastructure",
@@ -2465,6 +2466,7 @@ dependencies = [
 name = "silva-application"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "chrono",
  "serde",

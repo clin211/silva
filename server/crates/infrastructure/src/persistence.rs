@@ -7,7 +7,7 @@ use silva_domain::identity::{AuditLog, Principal, ROLE_KEYS, Role, User, permiss
 use silva_shared::metrics::METRICS;
 use silva_shared::{
     config::Config,
-    error::{AppError, Result},
+    error::{AppError, Conflict, FieldErrorCode, Result},
     ids,
     pagination::{Page, PageRequest},
 };
@@ -146,9 +146,9 @@ fn db(error: sqlx::Error) -> AppError {
 }
 
 /// 只把已知的业务唯一约束映射为 409；未知约束说明实现缺少前置检查，按内部错误记录便于发现。
-fn unique_conflict_code(constraint: Option<&str>) -> Option<&'static str> {
+fn unique_conflict_code(constraint: Option<&str>) -> Option<Conflict> {
     match constraint? {
-        "users_email_key" | "users_email_lower_unique" => Some("email_in_use"),
+        "users_email_key" | "users_email_lower_unique" => Some(Conflict::EmailInUse),
         _ => None,
     }
 }
@@ -228,7 +228,7 @@ async fn ensure_active_admin(connection: &mut PgConnection) -> Result<()> {
     if exists {
         Ok(())
     } else {
-        Err(AppError::Conflict("last_admin_required"))
+        Err(AppError::Conflict(Conflict::LastAdminRequired))
     }
 }
 
@@ -247,8 +247,10 @@ async fn assign_roles(connection: &mut PgConnection, id: Uuid, roles: &[String])
     .await
     .map_err(db)?;
     if result.rows_affected() != roles.len() as u64 {
-        return Err(AppError::Validation(
-            "unknown role; run migrations before seeding".into(),
+        return Err(AppError::invalid(
+            "roles",
+            FieldErrorCode::InvalidValue,
+            "unknown role; run migrations before seeding",
         ));
     }
     Ok(())
@@ -426,14 +428,14 @@ impl IdentityRepository for PgIdentityRepository {
         .fetch_all(&mut *tx)
         .await
         .map_err(db)?;
-        let data = rows
+        let items = rows
             .iter()
             .map(read_user)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(db)?;
         tx.commit().await.map_err(db)?;
         Ok(Page {
-            data,
+            items,
             pagination: page.metadata(total),
         })
     }
@@ -590,7 +592,7 @@ impl IdentityRepository for PgIdentityRepository {
             .map_err(db)?;
         let rows = sqlx::query("SELECT id,actor_user_id,action,resource_type,resource_id,host(ip_address) AS ip_address,user_agent,metadata,created_at FROM audit_logs ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2")
             .bind(i64::from(page.per_page)).bind(page.offset()).fetch_all(&mut *tx).await.map_err(db)?;
-        let data = rows
+        let items = rows
             .into_iter()
             .map(|row| {
                 Ok(AuditLog {
@@ -609,7 +611,7 @@ impl IdentityRepository for PgIdentityRepository {
             .map_err(db)?;
         tx.commit().await.map_err(db)?;
         Ok(Page {
-            data,
+            items,
             pagination: page.metadata(total),
         })
     }
@@ -674,11 +676,11 @@ mod tests {
     fn only_known_unique_constraints_map_to_conflicts() {
         assert_eq!(
             unique_conflict_code(Some("users_email_key")),
-            Some("email_in_use")
+            Some(Conflict::EmailInUse)
         );
         assert_eq!(
             unique_conflict_code(Some("users_email_lower_unique")),
-            Some("email_in_use")
+            Some(Conflict::EmailInUse)
         );
         assert_eq!(unique_conflict_code(Some("sessions_token_hash_key")), None);
         assert_eq!(unique_conflict_code(None), None);

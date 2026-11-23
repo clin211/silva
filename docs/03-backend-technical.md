@@ -738,20 +738,22 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 业务请求与响应使用 JSON（204 无响应体；媒体直传和媒体二进制读取例外）。统一分页、错误结构、排序和过滤参数，不直接暴露数据库模型。列表默认 `page=1`、`per_page=20`、最大 100；排序字段按端点列入 OpenAPI 白名单，最后使用稳定 ID 打破同分。OpenAPI 是运行时契约与 TypeScript Client 的来源；联调前将路径、权限、DTO、状态码及并发错误写入 OpenAPI。
 
-业务实体 ID 在路径、查询参数和 JSON 中使用标准连字符 UUID 字符串。OpenAPI 对这些 ID 声明 `type: string`、`format: uuid`，并用 `pattern` 约束 UUIDv7 的版本位和变体位；服务端实际校验，格式或版本不符时返回 `422 invalid_uuid_v7`。
+业务实体 ID 在路径、查询参数和 JSON 中使用标准连字符 UUID 字符串。OpenAPI 对这些 ID 声明 `type: string`、`format: uuid`，并用 `pattern` 约束 UUIDv7 的版本位和变体位；服务端实际校验，格式或版本不符时返回 422 `validation_error`，字段错误码为 `invalid_format`。
 
 ### 5.2 统一响应约定
 
-成功响应直接返回资源或分页对象。分页示例：
+完整规范见 [API 响应结构规范](../server/docs/contracts/api-response.md)。成功响应统一以 `data` 包裹，分页信息放在 `meta`；204 没有正文。分页示例：
 
 ```json
 {
   "data": [],
-  "pagination": {
-    "page": 1,
-    "per_page": 20,
-    "total": 0,
-    "total_pages": 0
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "per_page": 20,
+      "total": 0,
+      "total_pages": 0
+    }
   }
 }
 ```
@@ -763,13 +765,15 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
   "error": {
     "code": "validation_error",
     "message": "Request validation failed",
-    "details": [],
+    "details": [
+      { "field": "roles[1]", "code": "duplicate", "message": "role is listed more than once" }
+    ],
     "request_id": "017f22e2-79b0-7cc3-98c4-dc0c0c07398f"
   }
 }
 ```
 
-常见 HTTP 状态：200、201、202、204、400、401、403、404、409、422、429、500、503。401 表示无有效会话，403 表示无权限或 CSRF 校验失败；409 表示资源当前状态或版本不允许该操作；422 表示输入字段无效。错误用稳定的 `error.code` 区分，详见 §6。
+常见 HTTP 状态：200、201、202、204、400、401、403、404、409、422、429、500、503。400 表示请求体不是合法 JSON；401 表示无有效会话，403 表示无权限或 CSRF 校验失败；409 表示资源当前状态或版本不允许该操作；422 表示输入字段无效，`details` 列出字段级错误。错误用稳定的 `error.code` 区分，详见 §6。
 
 ### 5.3 Public API
 

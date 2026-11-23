@@ -80,7 +80,7 @@ jq --null-input --compact-output '{email: env.SILVA_ADMIN_EMAIL, password: env.S
 unset SILVA_LOGIN_PASSWORD
 ```
 
-成功响应的 `Set-Cookie` 提供会话，JSON 顶层提供 `csrf_token`。会话 Cookie 始终为 HttpOnly、Secure、SameSite=Lax、Path=/、host-only；数据库只保存令牌哈希。使用 HTTPS 代理进行浏览器联调。HTTP curl 冒烟若客户端不回传 Secure Cookie，可手动把响应 Cookie 的名称和值填入后续 `Cookie` 头：
+成功响应的 `Set-Cookie` 提供会话，JSON 的 `data.csrf_token` 提供 CSRF Token（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。会话 Cookie 始终为 HttpOnly、Secure、SameSite=Lax、Path=/、host-only；数据库只保存令牌哈希。使用 HTTPS 代理进行浏览器联调。HTTP curl 冒烟若客户端不回传 Secure Cookie，可手动把响应 Cookie 的名称和值填入后续 `Cookie` 头：
 
 ```sh
 curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \

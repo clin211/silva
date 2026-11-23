@@ -58,7 +58,9 @@ async fn execute(pool: &sqlx::PgPool, config: &Config, command: Command) -> anyh
             let service = identity_service(pool.clone(), config.session_ttl).await?;
             match service.seed_admin(email, display_name, password).await {
                 Ok(user) => tracing::info!(user_id = %user.id, "administrator created"),
-                Err(silva_shared::error::AppError::Conflict("email_in_use")) => {
+                Err(silva_shared::error::AppError::Conflict(
+                    silva_shared::error::Conflict::EmailInUse,
+                )) => {
                     anyhow::bail!("account already exists; no password or role was changed")
                 }
                 Err(error) => return Err(error.into()),

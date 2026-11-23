@@ -2,7 +2,7 @@ use crate::ports::{Credentials, IdentityRepository, NewUser, RequestMeta, UserCh
 use chrono::Utc;
 use silva_domain::identity::{AuditLog, Principal, Role, User, validate_roles};
 use silva_shared::{
-    error::{AppError, Result},
+    error::{AppError, FieldErrorCode, Result},
     ids,
     pagination::{Page, PageRequest},
 };
@@ -68,7 +68,7 @@ impl IdentityService {
         let token = self.credentials.new_session_token();
         let hash = self.credentials.token_hash(&token);
         let lifetime = chrono::Duration::from_std(self.session_ttl)
-            .map_err(|_| AppError::Validation("session lifetime too large".into()))?;
+            .map_err(|_| AppError::Internal(anyhow::anyhow!("session lifetime too large")))?;
         self.repository
             .create_session(user_id, &hash, Utc::now() + lifetime, meta)
             .await?;
@@ -108,13 +108,15 @@ impl IdentityService {
         new_password: String,
         meta: &RequestMeta,
     ) -> Result<()> {
-        validate_password(&new_password)?;
+        validate_password("new_password", &new_password)?;
         if current_password.len() > 1024 {
             return Err(current_password_invalid());
         }
         if current_password == new_password {
-            return Err(AppError::Validation(
-                "new password must differ from current password".into(),
+            return Err(AppError::invalid(
+                "new_password",
+                FieldErrorCode::Unchanged,
+                "new password must differ from current password",
             ));
         }
         let stored = self.repository.password_hash(principal.user.id).await?;
@@ -197,10 +199,14 @@ impl IdentityService {
             || email.ends_with('@')
             || email.chars().any(char::is_whitespace)
         {
-            return Err(AppError::Validation("invalid email".into()));
+            return Err(AppError::invalid(
+                "email",
+                FieldErrorCode::InvalidFormat,
+                "email must be a valid address of at most 254 bytes",
+            ));
         }
         validate_name(&display_name)?;
-        validate_password(&password)?;
+        validate_password("password", &password)?;
         validate_roles(&roles)?;
         let password_hash = self.credentials.hash_password(password).await?;
         self.repository
@@ -239,15 +245,17 @@ impl IdentityService {
         if let Some(status) = &changes.status
             && !["active", "disabled"].contains(&status.as_str())
         {
-            return Err(AppError::Validation(
-                "status must be active or disabled".into(),
+            return Err(AppError::invalid(
+                "status",
+                FieldErrorCode::InvalidValue,
+                "status must be active or disabled",
             ));
         }
         if let Some(roles) = &changes.roles {
             validate_roles(roles)?;
         }
         if let Some(password) = &update.password {
-            validate_password(password)?;
+            validate_password("password", password)?;
         }
         let changes = match update.password {
             Some(password) => UserChanges {
@@ -279,23 +287,31 @@ impl IdentityService {
     }
 }
 
-fn validate_password(password: &str) -> Result<()> {
+fn validate_password(field: &'static str, password: &str) -> Result<()> {
     if password.len() < 12 || password.len() > 1024 {
-        return Err(AppError::Validation(
-            "password must contain 12..1024 bytes".into(),
+        return Err(AppError::invalid(
+            field,
+            FieldErrorCode::OutOfRange,
+            "password must contain 12 to 1024 bytes",
         ));
     }
     Ok(())
 }
 
 fn current_password_invalid() -> AppError {
-    AppError::Validation("current password is incorrect".into())
+    AppError::invalid(
+        "current_password",
+        FieldErrorCode::Incorrect,
+        "current password is incorrect",
+    )
 }
 
 fn validate_name(name: &str) -> Result<()> {
     if name.trim().is_empty() || name.len() > 100 {
-        return Err(AppError::Validation(
-            "display_name must contain 1..100 bytes".into(),
+        return Err(AppError::invalid(
+            "display_name",
+            FieldErrorCode::OutOfRange,
+            "display_name must contain 1 to 100 bytes",
         ));
     }
     Ok(())

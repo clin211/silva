@@ -108,6 +108,23 @@ async fn raw_request(
     }
 }
 
+/// 断言 422 校验错误，并且 `details` 中包含指定字段与字段错误码。
+fn assert_field_error(response: &Response, field: &str, code: &str) {
+    assert_error(
+        response,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "validation_error",
+    );
+    let details = response.json["error"]["details"].as_array().unwrap();
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail["field"] == field && detail["code"] == code),
+        "缺少字段错误 {field}/{code}：{}",
+        response.json
+    );
+}
+
 fn assert_error(response: &Response, status: StatusCode, code: &str) {
     assert_eq!(response.status, status, "{}", response.json);
     assert_eq!(response.json["error"]["code"], code, "{}", response.json);
@@ -146,10 +163,11 @@ async fn login(app: &Router, email: &str) -> (String, String, Value) {
     }
     assert!(!attributes.contains("domain="), "{cookie_header}");
     let cookie = cookie_header.split(';').next().unwrap().to_owned();
-    let csrf = response.json["csrf_token"].as_str().unwrap().to_owned();
+    let session = response.json["data"].clone();
+    let csrf = session["csrf_token"].as_str().unwrap().to_owned();
     assert!(!csrf.is_empty());
-    assert!(response.json["permissions"].is_array());
-    (cookie, csrf, response.json)
+    assert!(session["permissions"].is_array());
+    (cookie, csrf, session)
 }
 
 fn config(database_url: String) -> Config {
@@ -299,11 +317,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some(ORIGIN),
     )
     .await;
-    assert_error(
-        &malformed,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "validation_error",
-    );
+    assert_error(&malformed, StatusCode::BAD_REQUEST, "malformed_json");
     let oversized_body =
         json!({"email":"admin@example.test","password":"x".repeat(70 * 1024)}).to_string();
     let oversized = raw_request(
@@ -365,8 +379,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(me.status, StatusCode::OK, "{}", me.json);
-    assert_eq!(me.json["csrf_token"], admin_csrf);
-    assert_eq!(me.json["user"]["id"], admin_id);
+    assert_eq!(me.json["data"]["csrf_token"], admin_csrf);
+    assert_eq!(me.json["data"]["user"]["id"], admin_id);
     assert_eq!(me.headers[header::CACHE_CONTROL], "no-store");
     let token = admin_cookie.split_once('=').unwrap().1;
     let stored: (String, String) = sqlx::query_as("SELECT s.token_hash, u.password_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.id = $1 ORDER BY s.created_at DESC LIMIT 1")
@@ -405,15 +419,47 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
 
     let created = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"author@example.test","display_name":"Acceptance Author","password":PASSWORD,"roles":["author"]})), Some(&admin_cookie), Some(&admin_csrf), Some(ORIGIN)).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
-    let author_id = created.json["id"].as_str().unwrap();
+    let author_id = created.json["data"]["id"].as_str().unwrap();
     assert_eq!(Uuid::parse_str(author_id).unwrap().get_version_num(), 7);
-    assert!(created.json.get("password_hash").is_none());
+    assert!(created.json["data"].get("password_hash").is_none());
     let duplicate = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"AUTHOR@example.test","display_name":"Duplicate","password":PASSWORD,"roles":["author"]})), Some(&admin_cookie), Some(&admin_csrf), Some(ORIGIN)).await;
     assert_error(&duplicate, StatusCode::CONFLICT, "email_in_use");
-    for body in [
-        json!({"email":"bad@example.test","display_name":"Invalid","password":"short","roles":["author"]}),
-        json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["custom"]}),
-        json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["author","author"]}),
+    for (body, field, code) in [
+        (
+            json!({"email":"bad@example.test","display_name":"Invalid","password":"short","roles":["author"]}),
+            "password",
+            "out_of_range",
+        ),
+        (
+            json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["custom"]}),
+            "roles[0]",
+            "invalid_value",
+        ),
+        (
+            json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["author","author"]}),
+            "roles[1]",
+            "duplicate",
+        ),
+        (
+            json!({"email":"no-at-sign","display_name":"Invalid","password":PASSWORD,"roles":["author"]}),
+            "email",
+            "invalid_format",
+        ),
+        (
+            json!({"email":"bad@example.test","password":PASSWORD,"roles":["author"]}),
+            "display_name",
+            "required",
+        ),
+        (
+            json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["author"],"is_admin":true}),
+            "is_admin",
+            "unknown_field",
+        ),
+        (
+            json!({"email":"bad@example.test","display_name":"Invalid","password":PASSWORD,"roles":["author", 1]}),
+            "roles[1]",
+            "invalid_type",
+        ),
     ] {
         let invalid = request(
             app,
@@ -425,29 +471,28 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Some(ORIGIN),
         )
         .await;
-        assert_error(
-            &invalid,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "validation_error",
-        );
+        assert_field_error(&invalid, field, code);
     }
     let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
     let (author_cookie2, _, _) = login(app, "author@example.test").await;
 
     // 修改自己的密码：校验当前密码，保留本会话并撤销其他会话。
     const NEW_PASSWORD: &str = "rotated-password-2026";
-    for (body, code) in [
+    for (body, field, code) in [
         (
             json!({"current_password":"wrong-password-0000","new_password":NEW_PASSWORD}),
-            "validation_error",
+            "current_password",
+            "incorrect",
         ),
         (
             json!({"current_password":PASSWORD,"new_password":PASSWORD}),
-            "validation_error",
+            "new_password",
+            "unchanged",
         ),
         (
             json!({"current_password":PASSWORD,"new_password":"short"}),
-            "validation_error",
+            "new_password",
+            "out_of_range",
         ),
     ] {
         let response = request(
@@ -460,7 +505,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Some(ORIGIN),
         )
         .await;
-        assert_error(&response, StatusCode::UNPROCESSABLE_ENTITY, code);
+        assert_field_error(&response, field, code);
     }
     let missing_csrf = request(
         app,
@@ -579,11 +624,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some(ORIGIN),
     )
     .await;
-    assert_error(
-        &short_reset,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "validation_error",
-    );
+    assert_field_error(&short_reset, "password", "out_of_range");
     let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
     let (author_cookie2, _, _) = login(app, "author@example.test").await;
     for path in [
@@ -628,9 +669,11 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(users.status, StatusCode::OK, "{}", users.json);
-    assert_eq!(users.json["pagination"]["page"], 1);
-    assert_eq!(users.json["pagination"]["per_page"], 20);
-    assert_eq!(users.json["pagination"]["total"], 2);
+    let pagination = &users.json["meta"]["pagination"];
+    assert_eq!(pagination["page"], 1);
+    assert_eq!(pagination["per_page"], 20);
+    assert_eq!(pagination["total"], 2);
+    assert_eq!(pagination["total_pages"], 1);
     assert_eq!(users.json["data"].as_array().unwrap().len(), 2);
     let healthy = request(
         app,
@@ -643,8 +686,15 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(healthy.status, StatusCode::OK, "{}", healthy.json);
-    assert_eq!(healthy.json["database"], "up");
-    for query in ["page=0", "per_page=0", "per_page=101", "page=not-a-number"] {
+    assert_eq!(healthy.json["data"]["database"], "up");
+    for (query, field, code) in [
+        ("page=0", "page", "out_of_range"),
+        ("per_page=0", "per_page", "out_of_range"),
+        ("per_page=101", "per_page", "out_of_range"),
+        ("page=not-a-number", "page", "invalid_type"),
+        ("page=99999999999", "page", "out_of_range"),
+        ("page=1&page=2", "page", "duplicate"),
+    ] {
         let response = request(
             app,
             Method::GET,
@@ -655,11 +705,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             None,
         )
         .await;
-        assert_error(
-            &response,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "validation_error",
-        );
+        assert_field_error(&response, field, code);
     }
 
     for bad_id in [
@@ -678,11 +724,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Some(ORIGIN),
         )
         .await;
-        assert_error(
-            &response,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "invalid_uuid_v7",
-        );
+        assert_field_error(&response, "id", "invalid_format");
     }
     let roles = request(
         app,
@@ -695,8 +737,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(roles.status, StatusCode::OK, "{}", roles.json);
-    let role_keys: Vec<_> = roles
-        .json
+    let role_keys: Vec<_> = roles.json["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -705,7 +746,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     for role in ["author", "editor", "admin"] {
         assert!(role_keys.contains(&role));
     }
-    for role in roles.json.as_array().unwrap() {
+    for role in roles.json["data"].as_array().unwrap() {
         assert_eq!(
             Uuid::parse_str(role["id"].as_str().unwrap())
                 .unwrap()
@@ -901,7 +942,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(enabled.status, StatusCode::OK, "{}", enabled.json);
-    assert_eq!(enabled.json["status"], "active");
+    assert_eq!(enabled.json["data"]["status"], "active");
     let old_session = request(
         app,
         Method::GET,

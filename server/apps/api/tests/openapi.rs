@@ -323,6 +323,95 @@ fn documented_examples_match_their_schemas() {
 }
 
 #[test]
+fn error_code_registries_match_runtime() {
+    let spec = contract();
+    let schemas = &spec["components"]["schemas"];
+    assert_eq!(
+        schemas["ErrorCode"]["enum"],
+        serde_json::to_value(silva_api::ErrorCode::ALL).unwrap(),
+        "OpenAPI ErrorCode 必须与运行时错误码登记表一致"
+    );
+    assert_eq!(
+        schemas["FieldErrorCode"]["enum"],
+        serde_json::to_value(silva_api::FieldErrorCode::ALL).unwrap(),
+        "OpenAPI FieldErrorCode 必须与运行时字段错误码一致"
+    );
+    for code in silva_api::FieldErrorCode::ALL {
+        assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
+    }
+}
+
+/// 响应规范：业务接口成功正文为 `{"data"}` 或 `{"data", "meta"}`；所有错误正文为 ErrorResponse，
+/// 且声明的错误码与其 HTTP 状态一致。
+#[test]
+fn responses_follow_envelope_conventions() {
+    let spec = contract();
+    let status_of = |code: &Value| {
+        silva_api::ErrorCode::ALL
+            .into_iter()
+            .find(|candidate| serde_json::to_value(candidate).unwrap() == *code)
+            .unwrap_or_else(|| panic!("未登记的错误码 {code}"))
+            .status()
+            .as_u16()
+            .to_string()
+    };
+    for (path, methods) in spec["paths"].as_object().unwrap() {
+        for (method, operation) in methods.as_object().unwrap() {
+            for (status, response) in operation["responses"].as_object().unwrap() {
+                let response = resolve(&spec, response);
+                let Some(media) = response["content"].get("application/json") else {
+                    continue;
+                };
+                let schema = resolve(&spec, &media["schema"]);
+                if status.starts_with('2') {
+                    if path.starts_with("/api/") {
+                        let required = schema["required"].as_array().unwrap();
+                        assert!(
+                            required.contains(&serde_json::json!("data")),
+                            "{method} {path} {status}: 成功响应必须以 data 包裹"
+                        );
+                        let keys: Vec<_> = schema["properties"]
+                            .as_object()
+                            .unwrap()
+                            .keys()
+                            .map(String::as_str)
+                            .collect();
+                        assert!(
+                            keys.iter().all(|key| ["data", "meta"].contains(key)),
+                            "{method} {path} {status}: 顶层只允许 data 与 meta"
+                        );
+                        assert_eq!(schema["additionalProperties"], false);
+                    }
+                } else {
+                    assert_eq!(
+                        media["schema"]["$ref"], "#/components/schemas/ErrorResponse",
+                        "{method} {path} {status}: 错误响应必须使用 ErrorResponse"
+                    );
+                    let codes = response["x-error-codes"].as_array();
+                    if status != "default" {
+                        for code in codes.unwrap_or_else(|| {
+                            panic!("{method} {path} {status}: 缺少 x-error-codes")
+                        }) {
+                            assert_eq!(
+                                &status_of(code),
+                                status,
+                                "{method} {path}: 错误码 {code} 的状态不符"
+                            );
+                        }
+                    }
+                }
+            }
+            if operation.get("requestBody").is_some() {
+                assert_eq!(
+                    operation["responses"]["400"]["$ref"], "#/components/responses/MalformedJson",
+                    "{method} {path}: JSON 请求体接口必须声明 400 malformed_json"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn response_schema_validation_rejects_contract_drift() {
     let spec = contract();
     let validator = support::validator(&spec["components"]["schemas"]["User"]);
@@ -391,6 +480,140 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
                 assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), spec);
             }
         }
+    }
+
+    // 请求体与查询参数在访问数据库之前校验，可在无数据库时验证错误结构。
+    /// 一条无数据库校验用例。
+    struct Case {
+        method: &'static str,
+        path: &'static str,
+        content_type: Option<&'static str>,
+        body: &'static str,
+        status: StatusCode,
+        code: &'static str,
+        /// 期望出现的（字段, 字段错误码）；None 表示 details 为空。
+        field: Option<(&'static str, &'static str)>,
+    }
+    const LOGIN: &str = "/api/v1/admin/auth/login";
+    let post = |content_type, body, status, code, field| Case {
+        method: "POST",
+        path: LOGIN,
+        content_type,
+        body,
+        status,
+        code,
+        field,
+    };
+    let invalid = StatusCode::UNPROCESSABLE_ENTITY;
+    let cases = [
+        post(
+            Some("application/json"),
+            "{",
+            StatusCode::BAD_REQUEST,
+            "malformed_json",
+            None,
+        ),
+        post(
+            Some("application/json"),
+            "",
+            StatusCode::BAD_REQUEST,
+            "malformed_json",
+            None,
+        ),
+        post(
+            Some("application/json"),
+            r#"{"email":"a@example.test","password":"p"} x"#,
+            StatusCode::BAD_REQUEST,
+            "malformed_json",
+            None,
+        ),
+        post(
+            Some("text/plain"),
+            "{}",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+            None,
+        ),
+        post(
+            Some("application/json; charset=utf-8"),
+            r#"{"email":"a@example.test"}"#,
+            invalid,
+            "validation_error",
+            Some(("password", "required")),
+        ),
+        post(
+            Some("application/json"),
+            r#"{"email":"a@example.test","password":"p","otp":1}"#,
+            invalid,
+            "validation_error",
+            Some(("otp", "unknown_field")),
+        ),
+        post(
+            Some("application/json"),
+            r#"{"email":1,"password":"p"}"#,
+            invalid,
+            "validation_error",
+            Some(("email", "invalid_type")),
+        ),
+        post(
+            Some("application/json"),
+            "[]",
+            invalid,
+            "validation_error",
+            Some(("", "invalid_type")),
+        ),
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/users?page=0&per_page=500",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("per_page", "out_of_range")),
+        },
+    ];
+    for Case {
+        method,
+        path,
+        content_type,
+        body,
+        status: expected_status,
+        code,
+        field,
+    } in cases
+    {
+        let method: Method = method.parse().unwrap();
+        let mut builder = Request::builder()
+            .method(method.clone())
+            .uri(path)
+            .header("origin", "https://admin.example.test");
+        if let Some(content_type) = content_type {
+            builder = builder.header("content-type", content_type);
+        }
+        let response = app
+            .clone()
+            .oneshot(builder.body(Body::from(body.to_owned())).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        support::assert_response(&method, path, status, &headers, &bytes);
+        let json: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status, expected_status, "{path} {body}: {json}");
+        assert_eq!(json["error"]["code"], code, "{path} {body}: {json}");
+        let details = json["error"]["details"].as_array().unwrap();
+        match field {
+            Some((field, field_code)) => assert!(
+                details
+                    .iter()
+                    .any(|detail| detail["field"] == field && detail["code"] == field_code),
+                "{path} {body}: {json}"
+            ),
+            None => assert!(details.is_empty(), "{path} {body}: {json}"),
+        }
+        // 字段错误不得回显输入值。
+        assert!(!json.to_string().contains("a@example.test"), "{json}");
     }
     telemetry.shutdown().await;
 }
