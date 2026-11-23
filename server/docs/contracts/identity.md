@@ -41,7 +41,8 @@
 | GET, POST | `/users` | Admin；分页列表、创建账户。 |
 | PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
 | GET | `/roles` | Admin；内置角色。 |
-| GET | `/audit-logs` | Admin；审计记录。 |
+| GET | `/audit-logs` | Admin；审计记录，支持筛选。 |
+| GET | `/audit-logs/{id}` | Admin；单条审计记录。 |
 | GET | `/system/health` | Admin；系统健康状态。 |
 
 以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
@@ -56,7 +57,13 @@
 - 非 JSON：415 `unsupported_media_type`；JSON 语法错误：400 `malformed_json`；字段缺失、未知、类型或约束不符：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。
 - 账户邮箱重复：409 `email_in_use`（仅 users 邮箱唯一约束映射为该码，其他唯一冲突按 500 记录）。停用或改角色后若不再有启用状态的 admin：409 `last_admin_required`，整笔修改回滚。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
 - API 默认每 IP（IPv6 按 /64 前缀合并）每分钟 600 次，登录额外每 IP 每分钟 10 次，可通过环境变量配置；超额返回 429 `rate_limited` 及 `Retry-After: 60`。
-- 审计记录 `{id,actor_user_id,action,resource_type,resource_id,ip_address,user_agent,metadata,created_at}`：`ip_address` 为直连 peer IP（不信任 `X-Forwarded-For`，CLI 操作为 null），`user_agent` 截断到 512 字节，`metadata` 只含变更字段名、状态、角色键等非敏感信息。
+- 审计记录 `{id,actor_user_id,actor,action,resource_type,resource_id,request_id,ip_address,user_agent,metadata,created_at}`：`actor` 为操作账户摘要 `{id,email,display_name}`，系统/CLI 操作为 null；`request_id` 为产生该记录的 HTTP 请求 UUIDv7，与该请求响应头 `X-Request-Id` 一致，CLI 等非 HTTP 操作为 null；`ip_address` 为直连 peer IP（不信任 `X-Forwarded-For`，CLI 操作为 null），`user_agent` 截断到 512 字节，`metadata` 只含变更字段名、状态、角色键等非敏感信息。
+- 审计列表 `GET /audit-logs` 可选查询参数以 AND 组合，分页 `total` 反映过滤后结果，排序固定 `created_at DESC, id DESC`；同一参数重复返回 `duplicate`：
+  - `from`、`to`：RFC 3339 时间，`from` 含、`to` 不含；格式错误 422 `invalid_format`；同时提供且 `from >= to` 时 422，字段 `to`、码 `out_of_range`。
+  - `actor_user_id`、`resource_id`、`request_id`：UUIDv7，非法时 422 `invalid_format`。
+  - `action`：精确匹配，或以 `.*` 结尾表示前缀匹配（如 `auth.*` 匹配 `auth.login`）；只允许 `[a-z0-9_.]` 加末尾 `.*`，长度 1..64，否则 422 `invalid_value`。前缀按字面匹配，转义 LIKE 通配符。
+  - `resource_type`：精确匹配，`[a-z0-9_]`，长度 1..64，否则 422 `invalid_value`。
+- 审计详情 `GET /audit-logs/{id}`：需要 `audit.read`，返回 `{"data": AuditLog}`；不存在 404 `not_found`；非法 UUID 422 `invalid_format`。
 - User 为 `{id,email,display_name,status,roles,created_at,updated_at}`，不含 password/hash。角色列表返回 `{"data":[{id,key,name,permissions}]}`。
 - `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
 
@@ -82,3 +89,4 @@
 6. API 对 UUIDv4、错误变体、非连字符 UUID 返回 422 `validation_error`，字段错误为 `id`/`invalid_format`；真实 UUIDv7 可进入资源查询。
 7. 账户/审计列表默认分页、分页上限、无效分页与无效 JSON，路由不存在、方法不允许等错误保持统一错误结构。
 8. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。
+9. 审计记录的 `request_id` 与写操作响应头 `X-Request-Id` 一致，CLI 初始化管理员的记录 `request_id`、`actor` 为 null；各筛选条件、非法筛选值、详情 200/404/422 及 Author 无权访问均有覆盖。

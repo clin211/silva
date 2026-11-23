@@ -99,6 +99,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/users/{id}", "patch"),
         ("/api/v1/admin/roles", "get"),
         ("/api/v1/admin/audit-logs", "get"),
+        ("/api/v1/admin/audit-logs/{id}", "get"),
         ("/api/v1/admin/system/health", "get"),
     ];
     let paths = spec["paths"].as_object().expect("paths object");
@@ -164,7 +165,18 @@ fn all_entity_and_request_ids_constrain_uuid_version_and_variant() {
             );
         }
     }
-    assert_uuid_v7(&spec, &spec["components"]["parameters"]["UserId"]["schema"]);
+    for parameter in [
+        "UserId",
+        "AuditLogId",
+        "AuditActorUserId",
+        "AuditResourceId",
+        "AuditRequestId",
+    ] {
+        assert_uuid_v7(
+            &spec,
+            &spec["components"]["parameters"][parameter]["schema"],
+        );
+    }
     assert_uuid_v7(&spec, &spec["components"]["headers"]["RequestId"]["schema"]);
 }
 
@@ -206,6 +218,7 @@ fn session_csrf_origin_and_rbac_requirements_are_explicit() {
         ("/api/v1/admin/users/{id}", "patch", "users.manage"),
         ("/api/v1/admin/roles", "get", "roles.read"),
         ("/api/v1/admin/audit-logs", "get", "audit.read"),
+        ("/api/v1/admin/audit-logs/{id}", "get", "audit.read"),
         ("/api/v1/admin/system/health", "get", "system.read"),
     ] {
         assert_eq!(
@@ -505,6 +518,16 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         field,
     };
     let invalid = StatusCode::UNPROCESSABLE_ENTITY;
+    // 审计查询参数在鉴权前校验，非法值不依赖会话即可返回 422。
+    let audit = |path, field| Case {
+        method: "GET",
+        path,
+        content_type: None,
+        body: "",
+        status: invalid,
+        code: "validation_error",
+        field: Some(field),
+    };
     let cases = [
         post(
             Some("application/json"),
@@ -571,6 +594,54 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
             code: "validation_error",
             field: Some(("per_page", "out_of_range")),
         },
+        audit(
+            "/api/v1/admin/audit-logs?from=yesterday",
+            ("from", "invalid_format"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?from=2026-11-22T00:00:00Z&to=2026-11-21T00:00:00Z",
+            ("to", "out_of_range"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?from=2026-11-21T00:00:00Z&to=2026-11-21T00:00:00Z",
+            ("to", "out_of_range"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?actor_user_id=67e55044-10b1-426f-9247-bb680e5fe0c8",
+            ("actor_user_id", "invalid_format"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?resource_id=x",
+            ("resource_id", "invalid_format"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?request_id=019535d93df779fbb466fa907fa17f9e",
+            ("request_id", "invalid_format"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?action=auth*",
+            ("action", "invalid_value"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?action=Auth.login",
+            ("action", "invalid_value"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?action=",
+            ("action", "invalid_value"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?resource_type=user.x",
+            ("resource_type", "invalid_value"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs?action=auth.login&action=auth.logout",
+            ("action", "duplicate"),
+        ),
+        audit(
+            "/api/v1/admin/audit-logs/not-a-uuid",
+            ("id", "invalid_format"),
+        ),
     ];
     for Case {
         method,

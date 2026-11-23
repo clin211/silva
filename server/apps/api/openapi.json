@@ -1327,7 +1327,7 @@
         "/api/v1/admin/audit-logs": {
             "get": {
                 "operationId": "listAuditLogs",
-                "summary": "分页查询后台审计日志",
+                "summary": "分页筛选后台审计日志",
                 "tags": [
                     "账户管理"
                 ],
@@ -1352,9 +1352,15 @@
                                         {
                                             "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                                             "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "actor": {
+                                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                                "email": "admin@example.com",
+                                                "display_name": "管理员"
+                                            },
                                             "action": "auth.login",
                                             "resource_type": "user",
                                             "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                                             "ip_address": "203.0.113.10",
                                             "user_agent": "Mozilla/5.0",
                                             "metadata": {},
@@ -1386,7 +1392,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "422": {
-                        "description": "分页参数无效。",
+                        "description": "分页或筛选参数无效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1406,9 +1412,9 @@
                                         "message": "Request validation failed",
                                         "details": [
                                             {
-                                                "field": "page",
+                                                "field": "to",
                                                 "code": "out_of_range",
-                                                "message": "page must be at least 1"
+                                                "message": "to must be later than from"
                                             }
                                         ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
@@ -1428,9 +1434,161 @@
                     },
                     {
                         "$ref": "#/components/parameters/PerPage"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditFrom"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditTo"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditActorUserId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditResourceId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditRequestId"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditAction"
+                    },
+                    {
+                        "$ref": "#/components/parameters/AuditResourceType"
                     }
                 ],
-                "description": " 需要权限 `audit.read`。"
+                "description": "筛选条件以 AND 组合，分页 total 为过滤后的总数；结果按 created_at DESC、id DESC 排序。同一参数重复返回 duplicate。 需要权限 `audit.read`。"
+            }
+        },
+        "/api/v1/admin/audit-logs/{id}": {
+            "get": {
+                "operationId": "getAuditLog",
+                "summary": "读取单条后台审计记录",
+                "tags": [
+                    "账户管理"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "审计记录详情，不包含凭据内容。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuditLogResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "actor": {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "email": "admin@example.com",
+                                            "display_name": "管理员"
+                                        },
+                                        "action": "auth.login",
+                                        "resource_type": "user",
+                                        "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "ip_address": "203.0.113.10",
+                                        "user_agent": "Mozilla/5.0",
+                                        "metadata": {},
+                                        "created_at": "2026-11-21T08:00:00Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "路径中的 id 不是 UUIDv7。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "id",
+                                                "code": "invalid_format",
+                                                "message": "id must be a hyphenated UUIDv7"
+                                            }
+                                        ],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "404": {
+                        "description": "审计记录不存在。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    }
+                },
+                "x-required-permission": "audit.read",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AuditLogId"
+                    }
+                ],
+                "description": "返回包含请求 ID 与操作账户摘要的审计记录。 需要权限 `audit.read`。"
             }
         },
         "/api/v1/admin/system/health": {
@@ -1544,6 +1702,18 @@
                 },
                 "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
             },
+            "AuditLogId": {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "description": "审计记录 UUIDv7；非标准格式、v4 或无效变体位返回 422 validation_error，字段错误为 id/invalid_format。",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
             "Page": {
                 "name": "page",
                 "in": "query",
@@ -1567,6 +1737,90 @@
                     "default": 20
                 },
                 "description": "每页条数，默认 20，最多 100。"
+            },
+            "AuditFrom": {
+                "name": "from",
+                "in": "query",
+                "required": false,
+                "description": "只返回 created_at 不早于该时间的记录（含）。RFC 3339 时间，查询字符串中的 + 需编码为 %2B；格式错误返回 from/invalid_format。",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "example": "2026-11-21T00:00:00Z"
+            },
+            "AuditTo": {
+                "name": "to",
+                "in": "query",
+                "required": false,
+                "description": "只返回 created_at 早于该时间的记录（不含）。RFC 3339 时间；格式错误返回 to/invalid_format，同时提供 from 且 from >= to 时返回 to/out_of_range。",
+                "schema": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "example": "2026-11-22T00:00:00Z"
+            },
+            "AuditActorUserId": {
+                "name": "actor_user_id",
+                "in": "query",
+                "required": false,
+                "description": "只返回该账户执行的操作。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 actor_user_id/invalid_format。",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "AuditResourceId": {
+                "name": "resource_id",
+                "in": "query",
+                "required": false,
+                "description": "只返回目标实体为该 ID 的记录。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 resource_id/invalid_format。",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "AuditRequestId": {
+                "name": "request_id",
+                "in": "query",
+                "required": false,
+                "description": "只返回该 HTTP 请求产生的记录，取值来自响应头 X-Request-Id。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 request_id/invalid_format。",
+                "schema": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "AuditAction": {
+                "name": "action",
+                "in": "query",
+                "required": false,
+                "description": "操作类型筛选：精确匹配，或以 .* 结尾表示前缀匹配（如 auth.* 匹配 auth.login）。只允许 a-z、0-9、_、. 及末尾的 .*，长度 1..64；否则返回 action/invalid_value。",
+                "schema": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^(?:[a-z0-9_.]+|[a-z0-9_.]+\\.\\*)$"
+                },
+                "example": "auth.*"
+            },
+            "AuditResourceType": {
+                "name": "resource_type",
+                "in": "query",
+                "required": false,
+                "description": "资源类型精确匹配。只允许 a-z、0-9、_，长度 1..64；否则返回 resource_type/invalid_value。",
+                "schema": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z0-9_]+$"
+                },
+                "example": "user"
             }
         },
         "responses": {
@@ -2075,6 +2329,37 @@
                     }
                 ]
             },
+            "AuditActor": {
+                "type": "object",
+                "description": "执行操作的账户摘要，只含识别账户所需的非敏感字段。",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "账户 UUIDv7。"
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "账户当前登录邮箱。"
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "description": "账户当前显示名称。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "display_name"
+                ],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "email": "admin@example.com",
+                        "display_name": "管理员"
+                    }
+                ]
+            },
             "AuditLog": {
                 "type": "object",
                 "properties": {
@@ -2085,6 +2370,17 @@
                     "actor_user_id": {
                         "$ref": "#/components/schemas/NullableUuidV7",
                         "description": "执行操作的账户 ID；无关联账户时为 null。"
+                    },
+                    "actor": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/AuditActor"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "执行操作的账户摘要；系统或 CLI 操作为 null。"
                     },
                     "action": {
                         "type": "string",
@@ -2097,6 +2393,10 @@
                     "resource_id": {
                         "$ref": "#/components/schemas/NullableUuidV7",
                         "description": "关联资源 ID；无关联资源时为 null。"
+                    },
+                    "request_id": {
+                        "$ref": "#/components/schemas/NullableUuidV7",
+                        "description": "产生该记录的 HTTP 请求 ID，与该请求响应头 X-Request-Id 一致；CLI 等非 HTTP 操作为 null。"
                     },
                     "ip_address": {
                         "type": [
@@ -2126,9 +2426,11 @@
                 "required": [
                     "id",
                     "actor_user_id",
+                    "actor",
                     "action",
                     "resource_type",
                     "resource_id",
+                    "request_id",
                     "ip_address",
                     "user_agent",
                     "metadata",
@@ -2138,9 +2440,15 @@
                     {
                         "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                         "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "actor": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "admin@example.com",
+                            "display_name": "管理员"
+                        },
                         "action": "auth.login",
                         "resource_type": "user",
                         "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                         "ip_address": "203.0.113.10",
                         "user_agent": "Mozilla/5.0",
                         "metadata": {},
@@ -2259,9 +2567,15 @@
                             {
                                 "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                                 "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "actor": {
+                                    "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                    "email": "admin@example.com",
+                                    "display_name": "管理员"
+                                },
                                 "action": "auth.login",
                                 "resource_type": "user",
                                 "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
                                 "ip_address": "203.0.113.10",
                                 "user_agent": "Mozilla/5.0",
                                 "metadata": {},
@@ -2279,6 +2593,39 @@
                     }
                 ],
                 "additionalProperties": false
+            },
+            "AuditLogResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/AuditLog"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "data": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "actor_user_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "actor": {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "email": "admin@example.com",
+                                "display_name": "管理员"
+                            },
+                            "action": "auth.login",
+                            "resource_type": "user",
+                            "resource_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "ip_address": "203.0.113.10",
+                            "user_agent": "Mozilla/5.0",
+                            "metadata": {},
+                            "created_at": "2026-11-21T08:00:00Z"
+                        }
+                    }
+                ]
             },
             "Liveness": {
                 "type": "object",

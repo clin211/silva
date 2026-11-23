@@ -89,13 +89,25 @@ pub struct Role {
     pub permissions: Vec<String>,
 }
 
+/// 审计记录中的操作账户摘要，只含识别账户所需的非敏感字段。
+#[derive(Debug, Serialize)]
+pub struct AuditActor {
+    pub id: Uuid,
+    pub email: String,
+    pub display_name: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuditLog {
     pub id: Uuid,
     pub actor_user_id: Option<Uuid>,
+    /// 操作账户摘要；系统或 CLI 操作为 None。
+    pub actor: Option<AuditActor>,
     pub action: String,
     pub resource_type: String,
     pub resource_id: Option<Uuid>,
+    /// 产生该记录的 HTTP 请求 ID，与响应头 `X-Request-Id` 一致；CLI 等非 HTTP 操作为 None。
+    pub request_id: Option<Uuid>,
     /// 发起操作的客户端 IP；CLI 等非 HTTP 操作为 None。
     pub ip_address: Option<String>,
     /// 客户端报告的 User-Agent，超长时截断。
@@ -103,6 +115,91 @@ pub struct AuditLog {
     /// 非敏感的附加信息，例如变更字段名。
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
+}
+
+/// 审计操作类型的筛选方式。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuditActionFilter {
+    /// 与操作类型完全相同。
+    Exact(String),
+    /// 以该前缀开头；前缀保留末尾的 `.`，例如 `auth.*` 对应 `auth.`。
+    Prefix(String),
+}
+
+/// 审计记录筛选条件，各条件以 AND 组合；时间范围含 `from`、不含 `to`。
+#[derive(Clone, Debug, Default)]
+pub struct AuditLogFilter {
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
+    pub actor_user_id: Option<Uuid>,
+    pub resource_id: Option<Uuid>,
+    pub request_id: Option<Uuid>,
+    pub action: Option<AuditActionFilter>,
+    pub resource_type: Option<String>,
+}
+
+impl AuditLogFilter {
+    /// 校验跨字段约束：同时给出时间上下界时，`from` 必须早于 `to`。
+    pub fn validate(&self) -> Result<()> {
+        if let (Some(from), Some(to)) = (self.from, self.to)
+            && from >= to
+        {
+            return Err(AppError::invalid(
+                "to",
+                FieldErrorCode::OutOfRange,
+                "to must be later than from",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// 审计筛选中操作类型与资源类型的最大长度。
+const AUDIT_FILTER_MAX_LEN: usize = 64;
+
+/// 解析 `action` 筛选值：`[a-z0-9_.]` 组成的精确值，或以 `.*` 结尾的前缀匹配，总长 1..=64。
+pub fn parse_audit_action(value: &str) -> std::result::Result<AuditActionFilter, FieldError> {
+    let invalid = || {
+        FieldError::new(
+            "action",
+            FieldErrorCode::InvalidValue,
+            "action must be 1 to 64 characters of a-z, 0-9, _ and ., optionally ending with .*",
+        )
+    };
+    if value.is_empty() || value.len() > AUDIT_FILTER_MAX_LEN {
+        return Err(invalid());
+    }
+    let allowed = |text: &str| {
+        text.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
+    };
+    match value.strip_suffix('*') {
+        // 前缀匹配必须以 `.` 结束且前面至少有一个字符，避免 `*` 或 `.*` 匹配全部记录。
+        Some(prefix) if prefix.len() > 1 && prefix.ends_with('.') && allowed(prefix) => {
+            Ok(AuditActionFilter::Prefix(prefix.to_owned()))
+        }
+        Some(_) => Err(invalid()),
+        None if allowed(value) => Ok(AuditActionFilter::Exact(value.to_owned())),
+        None => Err(invalid()),
+    }
+}
+
+/// 校验 `resource_type` 筛选值：`[a-z0-9_]`，长度 1..=64。
+pub fn parse_audit_resource_type(value: &str) -> std::result::Result<String, FieldError> {
+    if !value.is_empty()
+        && value.len() <= AUDIT_FILTER_MAX_LEN
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    {
+        Ok(value.to_owned())
+    } else {
+        Err(FieldError::new(
+            "resource_type",
+            FieldErrorCode::InvalidValue,
+            "resource_type must be 1 to 64 characters of a-z, 0-9 and _",
+        ))
+    }
 }
 
 pub fn validate_roles(roles: &[String]) -> Result<()> {
@@ -146,6 +243,58 @@ mod tests {
         assert!(permissions_for_role("editor").contains(&"posts.review"));
         assert!(!permissions_for_role("editor").contains(&"users.manage"));
         assert!(permissions_for_role("admin").contains(&"users.manage"));
+    }
+
+    #[test]
+    fn audit_action_filter_accepts_exact_and_dot_star_prefix_only() {
+        assert_eq!(
+            parse_audit_action("auth.login"),
+            Ok(AuditActionFilter::Exact("auth.login".into()))
+        );
+        assert_eq!(
+            parse_audit_action("auth.*"),
+            Ok(AuditActionFilter::Prefix("auth.".into()))
+        );
+        let too_long = "a".repeat(65);
+        for invalid in [
+            "",
+            "*",
+            ".*",
+            "auth*",
+            "a*b",
+            "Auth.login",
+            "auth-login",
+            "auth.%",
+            too_long.as_str(),
+        ] {
+            assert!(parse_audit_action(invalid).is_err(), "{invalid}");
+        }
+        assert!(parse_audit_action(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn audit_resource_type_and_time_range_are_validated() {
+        assert_eq!(parse_audit_resource_type("user").as_deref(), Ok("user"));
+        for invalid in ["", "User", "user.x", "a b"] {
+            assert!(parse_audit_resource_type(invalid).is_err(), "{invalid}");
+        }
+        let now = Utc::now();
+        let range = |from, to| AuditLogFilter {
+            from: Some(from),
+            to: Some(to),
+            ..AuditLogFilter::default()
+        };
+        assert!(
+            range(now, now + chrono::Duration::seconds(1))
+                .validate()
+                .is_ok()
+        );
+        assert!(range(now, now).validate().is_err());
+        assert!(
+            range(now + chrono::Duration::seconds(1), now)
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]

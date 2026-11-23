@@ -11,10 +11,13 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use silva_application::{identity::UserUpdate, ports::RequestMeta};
-use silva_domain::identity::{Principal, User};
+use silva_domain::identity::{
+    AuditLogFilter, Principal, User, parse_audit_action, parse_audit_resource_type,
+};
 use silva_infrastructure::persistence;
 use silva_shared::{
     error::{AppError, FieldError, FieldErrorCode},
@@ -22,12 +25,13 @@ use silva_shared::{
     pagination::PageRequest,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Mutex,
     time::{Duration, Instant},
 };
 use subtle::ConstantTimeEq;
+use uuid::Uuid;
 
 const SESSION_COOKIE: &str = "__Host-silva_session";
 /// 需要校验密码的入口共用登录额度，防止借修改密码接口暴力猜测当前密码。
@@ -124,56 +128,71 @@ fn json_field_error(path: &str, message: &str) -> FieldError {
     }
 }
 
+/// 读取查询字符串的全部键值对；编码无效时返回 422 `invalid_format`。
+async fn query_pairs<S: Send + Sync>(
+    parts: &mut Parts,
+    state: &S,
+) -> HttpResult<Vec<(String, String)>> {
+    let Query(pairs) = Query::<Vec<(String, String)>>::from_request_parts(parts, state)
+        .await
+        .map_err(|_| {
+            ApiError::validation(vec![FieldError::new(
+                "",
+                FieldErrorCode::InvalidFormat,
+                "query string is not valid URL encoding",
+            )])
+        })?;
+    Ok(pairs)
+}
+
+/// 解析 `page`、`per_page`：十进制整数，重复或越界写入字段错误；其他参数忽略。
+fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageRequest {
+    let mut page = PageRequest::default();
+    let mut seen = [false; 2];
+    for (key, value) in pairs {
+        let (slot, index) = match key.as_str() {
+            "page" => (&mut page.page, 0),
+            "per_page" => (&mut page.per_page, 1),
+            _ => continue,
+        };
+        if std::mem::replace(&mut seen[index], true) {
+            errors.push(FieldError::new(
+                key.clone(),
+                FieldErrorCode::Duplicate,
+                "parameter is given more than once",
+            ));
+            continue;
+        }
+        match value.parse::<u32>() {
+            Ok(parsed) => *slot = parsed,
+            Err(_) if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
+                errors.push(FieldError::new(
+                    key.clone(),
+                    FieldErrorCode::OutOfRange,
+                    "value is too large",
+                ));
+            }
+            Err(_) => errors.push(FieldError::new(
+                key.clone(),
+                FieldErrorCode::InvalidType,
+                "value must be a non-negative integer",
+            )),
+        }
+    }
+    if let Err(AppError::Validation(range)) = page.validate() {
+        errors.extend(range);
+    }
+    page
+}
+
 /// 分页查询参数：`page`、`per_page` 为十进制整数，重复或越界均返回字段错误；其他参数忽略。
 pub(crate) struct PageInput(PageRequest);
 impl<S: Send + Sync> FromRequestParts<S> for PageInput {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
-        let Query(pairs) = Query::<Vec<(String, String)>>::from_request_parts(parts, state)
-            .await
-            .map_err(|_| {
-                ApiError::validation(vec![FieldError::new(
-                    "",
-                    FieldErrorCode::InvalidFormat,
-                    "query string is not valid URL encoding",
-                )])
-            })?;
-        let mut page = PageRequest::default();
-        let mut seen = [false; 2];
+        let pairs = query_pairs(parts, state).await?;
         let mut errors = Vec::new();
-        for (key, value) in pairs {
-            let (slot, index) = match key.as_str() {
-                "page" => (&mut page.page, 0),
-                "per_page" => (&mut page.per_page, 1),
-                _ => continue,
-            };
-            if std::mem::replace(&mut seen[index], true) {
-                errors.push(FieldError::new(
-                    key,
-                    FieldErrorCode::Duplicate,
-                    "parameter is given more than once",
-                ));
-                continue;
-            }
-            match value.parse::<u32>() {
-                Ok(parsed) => *slot = parsed,
-                Err(_) if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
-                    errors.push(FieldError::new(
-                        key,
-                        FieldErrorCode::OutOfRange,
-                        "value is too large",
-                    ));
-                }
-                Err(_) => errors.push(FieldError::new(
-                    key,
-                    FieldErrorCode::InvalidType,
-                    "value must be a non-negative integer",
-                )),
-            }
-        }
-        if let Err(AppError::Validation(range)) = page.validate() {
-            errors.extend(range);
-        }
+        let page = parse_page(&pairs, &mut errors);
         if errors.is_empty() {
             Ok(Self(page))
         } else {
@@ -182,7 +201,100 @@ impl<S: Send + Sync> FromRequestParts<S> for PageInput {
     }
 }
 
-/// 审计用的请求来源：直连 peer IP 与 User-Agent；不信任客户端提供的转发头。
+/// 审计列表查询参数：分页参数加可选筛选条件；同一参数重复或取值无效均返回字段错误，
+/// 不回显输入值。未定义的参数忽略。
+pub(crate) struct AuditLogQuery {
+    page: PageRequest,
+    filter: AuditLogFilter,
+}
+impl<S: Send + Sync> FromRequestParts<S> for AuditLogQuery {
+    type Rejection = ApiError;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
+        const FILTERS: [&str; 7] = [
+            "from",
+            "to",
+            "actor_user_id",
+            "resource_id",
+            "request_id",
+            "action",
+            "resource_type",
+        ];
+        let pairs = query_pairs(parts, state).await?;
+        let mut errors = Vec::new();
+        let page = parse_page(&pairs, &mut errors);
+        let mut filter = AuditLogFilter::default();
+        let mut seen = HashSet::new();
+        for (key, value) in &pairs {
+            let Some(&name) = FILTERS.iter().find(|name| **name == key) else {
+                continue;
+            };
+            if !seen.insert(name) {
+                errors.push(FieldError::new(
+                    name,
+                    FieldErrorCode::Duplicate,
+                    "parameter is given more than once",
+                ));
+                continue;
+            }
+            let result = match name {
+                "from" => parse_time(name, value).map(|time| filter.from = Some(time)),
+                "to" => parse_time(name, value).map(|time| filter.to = Some(time)),
+                "actor_user_id" => {
+                    parse_uuid(name, value).map(|id| filter.actor_user_id = Some(id))
+                }
+                "resource_id" => parse_uuid(name, value).map(|id| filter.resource_id = Some(id)),
+                "request_id" => parse_uuid(name, value).map(|id| filter.request_id = Some(id)),
+                "action" => parse_audit_action(value).map(|action| filter.action = Some(action)),
+                _ => parse_audit_resource_type(value)
+                    .map(|resource_type| filter.resource_type = Some(resource_type)),
+            };
+            if let Err(error) = result {
+                errors.push(error);
+            }
+        }
+        if let Err(AppError::Validation(range)) = filter.validate() {
+            errors.extend(range);
+        }
+        if errors.is_empty() {
+            Ok(Self { page, filter })
+        } else {
+            Err(ApiError::validation(errors))
+        }
+    }
+}
+
+/// 解析 RFC 3339 时间并统一换算为 UTC。
+fn parse_time(field: &'static str, value: &str) -> Result<DateTime<Utc>, FieldError> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|time| time.with_timezone(&Utc))
+        .map_err(|_| {
+            FieldError::new(
+                field,
+                FieldErrorCode::InvalidFormat,
+                "value must be an RFC 3339 timestamp",
+            )
+        })
+}
+
+/// 解析带连字符的 UUIDv7，格式、版本位或变体位不符时返回 `invalid_format`。
+fn parse_uuid(field: &'static str, value: &str) -> Result<Uuid, FieldError> {
+    value
+        .parse::<EntityId>()
+        .map(EntityId::as_uuid)
+        .map_err(|_| {
+            FieldError::new(
+                field,
+                FieldErrorCode::InvalidFormat,
+                "value must be a hyphenated UUIDv7",
+            )
+        })
+}
+
+/// 当前请求的服务端 UUIDv7，由 `context` 中间件写入请求扩展，与响应头 `X-Request-Id` 一致。
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RequestId(pub Uuid);
+
+/// 审计用的请求来源：直连 peer IP、User-Agent 与请求 ID；不信任客户端提供的转发头。
 pub(crate) struct ClientMeta(RequestMeta);
 impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
     type Rejection = std::convert::Infallible;
@@ -198,9 +310,11 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
+        let request_id = parts.extensions.get::<RequestId>().map(|id| id.0);
         Ok(Self(RequestMeta {
             ip_address,
             user_agent,
+            request_id,
         }))
     }
 }
@@ -290,11 +404,13 @@ fn rate_limit_key(ip: IpAddr) -> IpAddr {
 
 pub(crate) async fn context(
     State(state): State<AppState>,
-    req: Request,
+    mut req: Request,
     next: Next,
 ) -> HttpResult<Response> {
     use tracing::Instrument;
     let request_id = ids::new_id();
+    // 处理器通过请求扩展读取同一个请求 ID，写入审计记录。
+    req.extensions_mut().insert(RequestId(request_id));
     let method = req.method().clone();
     // 仅记录路由模板，避免路径或查询参数中的用户输入和凭据进入日志。
     let route = req
@@ -619,11 +735,25 @@ pub(crate) async fn roles(
 pub(crate) async fn audit_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
-    PageInput(page): PageInput,
+    query: AuditLogQuery,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
     Ok(response::page(
-        state.identity.audit_logs(&principal, &page).await?,
+        state
+            .identity
+            .audit_logs(&principal, &query.page, &query.filter)
+            .await?,
+    ))
+}
+
+pub(crate) async fn audit_log(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    IdPath(id): IdPath,
+) -> HttpResult<Response> {
+    let (principal, _) = authorize(&state, &headers, false).await?;
+    Ok(response::ok(
+        state.identity.audit_log(&principal, id.as_uuid()).await?,
     ))
 }
 

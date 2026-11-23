@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use silva_domain::identity::{AuditLog, Principal, Role, User};
+use silva_domain::identity::{AuditLog, AuditLogFilter, Principal, Role, User};
 use silva_shared::{
     error::Result,
     pagination::{Page, PageRequest},
@@ -13,6 +13,8 @@ use uuid::Uuid;
 pub struct RequestMeta {
     pub ip_address: Option<IpAddr>,
     pub user_agent: Option<String>,
+    /// 当前 HTTP 请求的 UUIDv7，与响应头 `X-Request-Id` 一致；CLI 等非 HTTP 操作为 None。
+    pub request_id: Option<Uuid>,
 }
 
 pub struct LoginRecord {
@@ -76,7 +78,13 @@ pub trait IdentityRepository: Send + Sync {
         meta: &RequestMeta,
     ) -> Result<User>;
     async fn roles(&self) -> Result<Vec<Role>>;
-    async fn audit_logs(&self, page: &PageRequest) -> Result<Page<AuditLog>>;
+    /// 按筛选条件分页查询审计记录，`total` 为过滤后的总数。
+    async fn audit_logs(
+        &self,
+        page: &PageRequest,
+        filter: &AuditLogFilter,
+    ) -> Result<Page<AuditLog>>;
+    async fn audit_log(&self, id: Uuid) -> Result<Option<AuditLog>>;
 }
 
 #[async_trait]

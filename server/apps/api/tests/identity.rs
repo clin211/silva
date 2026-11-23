@@ -220,6 +220,7 @@ async fn identity_security_and_account_lifecycle() {
             .await
             .unwrap();
         run_acceptance(&app, &test_pool).await;
+        run_audit_logs(&app, &test_pool).await;
         run_rate_limits(&test_pool, &database_url).await;
     })
     .await;
@@ -1050,6 +1051,324 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(after_logout.status, StatusCode::UNAUTHORIZED);
+}
+
+/// 以管理员会话 GET 指定路径并断言 200。
+async fn admin_get(app: &Router, cookie: &str, path: &str) -> Response {
+    let response = request(app, Method::GET, path, None, Some(cookie), None, None).await;
+    assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.json);
+    response
+}
+
+fn total(response: &Response) -> i64 {
+    response.json["meta"]["pagination"]["total"]
+        .as_i64()
+        .unwrap()
+}
+
+/// 审计记录的请求 ID、操作者摘要、筛选条件与详情接口。
+async fn run_audit_logs(app: &Router, pool: &PgPool) {
+    const LOGS: &str = "/api/v1/admin/audit-logs";
+    let (admin_cookie, admin_csrf, admin_session) = login(app, "admin@example.test").await;
+    let admin_id = admin_session["user"]["id"].as_str().unwrap().to_owned();
+
+    // 登录审计的 request_id 与登录响应头 X-Request-Id 一致，可按 request_id 精确定位。
+    let login_request_id: String = sqlx::query_scalar(
+        "SELECT request_id::text FROM audit_logs WHERE action = 'auth.login' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let by_login = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?request_id={login_request_id}"),
+    )
+    .await;
+    assert_eq!(total(&by_login), 1, "{}", by_login.json);
+    let login_log = &by_login.json["data"][0];
+    assert_eq!(login_log["action"], "auth.login");
+    assert_eq!(login_log["actor_user_id"], admin_id.as_str());
+    assert_eq!(
+        login_log["actor"],
+        json!({"id": admin_id, "email": "admin@example.test", "display_name": "Acceptance Admin"})
+    );
+
+    // 写操作的审计 request_id 等于该写请求的响应头。
+    let created = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/users",
+        Some(json!({"email":"auditee@example.test","display_name":"Auditee","password":PASSWORD,"roles":["author"]})),
+        Some(&admin_cookie),
+        Some(&admin_csrf),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
+    let create_request_id = created.headers["x-request-id"].to_str().unwrap().to_owned();
+    let created_id = created.json["data"]["id"].as_str().unwrap().to_owned();
+    let by_create = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?request_id={create_request_id}"),
+    )
+    .await;
+    assert_eq!(total(&by_create), 1, "{}", by_create.json);
+    let create_log = by_create.json["data"][0].clone();
+    assert_eq!(create_log["action"], "users.create");
+    assert_eq!(create_log["request_id"], create_request_id.as_str());
+    assert_eq!(create_log["resource_id"], created_id.as_str());
+    assert_eq!(create_log["actor"]["email"], "admin@example.test");
+    let by_resource = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?resource_id={created_id}"),
+    )
+    .await;
+    assert_eq!(total(&by_resource), 1, "{}", by_resource.json);
+    assert_eq!(by_resource.json["data"][0]["id"], create_log["id"]);
+
+    // CLI 初始化管理员没有 HTTP 请求与操作账户。
+    let bootstrap = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?action=users.bootstrap"),
+    )
+    .await;
+    assert_eq!(total(&bootstrap), 1, "{}", bootstrap.json);
+    let bootstrap_log = &bootstrap.json["data"][0];
+    assert_eq!(bootstrap_log["request_id"], Value::Null);
+    assert_eq!(bootstrap_log["actor"], Value::Null);
+    assert_eq!(bootstrap_log["actor_user_id"], Value::Null);
+    assert_eq!(bootstrap_log["ip_address"], Value::Null);
+    let http_without_request_id: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_logs WHERE request_id IS NULL AND action <> 'users.bootstrap'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(http_without_request_id, 0, "HTTP 审计必须记录 request_id");
+
+    // 前缀匹配：auth.* 覆盖全部 auth. 开头的操作，total 为过滤后数量，分页仍生效。
+    let auth_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action LIKE 'auth.%'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(auth_count > 1);
+    let auth_page = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?action=auth.*&per_page=1"),
+    )
+    .await;
+    assert_eq!(total(&auth_page), auth_count);
+    assert_eq!(auth_page.json["data"].as_array().unwrap().len(), 1);
+    let auth_all = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?action=auth.*&per_page=100"),
+    )
+    .await;
+    assert!(
+        auth_all.json["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|log| log["action"].as_str().unwrap().starts_with("auth."))
+    );
+    let exact = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?action=auth&per_page=100"),
+    )
+    .await;
+    assert_eq!(total(&exact), 0, "精确匹配不得按前缀匹配");
+
+    // 前缀中的 `_` 按字面匹配，不作为 LIKE 通配符；同时验证 resource_type 精确筛选。
+    for action in ["users_.probe", "usersx.probe"] {
+        sqlx::query("INSERT INTO audit_logs (id, action, resource_type) VALUES ($1, $2, 'probe')")
+            .bind(ids::new_id())
+            .bind(action)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    let escaped = admin_get(app, &admin_cookie, &format!("{LOGS}?action=users_.*")).await;
+    assert_eq!(total(&escaped), 1, "{}", escaped.json);
+    assert_eq!(escaped.json["data"][0]["action"], "users_.probe");
+    let probes = admin_get(app, &admin_cookie, &format!("{LOGS}?resource_type=probe")).await;
+    assert_eq!(total(&probes), 2, "{}", probes.json);
+    let user_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE resource_type = 'user'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let users = admin_get(app, &admin_cookie, &format!("{LOGS}?resource_type=user")).await;
+    assert_eq!(total(&users), user_count);
+
+    // 操作者筛选与 AND 组合；结果按 created_at DESC、id DESC 排序。
+    let by_actor = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?actor_user_id={admin_id}&per_page=100"),
+    )
+    .await;
+    let actor_logs = by_actor.json["data"].as_array().unwrap();
+    assert!(total(&by_actor) >= 2);
+    assert!(
+        actor_logs
+            .iter()
+            .all(|log| log["actor_user_id"] == admin_id.as_str())
+    );
+    let keys: Vec<_> = actor_logs
+        .iter()
+        .map(|log| {
+            (
+                chrono::DateTime::parse_from_rfc3339(log["created_at"].as_str().unwrap()).unwrap(),
+                log["id"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert!(keys.windows(2).all(|pair| pair[0] >= pair[1]), "排序不稳定");
+    let combined = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?actor_user_id={admin_id}&action=users.create&resource_type=user"),
+    )
+    .await;
+    assert!(
+        combined.json["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|log| log["id"] == create_log["id"])
+    );
+    let no_match = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?actor_user_id={admin_id}&action=users.bootstrap"),
+    )
+    .await;
+    assert_eq!(total(&no_match), 0);
+    assert_eq!(no_match.json["meta"]["pagination"]["total_pages"], 0);
+
+    // 时间范围：from 含、to 不含。
+    let created_at = create_log["created_at"].as_str().unwrap();
+    let from = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?request_id={create_request_id}&from={created_at}"),
+    )
+    .await;
+    assert_eq!(total(&from), 1, "from 必须包含边界");
+    let to = admin_get(
+        app,
+        &admin_cookie,
+        &format!("{LOGS}?request_id={create_request_id}&to={created_at}"),
+    )
+    .await;
+    assert_eq!(total(&to), 0, "to 不得包含边界");
+    let window = admin_get(
+        app,
+        &admin_cookie,
+        &format!(
+            "{LOGS}?request_id={create_request_id}&from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00%2B08:00"
+        ),
+    )
+    .await;
+    assert_eq!(total(&window), 1);
+
+    // 非法筛选值返回字段级错误。
+    for (query, field, code) in [
+        ("from=2026-13-01T00:00:00Z", "from", "invalid_format"),
+        ("to=tomorrow", "to", "invalid_format"),
+        (
+            "from=2026-11-22T00:00:00Z&to=2026-11-22T00:00:00Z",
+            "to",
+            "out_of_range",
+        ),
+        (
+            "actor_user_id=67e55044-10b1-426f-9247-bb680e5fe0c8",
+            "actor_user_id",
+            "invalid_format",
+        ),
+        (
+            "resource_id=019535d9-3df7-79fb-7466-fa907fa17f9e",
+            "resource_id",
+            "invalid_format",
+        ),
+        ("request_id=nope", "request_id", "invalid_format"),
+        ("action=*", "action", "invalid_value"),
+        ("action=auth.%25", "action", "invalid_value"),
+        ("resource_type=User", "resource_type", "invalid_value"),
+    ] {
+        let response = request(
+            app,
+            Method::GET,
+            &format!("{LOGS}?{query}"),
+            None,
+            Some(&admin_cookie),
+            None,
+            None,
+        )
+        .await;
+        assert_field_error(&response, field, code);
+    }
+    let long_action = "a".repeat(65);
+    let response = request(
+        app,
+        Method::GET,
+        &format!("{LOGS}?action={long_action}"),
+        None,
+        Some(&admin_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_field_error(&response, "action", "invalid_value");
+
+    // 详情：200 与列表一致；不存在 404；非法 UUID 422；Author 无权访问。
+    let log_id = create_log["id"].as_str().unwrap();
+    let detail = admin_get(app, &admin_cookie, &format!("{LOGS}/{log_id}")).await;
+    assert_eq!(detail.json["data"], create_log);
+    let missing = request(
+        app,
+        Method::GET,
+        &format!("{LOGS}/{}", ids::new_id()),
+        None,
+        Some(&admin_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_error(&missing, StatusCode::NOT_FOUND, "not_found");
+    let invalid = request(
+        app,
+        Method::GET,
+        &format!("{LOGS}/67e55044-10b1-426f-9247-bb680e5fe0c8"),
+        None,
+        Some(&admin_cookie),
+        None,
+        None,
+    )
+    .await;
+    assert_field_error(&invalid, "id", "invalid_format");
+    let (author_cookie, _, _) = login(app, "author@example.test").await;
+    for path in [format!("{LOGS}/{log_id}"), format!("{LOGS}?action=auth.*")] {
+        let forbidden = request(
+            app,
+            Method::GET,
+            &path,
+            None,
+            Some(&author_cookie),
+            None,
+            None,
+        )
+        .await;
+        assert_error(&forbidden, StatusCode::FORBIDDEN, "forbidden");
+    }
 }
 
 async fn run_rate_limits(pool: &PgPool, database_url: &str) {

@@ -5,7 +5,7 @@
 ## 基础不变量
 
 - PostgreSQL 原生 `uuid`；先创建 `is_uuid_v7(input_id uuid) RETURNS boolean`，声明 `IMMUTABLE STRICT PARALLEL SAFE`。检查文本第 15 位为 `7`、第 20 位属于 `8/9/a/b`。不依赖数据库 UUIDv7 生成函数。
-- 全部业务实体 ID、无外键的 `outbox_events.aggregate_id` 和 `audit_logs.resource_id` 由 CHECK 校验 UUIDv7；普通/复合外键引用受校验实体。租约令牌是令牌，不强制 UUIDv7。`generation`/`revision_no`/slug/角色 key/外部来源 ID 不转为 UUID。
+- 全部业务实体 ID、无外键的 `outbox_events.aggregate_id`、`audit_logs.resource_id` 和 `audit_logs.request_id`（迁移 `20261123000001` 追加，可为 NULL）由 CHECK 校验 UUIDv7；普通/复合外键引用受校验实体。租约令牌是令牌，不强制 UUIDv7。`generation`/`revision_no`/slug/角色 key/外部来源 ID 不转为 UUID。
 - 每张业务表及每个未删除用户字段必须有非空 `COMMENT ON TABLE/COLUMN`；不检查 PostgreSQL 系统表、`_sqlx_migrations`。所有字段的注释同迁移创建。CI 通过 `obj_description`、`col_description` 验证并输出具体缺失对象。
 - 所有 FK 写出删除策略。原文已有策略原样保留；原文未指定者统一显式 `ON DELETE NO ACTION`，保持 PostgreSQL 默认语义、避免擅自删除作者/审计/发布引用。两个 post revision 复合 FK 保持 `DEFERRABLE INITIALLY DEFERRED`，使用 `ON DELETE NO ACTION` 以允许事务内先预分配 post/revision ID 后写入。
 - `site_state` 在 schema migration 初始化唯一 `singleton=true` 行；期望与线上 generation 初值 NULL，不能伪造已上线。
