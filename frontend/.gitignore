@@ -4,3 +4,9 @@ node_modules/
 dist/
 .env
 .env.*
+
+# design-taste-frontend skill 生成的设计方向与页面检查产物
+.taste-skill/
+
+# Python 字节码缓存（ui-ux-pro-max 脚本运行时生成）
+__pycache__/
