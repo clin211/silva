@@ -96,6 +96,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/auth/password", "post"),
         ("/api/v1/admin/users", "get"),
         ("/api/v1/admin/users", "post"),
+        ("/api/v1/admin/users/{id}", "get"),
         ("/api/v1/admin/users/{id}", "patch"),
         ("/api/v1/admin/roles", "get"),
         ("/api/v1/admin/audit-logs", "get"),
@@ -203,6 +204,7 @@ fn session_csrf_origin_and_rbac_requirements_are_explicit() {
     for (path, method, permission) in [
         ("/api/v1/admin/users", "get", "users.manage"),
         ("/api/v1/admin/users", "post", "users.manage"),
+        ("/api/v1/admin/users/{id}", "get", "users.manage"),
         ("/api/v1/admin/users/{id}", "patch", "users.manage"),
         ("/api/v1/admin/roles", "get", "roles.read"),
         ("/api/v1/admin/audit-logs", "get", "audit.read"),
@@ -265,6 +267,45 @@ fn input_shapes_and_pagination_match_runtime_validation() {
         spec["components"]["parameters"]["PerPage"]["schema"]["maximum"],
         100
     );
+    // 账户列表筛选参数与运行时校验一致。
+    let list_parameters: Vec<_> = spec["paths"]["/api/v1/admin/users"]["get"]["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|parameter| resolve(&spec, parameter))
+        .collect();
+    let parameter = |name: &str| {
+        *list_parameters
+            .iter()
+            .find(|parameter| parameter["name"] == name)
+            .unwrap_or_else(|| panic!("账户列表缺少查询参数 {name}"))
+    };
+    for name in ["page", "per_page", "q", "role", "status"] {
+        assert_eq!(parameter(name)["in"], "query");
+        assert_eq!(parameter(name)["required"], false);
+    }
+    assert_eq!(
+        parameter("q")["schema"]["x-max-bytes"],
+        silva_application::identity::USER_QUERY_MAX_BYTES
+    );
+    assert_eq!(
+        resolve(&spec, &parameter("role")["schema"])["enum"],
+        serde_json::json!(silva_domain::identity::ROLE_KEYS)
+    );
+    assert_eq!(
+        resolve(&spec, &parameter("status")["schema"])["enum"],
+        serde_json::json!(silva_domain::identity::USER_STATUSES)
+    );
+    // 资源字段总是存在：可空字段也必须列入 required。
+    for (schema, field) in [("User", "last_login_at"), ("Role", "user_count")] {
+        assert!(
+            schemas[schema]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!(field)),
+            "{schema}.{field} 必须为必填字段"
+        );
+    }
 }
 
 #[test]
@@ -570,6 +611,33 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
             status: invalid,
             code: "validation_error",
             field: Some(("per_page", "out_of_range")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/users?role=owner&status=locked",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("role", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/users?status=locked",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("status", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/users/not-an-id",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("id", "invalid_format")),
         },
     ];
     for Case {

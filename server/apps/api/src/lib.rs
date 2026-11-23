@@ -51,7 +51,7 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
         )
         .route(
             "/api/v1/admin/users/{id}",
-            axum::routing::patch(http::update_user),
+            get(http::user).patch(http::update_user),
         )
         .route("/api/v1/admin/roles", get(http::roles))
         .route("/api/v1/admin/audit-logs", get(http::audit_logs))

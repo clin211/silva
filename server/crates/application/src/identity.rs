@@ -1,8 +1,12 @@
-use crate::ports::{Credentials, IdentityRepository, NewUser, RequestMeta, UserChanges};
+use crate::ports::{
+    Credentials, IdentityRepository, NewUser, RequestMeta, UserChanges, UserFilter,
+};
 use chrono::Utc;
-use silva_domain::identity::{AuditLog, Principal, Role, User, validate_roles};
+use silva_domain::identity::{
+    AuditLog, Principal, ROLE_KEYS, Role, USER_STATUSES, User, validate_roles,
+};
 use silva_shared::{
-    error::{AppError, FieldErrorCode, Result},
+    error::{AppError, FieldError, FieldErrorCode, Result},
     ids,
     pagination::{Page, PageRequest},
 };
@@ -22,6 +26,54 @@ pub struct UserUpdate {
     pub status: Option<String>,
     pub roles: Option<Vec<String>>,
     pub password: Option<String>,
+}
+
+/// 账户列表关键字的最大字节数（去首尾空白后计算）。
+pub const USER_QUERY_MAX_BYTES: usize = 100;
+
+impl UserFilter {
+    /// 规范化并校验列表筛选参数，一次返回全部字段错误。
+    /// `q` 去首尾空白后为空视为未提供；`role`、`status` 必须是内置取值。
+    pub fn new(q: Option<String>, role: Option<String>, status: Option<String>) -> Result<Self> {
+        let mut errors = Vec::new();
+        let q = q
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        if q.as_ref()
+            .is_some_and(|value| value.len() > USER_QUERY_MAX_BYTES)
+        {
+            errors.push(FieldError::new(
+                "q",
+                FieldErrorCode::OutOfRange,
+                "q must contain at most 100 bytes",
+            ));
+        }
+        if role
+            .as_deref()
+            .is_some_and(|value| !ROLE_KEYS.contains(&value))
+        {
+            errors.push(FieldError::new(
+                "role",
+                FieldErrorCode::InvalidValue,
+                "role must be one of: author, editor, admin",
+            ));
+        }
+        if status
+            .as_deref()
+            .is_some_and(|value| !USER_STATUSES.contains(&value))
+        {
+            errors.push(FieldError::new(
+                "status",
+                FieldErrorCode::InvalidValue,
+                "status must be active or disabled",
+            ));
+        }
+        if errors.is_empty() {
+            Ok(Self { q, role, status })
+        } else {
+            Err(AppError::Validation(errors))
+        }
+    }
 }
 
 pub struct LoginSession {
@@ -135,10 +187,21 @@ impl IdentityService {
     }
 
     #[tracing::instrument(name = "identity.users", skip_all)]
-    pub async fn users(&self, principal: &Principal, page: &PageRequest) -> Result<Page<User>> {
+    pub async fn users(
+        &self,
+        principal: &Principal,
+        page: &PageRequest,
+        filter: &UserFilter,
+    ) -> Result<Page<User>> {
         principal.require("users.manage")?;
         page.validate()?;
-        self.repository.list_users(page).await
+        self.repository.list_users(page, filter).await
+    }
+
+    #[tracing::instrument(name = "identity.user", skip_all)]
+    pub async fn user(&self, principal: &Principal, id: Uuid) -> Result<User> {
+        principal.require("users.manage")?;
+        self.repository.find_user(id).await
     }
 
     #[tracing::instrument(name = "identity.create_user", skip_all)]
@@ -243,7 +306,7 @@ impl IdentityService {
             validate_name(name)?;
         }
         if let Some(status) = &changes.status
-            && !["active", "disabled"].contains(&status.as_str())
+            && !USER_STATUSES.contains(&status.as_str())
         {
             return Err(AppError::invalid(
                 "status",
@@ -315,4 +378,56 @@ fn validate_name(name: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field_codes(error: AppError) -> Vec<(String, FieldErrorCode)> {
+        match error {
+            AppError::Validation(errors) => errors
+                .into_iter()
+                .map(|error| (error.field.into_owned(), error.code))
+                .collect(),
+            other => panic!("期望校验错误，实际为 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn user_filter_trims_query_and_treats_blank_as_absent() {
+        let filter = UserFilter::new(Some("  Ada ".into()), None, None).unwrap();
+        assert_eq!(filter.q.as_deref(), Some("Ada"));
+        let blank = UserFilter::new(Some(" \t ".into()), None, None).unwrap();
+        assert_eq!(blank, UserFilter::default());
+    }
+
+    #[test]
+    fn user_filter_limits_query_bytes_after_trimming() {
+        let padded = format!("  {}  ", "a".repeat(USER_QUERY_MAX_BYTES));
+        assert!(UserFilter::new(Some(padded), None, None).is_ok());
+        // 多字节字符按字节计数：34 个“长”为 102 字节。
+        let error = UserFilter::new(Some("长".repeat(34)), None, None).unwrap_err();
+        assert_eq!(
+            field_codes(error),
+            vec![("q".into(), FieldErrorCode::OutOfRange)]
+        );
+    }
+
+    #[test]
+    fn user_filter_accepts_builtin_values_and_reports_every_invalid_field() {
+        let filter = UserFilter::new(None, Some("editor".into()), Some("disabled".into())).unwrap();
+        assert_eq!(filter.role.as_deref(), Some("editor"));
+        assert_eq!(filter.status.as_deref(), Some("disabled"));
+        let error = UserFilter::new(Some("x".repeat(101)), Some("Admin".into()), Some("".into()))
+            .unwrap_err();
+        assert_eq!(
+            field_codes(error),
+            vec![
+                ("q".into(), FieldErrorCode::OutOfRange),
+                ("role".into(), FieldErrorCode::InvalidValue),
+                ("status".into(), FieldErrorCode::InvalidValue),
+            ]
+        );
+    }
 }

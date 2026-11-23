@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use silva_application::ports::{
-    IdentityRepository, LoginRecord, NewUser, RequestMeta, UserChanges,
+    IdentityRepository, LoginRecord, NewUser, RequestMeta, UserChanges, UserFilter,
 };
 use silva_domain::identity::{AuditLog, Principal, ROLE_KEYS, Role, User, permissions_for_role};
 use silva_shared::metrics::METRICS;
@@ -130,7 +130,7 @@ impl PgIdentityRepository {
     }
 }
 
-const USER_SELECT: &str = "SELECT u.id,u.email,u.display_name,u.status,u.created_at,u.updated_at, ARRAY(SELECT r.key FROM roles r JOIN user_roles ur ON ur.role_id=r.id WHERE ur.user_id=u.id ORDER BY r.key) AS roles FROM users u";
+const USER_SELECT: &str = "SELECT u.id,u.email,u.display_name,u.status,u.created_at,u.updated_at,u.last_login_at, ARRAY(SELECT r.key FROM roles r JOIN user_roles ur ON ur.role_id=r.id WHERE ur.user_id=u.id ORDER BY r.key) AS roles FROM users u";
 
 fn db(error: sqlx::Error) -> AppError {
     if !matches!(error, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) {
@@ -162,7 +162,27 @@ fn read_user(row: &PgRow) -> std::result::Result<User, sqlx::Error> {
         roles: row.try_get("roles")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
+        last_login_at: row.try_get("last_login_at")?,
     })
+}
+
+/// 账户列表筛选条件；参数依次为 `$1` LIKE 模式、`$2` 角色键、`$3` 状态，未提供时绑定 NULL。
+const USER_FILTER: &str = "WHERE ($1::text IS NULL OR u.email ILIKE $1 ESCAPE '\\' OR u.display_name ILIKE $1 ESCAPE '\\') \
+     AND ($2::text IS NULL OR EXISTS (SELECT 1 FROM user_roles fr JOIN roles r ON r.id=fr.role_id WHERE fr.user_id=u.id AND r.key=$2)) \
+     AND ($3::text IS NULL OR u.status=$3)";
+
+/// 把关键字转换为子串匹配的 LIKE 模式，转义 `\`、`%`、`_`，使其按字面匹配。
+fn contains_pattern(keyword: &str) -> String {
+    let mut pattern = String::with_capacity(keyword.len() + 2);
+    pattern.push('%');
+    for c in keyword.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    pattern
 }
 
 async fn user(connection: &mut PgConnection, id: Uuid) -> Result<User> {
@@ -409,20 +429,27 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.list_users", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn list_users(&self, page: &PageRequest) -> Result<Page<User>> {
+    async fn list_users(&self, page: &PageRequest, filter: &UserFilter) -> Result<Page<User>> {
         let _timer = METRICS.db_operation("list_users");
+        let pattern = filter.q.as_deref().map(contains_pattern);
         let mut tx = begin(&self.pool).await.map_err(db)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             .execute(&mut *tx)
             .await
             .map_err(db)?;
-        let total = sqlx::query_scalar("SELECT count(*) FROM users")
+        let total = sqlx::query_scalar(&format!("SELECT count(*) FROM users u {USER_FILTER}"))
+            .bind(&pattern)
+            .bind(&filter.role)
+            .bind(&filter.status)
             .fetch_one(&mut *tx)
             .await
             .map_err(db)?;
         let rows = sqlx::query(&format!(
-            "{USER_SELECT} ORDER BY u.created_at DESC,u.id DESC LIMIT $1 OFFSET $2"
+            "{USER_SELECT} {USER_FILTER} ORDER BY u.created_at DESC,u.id DESC LIMIT $4 OFFSET $5"
         ))
+        .bind(&pattern)
+        .bind(&filter.role)
+        .bind(&filter.status)
         .bind(i64::from(page.per_page))
         .bind(page.offset())
         .fetch_all(&mut *tx)
@@ -438,6 +465,12 @@ impl IdentityRepository for PgIdentityRepository {
             items,
             pagination: page.metadata(total),
         })
+    }
+
+    #[tracing::instrument(name = "db.find_user", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn find_user(&self, id: Uuid) -> Result<User> {
+        let _timer = METRICS.db_operation("find_user");
+        user(&mut *acquire(&self.pool).await.map_err(db)?, id).await
     }
 
     #[tracing::instrument(name = "db.create_user", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
@@ -565,7 +598,7 @@ impl IdentityRepository for PgIdentityRepository {
     #[tracing::instrument(name = "db.roles", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn roles(&self) -> Result<Vec<Role>> {
         let _timer = METRICS.db_operation("roles");
-        let rows = sqlx::query("SELECT r.id,r.key,r.name,ARRAY(SELECT p.key FROM permissions p JOIN role_permissions rp ON rp.permission_id=p.id WHERE rp.role_id=r.id ORDER BY p.key) AS permissions FROM roles r ORDER BY r.key").fetch_all(&mut *acquire(&self.pool).await.map_err(db)?).await.map_err(db)?;
+        let rows = sqlx::query("SELECT r.id,r.key,r.name,ARRAY(SELECT p.key FROM permissions p JOIN role_permissions rp ON rp.permission_id=p.id WHERE rp.role_id=r.id ORDER BY p.key) AS permissions,(SELECT count(*) FROM user_roles ur WHERE ur.role_id=r.id) AS user_count FROM roles r ORDER BY r.key").fetch_all(&mut *acquire(&self.pool).await.map_err(db)?).await.map_err(db)?;
         rows.into_iter()
             .map(|row| {
                 Ok(Role {
@@ -573,6 +606,7 @@ impl IdentityRepository for PgIdentityRepository {
                     key: row.try_get("key").map_err(db)?,
                     name: row.try_get("name").map_err(db)?,
                     permissions: row.try_get("permissions").map_err(db)?,
+                    user_count: row.try_get("user_count").map_err(db)?,
                 })
             })
             .collect()
@@ -692,5 +726,14 @@ mod tests {
         assert_eq!(truncate_utf8("abcdef", 3), "abc");
         // “长”占 3 字节，截断点落在字符中间时向前退到边界。
         assert_eq!(truncate_utf8("a长", 2), "a");
+    }
+
+    #[test]
+    fn contains_pattern_escapes_like_metacharacters() {
+        assert_eq!(contains_pattern("ada"), "%ada%");
+        assert_eq!(contains_pattern("100%"), "%100\\%%");
+        assert_eq!(contains_pattern("a_b"), "%a\\_b%");
+        assert_eq!(contains_pattern(r"c:\x"), r"%c:\\x%");
+        assert_eq!(contains_pattern("长林"), "%长林%");
     }
 }

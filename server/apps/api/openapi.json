@@ -224,7 +224,8 @@
                                                 "author"
                                             ],
                                             "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z"
+                                            "updated_at": "2026-11-21T08:00:00Z",
+                                            "last_login_at": "2026-11-22T09:30:00Z"
                                         },
                                         "permissions": [
                                             "posts.create",
@@ -521,7 +522,8 @@
                                                 "author"
                                             ],
                                             "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z"
+                                            "updated_at": "2026-11-21T08:00:00Z",
+                                            "last_login_at": "2026-11-22T09:30:00Z"
                                         },
                                         "permissions": [
                                             "posts.create",
@@ -715,7 +717,7 @@
         "/api/v1/admin/users": {
             "get": {
                 "operationId": "listUsers",
-                "summary": "分页查询账户",
+                "summary": "分页查询并筛选账户",
                 "tags": [
                     "账户管理"
                 ],
@@ -746,7 +748,8 @@
                                                 "author"
                                             ],
                                             "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z"
+                                            "updated_at": "2026-11-21T08:00:00Z",
+                                            "last_login_at": "2026-11-22T09:30:00Z"
                                         }
                                     ],
                                     "meta": {
@@ -774,7 +777,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "422": {
-                        "description": "分页参数无效。",
+                        "description": "分页或筛选参数无效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -797,6 +800,11 @@
                                                 "field": "per_page",
                                                 "code": "out_of_range",
                                                 "message": "per_page must be between 1 and 100"
+                                            },
+                                            {
+                                                "field": "role",
+                                                "code": "invalid_value",
+                                                "message": "role must be one of: author, editor, admin"
                                             }
                                         ],
                                         "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
@@ -816,9 +824,18 @@
                     },
                     {
                         "$ref": "#/components/parameters/PerPage"
+                    },
+                    {
+                        "$ref": "#/components/parameters/UserQuery"
+                    },
+                    {
+                        "$ref": "#/components/parameters/UserRoleFilter"
+                    },
+                    {
+                        "$ref": "#/components/parameters/UserStatusFilter"
                     }
                 ],
-                "description": " 需要权限 `users.manage`。"
+                "description": "可按关键字 q、角色 role、状态 status 筛选，多个条件同时满足；分页 total 为筛选后的数量。参数重复返回 duplicate，未知查询参数忽略。 需要权限 `users.manage`。"
             },
             "post": {
                 "operationId": "createUser",
@@ -852,7 +869,8 @@
                                             "author"
                                         ],
                                         "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z"
+                                        "updated_at": "2026-11-21T08:00:00Z",
+                                        "last_login_at": "2026-11-22T09:30:00Z"
                                     }
                                 }
                             }
@@ -1027,6 +1045,130 @@
             }
         },
         "/api/v1/admin/users/{id}": {
+            "get": {
+                "operationId": "getUser",
+                "summary": "查询单个账户",
+                "tags": [
+                    "账户管理"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回账户详情，不含密码及其哈希。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": [
+                                            "author"
+                                        ],
+                                        "created_at": "2026-11-21T08:00:00Z",
+                                        "updated_at": "2026-11-21T08:00:00Z",
+                                        "last_login_at": "2026-11-22T09:30:00Z"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "路径 id 不是 UUIDv7。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "id",
+                                                "code": "invalid_format",
+                                                "message": "id must be a hyphenated UUIDv7"
+                                            }
+                                        ],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "404": {
+                        "description": "账户不存在。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": [],
+                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    }
+                },
+                "x-required-permission": "users.manage",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/UserId"
+                    }
+                ],
+                "description": "按 ID 读取账户。 需要权限 `users.manage`。"
+            },
             "patch": {
                 "operationId": "updateUser",
                 "summary": "更新账户资料、状态或角色",
@@ -1059,7 +1201,8 @@
                                             "author"
                                         ],
                                         "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z"
+                                        "updated_at": "2026-11-21T08:00:00Z",
+                                        "last_login_at": "2026-11-22T09:30:00Z"
                                     }
                                 }
                             }
@@ -1273,7 +1416,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "内置 author、editor 和 admin 角色。",
+                        "description": "内置 author、editor 和 admin 角色，含各自的账户数。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1300,7 +1443,8 @@
                                                 "posts.submit_own",
                                                 "media.manage_own",
                                                 "jobs.read_own"
-                                            ]
+                                            ],
+                                            "user_count": 1
                                         }
                                     ]
                                 }
@@ -1567,6 +1711,37 @@
                     "default": 20
                 },
                 "description": "每页条数，默认 20，最多 100。"
+            },
+            "UserQuery": {
+                "name": "q",
+                "in": "query",
+                "required": false,
+                "description": "关键字。去首尾空白后按 email 或 display_name 做不区分大小写的子串匹配，%、_、\\ 按字面匹配；去空白后为空视为未提供。去空白后超过 100 UTF-8 字节返回 422 validation_error，字段错误为 q/out_of_range。",
+                "schema": {
+                    "type": "string",
+                    "x-max-bytes": 100
+                },
+                "example": "author"
+            },
+            "UserRoleFilter": {
+                "name": "role",
+                "in": "query",
+                "required": false,
+                "description": "只返回分配了该内置角色的账户。取值不是 author、editor、admin 时返回 422 validation_error，字段错误为 role/invalid_value。",
+                "schema": {
+                    "$ref": "#/components/schemas/RoleKey"
+                },
+                "example": "editor"
+            },
+            "UserStatusFilter": {
+                "name": "status",
+                "in": "query",
+                "required": false,
+                "description": "只返回该状态的账户。取值不是 active、disabled 时返回 422 validation_error，字段错误为 status/invalid_value。",
+                "schema": {
+                    "$ref": "#/components/schemas/AccountStatus"
+                },
+                "example": "active"
             }
         },
         "responses": {
@@ -2005,6 +2180,18 @@
                         "type": "string",
                         "format": "date-time",
                         "description": "最后更新时间，RFC 3339 格式。"
+                    },
+                    "last_login_at": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "最近一次登录成功的时间，RFC 3339 格式；从未登录时为 null。字段总是存在。"
                     }
                 },
                 "required": [
@@ -2014,7 +2201,8 @@
                     "status",
                     "roles",
                     "created_at",
-                    "updated_at"
+                    "updated_at",
+                    "last_login_at"
                 ],
                 "examples": [
                     {
@@ -2026,7 +2214,8 @@
                             "author"
                         ],
                         "created_at": "2026-11-21T08:00:00Z",
-                        "updated_at": "2026-11-21T08:00:00Z"
+                        "updated_at": "2026-11-21T08:00:00Z",
+                        "last_login_at": "2026-11-22T09:30:00Z"
                     }
                 ]
             },
@@ -2051,13 +2240,20 @@
                             "$ref": "#/components/schemas/Permission"
                         },
                         "description": "当前角色授予的权限键。"
+                    },
+                    "user_count": {
+                        "type": "integer",
+                        "format": "int64",
+                        "minimum": 0,
+                        "description": "分配了该角色的账户数，包含启用和停用账户。"
                     }
                 },
                 "required": [
                     "id",
                     "key",
                     "name",
-                    "permissions"
+                    "permissions",
+                    "user_count"
                 ],
                 "examples": [
                     {
@@ -2071,7 +2267,8 @@
                             "posts.submit_own",
                             "media.manage_own",
                             "jobs.read_own"
-                        ]
+                        ],
+                        "user_count": 1
                     }
                 ]
             },
@@ -2220,7 +2417,8 @@
                                     "author"
                                 ],
                                 "created_at": "2026-11-21T08:00:00Z",
-                                "updated_at": "2026-11-21T08:00:00Z"
+                                "updated_at": "2026-11-21T08:00:00Z",
+                                "last_login_at": "2026-11-22T09:30:00Z"
                             }
                         ],
                         "meta": {
@@ -2481,7 +2679,8 @@
                                 "author"
                             ],
                             "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z"
+                            "updated_at": "2026-11-21T08:00:00Z",
+                            "last_login_at": "2026-11-22T09:30:00Z"
                         },
                         "permissions": [
                             "posts.create",
@@ -2520,7 +2719,8 @@
                                     "author"
                                 ],
                                 "created_at": "2026-11-21T08:00:00Z",
-                                "updated_at": "2026-11-21T08:00:00Z"
+                                "updated_at": "2026-11-21T08:00:00Z",
+                                "last_login_at": "2026-11-22T09:30:00Z"
                             },
                             "permissions": [
                                 "posts.create",
@@ -2558,7 +2758,8 @@
                                 "author"
                             ],
                             "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z"
+                            "updated_at": "2026-11-21T08:00:00Z",
+                            "last_login_at": "2026-11-22T09:30:00Z"
                         }
                     }
                 ]
@@ -2636,7 +2837,8 @@
                                     "posts.submit_own",
                                     "media.manage_own",
                                     "jobs.read_own"
-                                ]
+                                ],
+                                "user_count": 1
                             }
                         ]
                     }
