@@ -3,7 +3,10 @@ use chrono::{DateTime, Utc};
 use silva_application::ports::{
     IdentityRepository, LoginRecord, NewUser, RequestMeta, UserChanges,
 };
-use silva_domain::identity::{AuditLog, Principal, ROLE_KEYS, Role, User, permissions_for_role};
+use silva_domain::identity::{
+    AuditActionFilter, AuditActor, AuditLog, AuditLogFilter, Principal, ROLE_KEYS, Role, User,
+    permissions_for_role,
+};
 use silva_shared::metrics::METRICS;
 use silva_shared::{
     config::Config,
@@ -15,7 +18,7 @@ use sqlx::{
     ConnectOptions, Postgres, Transaction, pool::PoolConnection, postgres::PgConnectOptions,
 };
 use sqlx::{
-    PgConnection, PgPool, Row,
+    PgConnection, PgPool, QueryBuilder, Row,
     postgres::{PgPoolOptions, PgRow},
 };
 use std::{
@@ -191,7 +194,7 @@ async fn audit(
         .user_agent
         .as_deref()
         .map(|value| truncate_utf8(value, USER_AGENT_MAX_BYTES));
-    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata) VALUES ($1,$2,$3,'user',$4,$5::inet,$6,$7)")
+    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, request_id) VALUES ($1,$2,$3,'user',$4,$5::inet,$6,$7,$8)")
         .bind(ids::new_id())
         .bind(actor)
         .bind(action)
@@ -199,10 +202,88 @@ async fn audit(
         .bind(meta.ip_address.map(|ip| ip.to_string()))
         .bind(user_agent)
         .bind(sqlx::types::Json(metadata))
+        .bind(meta.request_id)
         .execute(connection)
         .await
         .map_err(db)?;
     Ok(())
+}
+
+/// 审计查询的列表与详情共用列；LEFT JOIN 账户以返回操作者摘要。
+const AUDIT_SELECT: &str = "SELECT a.id,a.actor_user_id,u.email AS actor_email,u.display_name AS actor_display_name,a.action,a.resource_type,a.resource_id,a.request_id,host(a.ip_address) AS ip_address,a.user_agent,a.metadata,a.created_at FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id";
+
+fn read_audit(row: &PgRow) -> std::result::Result<AuditLog, sqlx::Error> {
+    let actor_user_id: Option<Uuid> = row.try_get("actor_user_id")?;
+    let actor = match actor_user_id {
+        Some(id) => Some(AuditActor {
+            id,
+            email: row.try_get("actor_email")?,
+            display_name: row.try_get("actor_display_name")?,
+        }),
+        None => None,
+    };
+    Ok(AuditLog {
+        id: row.try_get("id")?,
+        actor_user_id,
+        actor,
+        action: row.try_get("action")?,
+        resource_type: row.try_get("resource_type")?,
+        resource_id: row.try_get("resource_id")?,
+        request_id: row.try_get("request_id")?,
+        ip_address: row.try_get("ip_address")?,
+        user_agent: row.try_get("user_agent")?,
+        metadata: row.try_get("metadata")?,
+        created_at: row.try_get("created_at")?,
+    })
+}
+
+/// 转义 LIKE 模式中的通配符与转义符，使前缀按字面匹配。
+fn escape_like(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
+/// 追加审计筛选的 WHERE 子句；所有值均通过绑定参数传入。
+fn push_audit_filter<'a>(builder: &mut QueryBuilder<'a, Postgres>, filter: &'a AuditLogFilter) {
+    builder.push(" WHERE true");
+    if let Some(from) = filter.from {
+        builder.push(" AND a.created_at >= ").push_bind(from);
+    }
+    if let Some(to) = filter.to {
+        builder.push(" AND a.created_at < ").push_bind(to);
+    }
+    if let Some(actor) = filter.actor_user_id {
+        builder.push(" AND a.actor_user_id = ").push_bind(actor);
+    }
+    if let Some(resource) = filter.resource_id {
+        builder.push(" AND a.resource_id = ").push_bind(resource);
+    }
+    if let Some(request) = filter.request_id {
+        builder.push(" AND a.request_id = ").push_bind(request);
+    }
+    match &filter.action {
+        Some(AuditActionFilter::Exact(action)) => {
+            builder.push(" AND a.action = ").push_bind(action.as_str());
+        }
+        Some(AuditActionFilter::Prefix(prefix)) => {
+            builder
+                .push(" AND a.action LIKE ")
+                .push_bind(format!("{}%", escape_like(prefix)))
+                .push(" ESCAPE '\\'");
+        }
+        None => {}
+    }
+    if let Some(resource_type) = &filter.resource_type {
+        builder
+            .push(" AND a.resource_type = ")
+            .push_bind(resource_type.as_str());
+    }
 }
 
 fn truncate_utf8(value: &str, max: usize) -> &str {
@@ -579,34 +660,35 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.audit_logs", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn audit_logs(&self, page: &PageRequest) -> Result<Page<AuditLog>> {
+    async fn audit_logs(
+        &self,
+        page: &PageRequest,
+        filter: &AuditLogFilter,
+    ) -> Result<Page<AuditLog>> {
         let _timer = METRICS.db_operation("audit_logs");
         let mut tx = begin(&self.pool).await.map_err(db)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             .execute(&mut *tx)
             .await
             .map_err(db)?;
-        let total = sqlx::query_scalar("SELECT count(*) FROM audit_logs")
+        let mut count = QueryBuilder::new("SELECT count(*) FROM audit_logs a");
+        push_audit_filter(&mut count, filter);
+        let total: i64 = count
+            .build_query_scalar()
             .fetch_one(&mut *tx)
             .await
             .map_err(db)?;
-        let rows = sqlx::query("SELECT id,actor_user_id,action,resource_type,resource_id,host(ip_address) AS ip_address,user_agent,metadata,created_at FROM audit_logs ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2")
-            .bind(i64::from(page.per_page)).bind(page.offset()).fetch_all(&mut *tx).await.map_err(db)?;
+        let mut select = QueryBuilder::new(AUDIT_SELECT);
+        push_audit_filter(&mut select, filter);
+        select
+            .push(" ORDER BY a.created_at DESC,a.id DESC LIMIT ")
+            .push_bind(i64::from(page.per_page))
+            .push(" OFFSET ")
+            .push_bind(page.offset());
+        let rows = select.build().fetch_all(&mut *tx).await.map_err(db)?;
         let items = rows
-            .into_iter()
-            .map(|row| {
-                Ok(AuditLog {
-                    id: row.try_get("id")?,
-                    actor_user_id: row.try_get("actor_user_id")?,
-                    action: row.try_get("action")?,
-                    resource_type: row.try_get("resource_type")?,
-                    resource_id: row.try_get("resource_id")?,
-                    ip_address: row.try_get("ip_address")?,
-                    user_agent: row.try_get("user_agent")?,
-                    metadata: row.try_get("metadata")?,
-                    created_at: row.try_get("created_at")?,
-                })
-            })
+            .iter()
+            .map(read_audit)
             .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
             .map_err(db)?;
         tx.commit().await.map_err(db)?;
@@ -614,6 +696,20 @@ impl IdentityRepository for PgIdentityRepository {
             items,
             pagination: page.metadata(total),
         })
+    }
+
+    #[tracing::instrument(name = "db.audit_log", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn audit_log(&self, id: Uuid) -> Result<Option<AuditLog>> {
+        let _timer = METRICS.db_operation("audit_log");
+        sqlx::query(&format!("{AUDIT_SELECT} WHERE a.id=$1"))
+            .bind(id)
+            .fetch_optional(&mut *acquire(&self.pool).await.map_err(db)?)
+            .await
+            .map_err(db)?
+            .as_ref()
+            .map(read_audit)
+            .transpose()
+            .map_err(db)
     }
 }
 
@@ -684,6 +780,13 @@ mod tests {
         );
         assert_eq!(unique_conflict_code(Some("sessions_token_hash_key")), None);
         assert_eq!(unique_conflict_code(None), None);
+    }
+
+    #[test]
+    fn like_prefix_escapes_wildcards_and_escape_char() {
+        assert_eq!(escape_like("auth."), "auth.");
+        assert_eq!(escape_like("users_x."), r"users\_x.");
+        assert_eq!(escape_like(r"a%b\c"), r"a\%b\\c");
     }
 
     #[test]

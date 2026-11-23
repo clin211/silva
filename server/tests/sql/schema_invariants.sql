@@ -166,6 +166,11 @@ BEGIN
     EXCEPTION WHEN check_violation THEN NULL;
     END;
     BEGIN
+      UPDATE audit_logs SET request_id = bad_id WHERE id = test_id;
+      RAISE EXCEPTION 'Invalid UUID accepted by audit_logs.request_id: %', bad_id;
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
       UPDATE users SET id = bad_id WHERE id = test_id;
       RAISE EXCEPTION 'Invalid UUID accepted by users.id: %', bad_id;
     EXCEPTION WHEN check_violation THEN NULL;

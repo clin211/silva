@@ -1,6 +1,6 @@
 use crate::ports::{Credentials, IdentityRepository, NewUser, RequestMeta, UserChanges};
 use chrono::Utc;
-use silva_domain::identity::{AuditLog, Principal, Role, User, validate_roles};
+use silva_domain::identity::{AuditLog, AuditLogFilter, Principal, Role, User, validate_roles};
 use silva_shared::{
     error::{AppError, FieldErrorCode, Result},
     ids,
@@ -280,10 +280,21 @@ impl IdentityService {
         &self,
         principal: &Principal,
         page: &PageRequest,
+        filter: &AuditLogFilter,
     ) -> Result<Page<AuditLog>> {
         principal.require("audit.read")?;
         page.validate()?;
-        self.repository.audit_logs(page).await
+        filter.validate()?;
+        self.repository.audit_logs(page, filter).await
+    }
+
+    #[tracing::instrument(name = "identity.audit_log", skip_all)]
+    pub async fn audit_log(&self, principal: &Principal, id: Uuid) -> Result<AuditLog> {
+        principal.require("audit.read")?;
+        self.repository
+            .audit_log(id)
+            .await?
+            .ok_or(AppError::NotFound)
     }
 }
 
