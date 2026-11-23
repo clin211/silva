@@ -220,6 +220,7 @@ async fn identity_security_and_account_lifecycle() {
             .await
             .unwrap();
         run_acceptance(&app, &test_pool).await;
+        run_account_queries(&app).await;
         run_audit_logs(&app, &test_pool).await;
         run_rate_limits(&test_pool, &database_url).await;
     })
@@ -1051,6 +1052,244 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(after_logout.status, StatusCode::UNAUTHORIZED);
+}
+
+/// 发起只读管理请求的便捷封装。
+async fn get(app: &Router, path: &str, cookie: &str) -> Response {
+    request(app, Method::GET, path, None, Some(cookie), None, None).await
+}
+
+fn emails(response: &Response) -> Vec<String> {
+    response.json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|user| user["email"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn assert_timestamp(value: &Value) {
+    let text = value
+        .as_str()
+        .unwrap_or_else(|| panic!("应为 RFC 3339 时间：{value}"));
+    chrono::DateTime::parse_from_rfc3339(text).unwrap();
+}
+
+/// 账户详情、最近登录时间、列表筛选与角色账户数。
+async fn run_account_queries(app: &Router) {
+    let (admin_cookie, admin_csrf, admin_login) = login(app, "admin@example.test").await;
+    assert_timestamp(&admin_login["user"]["last_login_at"]);
+    let me = get(app, "/api/v1/admin/auth/me", &admin_cookie).await;
+    assert_eq!(me.status, StatusCode::OK, "{}", me.json);
+    assert_eq!(
+        me.json["data"]["user"]["last_login_at"],
+        admin_login["user"]["last_login_at"]
+    );
+
+    // 依次创建：含 `_` 与 `%` 的账户、仅用于对照的近似账户、含反斜杠的账户、将被停用的多角色账户。
+    let mut created = Vec::new();
+    for (email, name, roles) in [
+        ("ops_lead@example.test", "Ops 100% Lead", json!(["editor"])),
+        ("opsxlead@example.test", "Ops 1000 Lead", json!(["author"])),
+        (r"back\slash@example.test", r"Back\Slash", json!(["author"])),
+        (
+            "dormant@example.test",
+            "Dormant Editor",
+            json!(["author", "editor"]),
+        ),
+    ] {
+        let response = request(
+            app,
+            Method::POST,
+            "/api/v1/admin/users",
+            Some(json!({"email":email,"display_name":name,"password":PASSWORD,"roles":roles})),
+            Some(&admin_cookie),
+            Some(&admin_csrf),
+            Some(ORIGIN),
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::CREATED, "{}", response.json);
+        // 字段总是存在，从未登录时为 null。
+        assert!(response.json["data"].get("last_login_at").is_some());
+        assert!(response.json["data"]["last_login_at"].is_null());
+        created.push(response.json["data"]["id"].as_str().unwrap().to_owned());
+    }
+    let dormant_id = &created[3];
+    let disabled = request(
+        app,
+        Method::PATCH,
+        &format!("/api/v1/admin/users/{dormant_id}"),
+        Some(json!({"status":"disabled"})),
+        Some(&admin_cookie),
+        Some(&admin_csrf),
+        Some(ORIGIN),
+    )
+    .await;
+    assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.json);
+
+    // 详情：登录前 last_login_at 为 null，登录后为时间。
+    let lead_path = format!("/api/v1/admin/users/{}", created[0]);
+    let before = get(app, &lead_path, &admin_cookie).await;
+    assert_eq!(before.status, StatusCode::OK, "{}", before.json);
+    assert_eq!(before.json["data"]["id"], created[0].as_str());
+    assert_eq!(before.json["data"]["email"], "ops_lead@example.test");
+    assert_eq!(before.json["data"]["roles"], json!(["editor"]));
+    assert!(before.json["data"]["last_login_at"].is_null());
+    assert!(before.json["data"].get("password_hash").is_none());
+    let (lead_cookie, _, lead_login) = login(app, "ops_lead@example.test").await;
+    assert_timestamp(&lead_login["user"]["last_login_at"]);
+    let after = get(app, &lead_path, &admin_cookie).await;
+    assert_eq!(after.status, StatusCode::OK, "{}", after.json);
+    assert_eq!(
+        after.json["data"]["last_login_at"],
+        lead_login["user"]["last_login_at"]
+    );
+    let missing = get(
+        app,
+        &format!("/api/v1/admin/users/{}", ids::new_id()),
+        &admin_cookie,
+    )
+    .await;
+    assert_error(&missing, StatusCode::NOT_FOUND, "not_found");
+    for bad_id in [
+        "550e8400-e29b-41d4-a716-446655440000",
+        "019535d9-3df7-79fb-7466-fa907fa17f9e",
+        "019535d93df779fbb466fa907fa17f9e",
+        "not-an-id",
+    ] {
+        let response = get(app, &format!("/api/v1/admin/users/{bad_id}"), &admin_cookie).await;
+        assert_field_error(&response, "id", "invalid_format");
+    }
+    // editor 没有 users.manage，不能读取账户详情或列表。
+    for path in [lead_path.as_str(), "/api/v1/admin/users?q=ops"] {
+        let forbidden = get(app, path, &lead_cookie).await;
+        assert_error(&forbidden, StatusCode::FORBIDDEN, "forbidden");
+    }
+    let anonymous = request(app, Method::GET, &lead_path, None, None, None, None).await;
+    assert_error(&anonymous, StatusCode::UNAUTHORIZED, "unauthorized");
+
+    // 筛选：结果按 created_at DESC、id DESC 排序，total 为筛选后的数量。
+    let all_users = 6;
+    for (query, expected) in [
+        ("", vec![]),
+        ("q=%20%20", vec![]),
+        ("q=ops_lead", vec!["ops_lead@example.test"]),
+        ("q=%20%20OPS_LEAD%20", vec!["ops_lead@example.test"]),
+        ("q=_", vec!["ops_lead@example.test"]),
+        ("q=100%25", vec!["ops_lead@example.test"]),
+        ("q=%25", vec!["ops_lead@example.test"]),
+        ("q=%5C", vec![r"back\slash@example.test"]),
+        ("q=ops%201000", vec!["opsxlead@example.test"]),
+        ("q=dormant%20EDITOR", vec!["dormant@example.test"]),
+        ("q=no-such-account", vec![]),
+        (
+            "role=editor",
+            vec!["dormant@example.test", "ops_lead@example.test"],
+        ),
+        ("role=admin", vec!["admin@example.test"]),
+        ("status=disabled", vec!["dormant@example.test"]),
+        ("role=editor&status=disabled", vec!["dormant@example.test"]),
+        ("role=editor&status=active", vec!["ops_lead@example.test"]),
+        (
+            "q=ops&role=author&status=active",
+            vec!["opsxlead@example.test"],
+        ),
+        (
+            "role=author",
+            vec![
+                "dormant@example.test",
+                r"back\slash@example.test",
+                "opsxlead@example.test",
+                "author@example.test",
+            ],
+        ),
+        ("role=admin&unknown=ignored", vec!["admin@example.test"]),
+    ] {
+        let response = get(app, &format!("/api/v1/admin/users?{query}"), &admin_cookie).await;
+        assert_eq!(
+            response.status,
+            StatusCode::OK,
+            "{query}: {}",
+            response.json
+        );
+        let actual = emails(&response);
+        let total = &response.json["meta"]["pagination"]["total"];
+        if expected.is_empty() && !query.starts_with("q=no") {
+            assert_eq!(total, all_users, "{query}");
+            assert_eq!(actual.len(), all_users, "{query}");
+        } else {
+            assert_eq!(actual, expected, "{query}");
+            assert_eq!(total, expected.len(), "{query}");
+        }
+    }
+    let paged = get(
+        app,
+        "/api/v1/admin/users?role=author&per_page=1&page=2",
+        &admin_cookie,
+    )
+    .await;
+    assert_eq!(paged.status, StatusCode::OK, "{}", paged.json);
+    assert_eq!(emails(&paged), vec![r"back\slash@example.test"]);
+    let pagination = &paged.json["meta"]["pagination"];
+    assert_eq!(pagination["total"], 4);
+    assert_eq!(pagination["total_pages"], 4);
+    let long_query = format!("/api/v1/admin/users?q={}", "a".repeat(101));
+    for (query, field, code) in [
+        (long_query.as_str(), "q", "out_of_range"),
+        ("/api/v1/admin/users?role=owner", "role", "invalid_value"),
+        ("/api/v1/admin/users?role=Admin", "role", "invalid_value"),
+        ("/api/v1/admin/users?role=", "role", "invalid_value"),
+        (
+            "/api/v1/admin/users?status=locked",
+            "status",
+            "invalid_value",
+        ),
+        ("/api/v1/admin/users?q=a&q=b", "q", "duplicate"),
+        (
+            "/api/v1/admin/users?status=active&status=disabled",
+            "status",
+            "duplicate",
+        ),
+    ] {
+        let response = get(app, query, &admin_cookie).await;
+        assert_field_error(&response, field, code);
+    }
+    // 多个字段同时无效时一次返回全部错误。
+    let combined = get(
+        app,
+        "/api/v1/admin/users?role=x&status=y&per_page=0",
+        &admin_cookie,
+    )
+    .await;
+    for (field, code) in [
+        ("role", "invalid_value"),
+        ("status", "invalid_value"),
+        ("per_page", "out_of_range"),
+    ] {
+        assert_field_error(&combined, field, code);
+    }
+
+    // 角色账户数包含停用账户。
+    let roles = get(app, "/api/v1/admin/roles", &admin_cookie).await;
+    assert_eq!(roles.status, StatusCode::OK, "{}", roles.json);
+    let counts: std::collections::BTreeMap<_, _> = roles.json["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|role| {
+            (
+                role["key"].as_str().unwrap().to_owned(),
+                role["user_count"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        [("admin", 1), ("author", 4), ("editor", 2)]
+            .into_iter()
+            .map(|(key, count)| (key.to_owned(), count))
+            .collect()
+    );
 }
 
 /// 以管理员会话 GET 指定路径并断言 200。

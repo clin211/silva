@@ -14,7 +14,10 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use silva_application::{identity::UserUpdate, ports::RequestMeta};
+use silva_application::{
+    identity::UserUpdate,
+    ports::{RequestMeta, UserFilter},
+};
 use silva_domain::identity::{
     AuditLogFilter, Principal, User, parse_audit_action, parse_audit_resource_type,
 };
@@ -145,7 +148,15 @@ async fn query_pairs<S: Send + Sync>(
     Ok(pairs)
 }
 
-/// 解析 `page`、`per_page`：十进制整数，重复或越界写入字段错误；其他参数忽略。
+fn duplicate_parameter(key: &str) -> FieldError {
+    FieldError::new(
+        key.to_owned(),
+        FieldErrorCode::Duplicate,
+        "parameter is given more than once",
+    )
+}
+
+/// 从查询参数中解析 `page`、`per_page`，字段错误追加到 `errors`；其他参数忽略。
 fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageRequest {
     let mut page = PageRequest::default();
     let mut seen = [false; 2];
@@ -156,11 +167,7 @@ fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageR
             _ => continue,
         };
         if std::mem::replace(&mut seen[index], true) {
-            errors.push(FieldError::new(
-                key.clone(),
-                FieldErrorCode::Duplicate,
-                "parameter is given more than once",
-            ));
+            errors.push(duplicate_parameter(key));
             continue;
         }
         match value.parse::<u32>() {
@@ -183,22 +190,6 @@ fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageR
         errors.extend(range);
     }
     page
-}
-
-/// 分页查询参数：`page`、`per_page` 为十进制整数，重复或越界均返回字段错误；其他参数忽略。
-pub(crate) struct PageInput(PageRequest);
-impl<S: Send + Sync> FromRequestParts<S> for PageInput {
-    type Rejection = ApiError;
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
-        let pairs = query_pairs(parts, state).await?;
-        let mut errors = Vec::new();
-        let page = parse_page(&pairs, &mut errors);
-        if errors.is_empty() {
-            Ok(Self(page))
-        } else {
-            Err(ApiError::validation(errors))
-        }
-    }
 }
 
 /// 审计列表查询参数：分页参数加可选筛选条件；同一参数重复或取值无效均返回字段错误，
@@ -259,6 +250,46 @@ impl<S: Send + Sync> FromRequestParts<S> for AuditLogQuery {
             Ok(Self { page, filter })
         } else {
             Err(ApiError::validation(errors))
+        }
+    }
+}
+
+/// 账户列表查询参数：分页参数之外，接受可选的 `q`、`role`、`status` 筛选。
+/// 筛选参数重复返回 `duplicate`，取值由 `UserFilter::new` 校验；与分页一样忽略其他参数，
+/// 并一次返回全部字段错误。
+pub(crate) struct UserListInput(PageRequest, UserFilter);
+impl<S: Send + Sync> FromRequestParts<S> for UserListInput {
+    type Rejection = ApiError;
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
+        let pairs = query_pairs(parts, state).await?;
+        let mut errors = Vec::new();
+        let page = parse_page(&pairs, &mut errors);
+        let mut filters: [Option<String>; 3] = Default::default();
+        for (key, value) in pairs {
+            let index = match key.as_str() {
+                "q" => 0,
+                "role" => 1,
+                "status" => 2,
+                _ => continue,
+            };
+            if filters[index].is_some() {
+                errors.push(duplicate_parameter(&key));
+            } else {
+                filters[index] = Some(value);
+            }
+        }
+        let [q, role, status] = filters;
+        let filter = match UserFilter::new(q, role, status) {
+            Ok(filter) => Some(filter),
+            Err(AppError::Validation(invalid)) => {
+                errors.extend(invalid);
+                None
+            }
+            Err(error) => return Err(error.into()),
+        };
+        match filter {
+            Some(filter) if errors.is_empty() => Ok(Self(page, filter)),
+            _ => Err(ApiError::validation(errors)),
         }
     }
 }
@@ -654,11 +685,22 @@ pub(crate) async fn change_password(
 pub(crate) async fn users(
     State(state): State<AppState>,
     headers: HeaderMap,
-    PageInput(page): PageInput,
+    UserListInput(page, filter): UserListInput,
 ) -> HttpResult<Response> {
     let (principal, _) = authorize(&state, &headers, false).await?;
     Ok(response::page(
-        state.identity.users(&principal, &page).await?,
+        state.identity.users(&principal, &page, &filter).await?,
+    ))
+}
+
+pub(crate) async fn user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    IdPath(id): IdPath,
+) -> HttpResult<Response> {
+    let (principal, _) = authorize(&state, &headers, false).await?;
+    Ok(response::ok(
+        state.identity.user(&principal, id.as_uuid()).await?,
     ))
 }
 
@@ -870,6 +912,69 @@ mod tests {
             ("roles[1]", FieldErrorCode::InvalidType)
         );
         assert!(!typed.message.contains("secret"));
+    }
+
+    async fn user_list_query(uri: &str) -> HttpResult<UserListInput> {
+        let (mut parts, ()) = axum::http::Request::builder()
+            .uri(uri)
+            .body(())
+            .unwrap()
+            .into_parts();
+        UserListInput::from_request_parts(&mut parts, &()).await
+    }
+
+    fn detail_codes(error: ApiError) -> Vec<(String, FieldErrorCode)> {
+        assert_eq!(error.code, ErrorCode::ValidationError);
+        error
+            .details
+            .into_iter()
+            .map(|detail| (detail.field.into_owned(), detail.code))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn user_list_query_parses_filters_and_ignores_unknown_parameters() {
+        let Ok(UserListInput(page, filter)) =
+            user_list_query("/?q=%20Ada%20&role=editor&status=active&page=2&sort=x").await
+        else {
+            panic!("合法查询应解析成功");
+        };
+        assert_eq!((page.page, page.per_page), (2, 20));
+        assert_eq!(filter.q.as_deref(), Some("Ada"));
+        assert_eq!(filter.role.as_deref(), Some("editor"));
+        assert_eq!(filter.status.as_deref(), Some("active"));
+        let Ok(UserListInput(_, blank)) = user_list_query("/?q=%20%20").await else {
+            panic!("空白关键字视为未提供");
+        };
+        assert_eq!(blank, UserFilter::default());
+    }
+
+    #[tokio::test]
+    async fn user_list_query_rejects_duplicates_and_invalid_values() {
+        for (uri, field, code) in [
+            ("/?role=owner", "role", FieldErrorCode::InvalidValue),
+            ("/?status=locked", "status", FieldErrorCode::InvalidValue),
+            ("/?q=a&q=b", "q", FieldErrorCode::Duplicate),
+            (
+                "/?role=admin&role=author",
+                "role",
+                FieldErrorCode::Duplicate,
+            ),
+            (
+                "/?per_page=0&role=x",
+                "per_page",
+                FieldErrorCode::OutOfRange,
+            ),
+            ("/?per_page=0&role=x", "role", FieldErrorCode::InvalidValue),
+        ] {
+            let Err(error) = user_list_query(uri).await else {
+                panic!("{uri} 应校验失败");
+            };
+            assert!(
+                detail_codes(error).contains(&(field.to_owned(), code)),
+                "{uri}: 缺少 {field}/{code:?}"
+            );
+        }
     }
 
     #[test]

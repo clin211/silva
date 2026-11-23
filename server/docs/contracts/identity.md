@@ -38,7 +38,8 @@
 | POST | `/auth/logout` | 有效会话 + Origin + CSRF；204。 |
 | GET | `/auth/me` | 有效会话；用户、权限、CSRF token。 |
 | POST | `/auth/password` | 有效会话 + Origin + CSRF；校验当前密码后修改，204；保留当前会话并撤销其他会话。 |
-| GET, POST | `/users` | Admin；分页列表、创建账户。 |
+| GET, POST | `/users` | Admin；分页列表（支持关键字、角色、状态筛选）、创建账户。 |
+| GET | `/users/{id}` | Admin；账户详情。 |
 | PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
 | GET | `/roles` | Admin；内置角色。 |
 | GET | `/audit-logs` | Admin；审计记录，支持筛选。 |
@@ -64,7 +65,14 @@
   - `action`：精确匹配，或以 `.*` 结尾表示前缀匹配（如 `auth.*` 匹配 `auth.login`）；只允许 `[a-z0-9_.]` 加末尾 `.*`，长度 1..64，否则 422 `invalid_value`。前缀按字面匹配，转义 LIKE 通配符。
   - `resource_type`：精确匹配，`[a-z0-9_]`，长度 1..64，否则 422 `invalid_value`。
 - 审计详情 `GET /audit-logs/{id}`：需要 `audit.read`，返回 `{"data": AuditLog}`；不存在 404 `not_found`；非法 UUID 422 `invalid_format`。
-- User 为 `{id,email,display_name,status,roles,created_at,updated_at}`，不含 password/hash。角色列表返回 `{"data":[{id,key,name,permissions}]}`。
+- User 为 `{id,email,display_name,status,roles,created_at,updated_at,last_login_at}`，不含 password/hash。`last_login_at` 为最近一次登录成功的 RFC 3339 时间，从未登录时为 `null`，字段总是存在；登录、`auth/me`、账户列表、详情、创建和修改返回的 User 均包含该字段。
+- 账户详情：`GET /users/{id}` 需要 `users.manage`，返回 `{"data": User}`；账户不存在返回 404 `not_found`；`id` 不是 UUIDv7 返回 422 `validation_error`（`id`/`invalid_format`）。
+- 账户列表筛选：`GET /users` 在 `page`、`per_page` 之外接受可选查询参数，多个条件按 AND 组合，`meta.pagination.total` 为筛选后的数量，排序保持 `created_at DESC, id DESC`。
+  - `q`：去首尾空白后按 email 或 display_name 做不区分大小写的子串匹配；LIKE 特殊字符 `%`、`_`、`\` 按字面匹配。去空白后为空视为未提供；去空白后超过 100 字节返回 422（`q`/`out_of_range`）。
+  - `role`：`author`、`editor`、`admin` 之一，只返回分配了该角色的账户；其他取值返回 422（`role`/`invalid_value`）。
+  - `status`：`active` 或 `disabled`；其他取值返回 422（`status`/`invalid_value`）。
+  - 与分页参数相同：同一参数重复返回 422（`duplicate`），未知查询参数忽略，多个字段错误一次返回。
+- 角色列表返回 `{"data":[{id,key,name,permissions,user_count}]}`；`user_count` 为分配了该角色的账户数，包含启用和停用账户。
 - `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
 
 ## UUIDv7 和响应契约
@@ -88,5 +96,6 @@
 5. Admin 创建账户、内置角色分配、停用账户后所有既有会话立即失效；审计可查且不含凭据。
 6. API 对 UUIDv4、错误变体、非连字符 UUID 返回 422 `validation_error`，字段错误为 `id`/`invalid_format`；真实 UUIDv7 可进入资源查询。
 7. 账户/审计列表默认分页、分页上限、无效分页与无效 JSON，路由不存在、方法不允许等错误保持统一错误结构。
-8. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。
+8. 账户 `last_login_at` 登录前为 null、登录后为时间；账户详情 200/404/422；列表按 `q`、`role`、`status` 单独及组合筛选，`total` 反映筛选结果，LIKE 特殊字符按字面匹配，非法取值返回字段错误；角色 `user_count` 包含停用账户。
 9. 审计记录的 `request_id` 与写操作响应头 `X-Request-Id` 一致，CLI 初始化管理员的记录 `request_id`、`actor` 为 null；各筛选条件、非法筛选值、详情 200/404/422 及 Author 无权访问均有覆盖。
+10. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。

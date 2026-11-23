@@ -30,6 +30,17 @@ pub struct NewUser {
     pub roles: Vec<String>,
 }
 
+/// 账户列表的筛选条件；由 `UserFilter::new` 规范化并校验，多个条件按 AND 组合。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UserFilter {
+    /// 已去首尾空白的非空关键字，按 email 或 display_name 不区分大小写子串匹配。
+    pub q: Option<String>,
+    /// 内置角色键。
+    pub role: Option<String>,
+    /// 账户状态。
+    pub status: Option<String>,
+}
+
 pub struct UserChanges {
     pub display_name: Option<String>,
     pub status: Option<String>,
@@ -61,7 +72,10 @@ pub trait IdentityRepository: Send + Sync {
         password_hash: String,
         meta: &RequestMeta,
     ) -> Result<()>;
-    async fn list_users(&self, page: &PageRequest) -> Result<Page<User>>;
+    /// 按筛选条件分页查询账户；total 为筛选后的数量。
+    async fn list_users(&self, page: &PageRequest, filter: &UserFilter) -> Result<Page<User>>;
+    /// 读取单个账户；不存在时返回 `NotFound`。
+    async fn find_user(&self, id: Uuid) -> Result<User>;
     async fn create_user(
         &self,
         actor: Option<Uuid>,

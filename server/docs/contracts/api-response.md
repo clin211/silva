@@ -48,7 +48,8 @@
     "status": "active",
     "roles": ["author"],
     "created_at": "2026-11-21T08:00:00Z",
-    "updated_at": "2026-11-21T08:00:00Z"
+    "updated_at": "2026-11-21T08:00:00Z",
+    "last_login_at": null
   }
 }
 ```

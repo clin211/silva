@@ -30,6 +30,8 @@ pub const ADMIN_PERMISSIONS: &[&str] = &[
     "system.read",
 ];
 pub const ROLE_KEYS: &[&str] = &["author", "editor", "admin"];
+/// 账户状态取值：active 为启用，disabled 为停用。
+pub const USER_STATUSES: &[&str] = &["active", "disabled"];
 
 pub fn permissions_for_role(role: &str) -> Vec<&'static str> {
     let mut permissions = AUTHOR_PERMISSIONS.to_vec();
@@ -51,6 +53,8 @@ pub struct User {
     pub roles: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// 最近一次登录成功的时间；从未登录时为 None，序列化为 null。
+    pub last_login_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug)]
@@ -87,6 +91,8 @@ pub struct Role {
     pub key: String,
     pub name: String,
     pub permissions: Vec<String>,
+    /// 分配了该角色的账户数，不区分启用或停用。
+    pub user_count: i64,
 }
 
 /// 审计记录中的操作账户摘要，只含识别账户所需的非敏感字段。
@@ -311,6 +317,7 @@ mod tests {
                 roles: vec!["author".into()],
                 created_at: now,
                 updated_at: now,
+                last_login_at: None,
             },
             permissions: AUTHOR_PERMISSIONS.iter().map(|key| (*key).into()).collect(),
         };
