@@ -104,11 +104,15 @@ curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \
 | `SILVA_WORKER_INTERVAL_SECONDS` | `60`，正整数秒 |
 | `SILVA_API_RATE_PER_MINUTE` | `600`，正整数 |
 | `SILVA_LOGIN_RATE_PER_MINUTE` | `10`，正整数 |
+| `SILVA_LOGIN_LOCKOUT_THRESHOLD` | `5`，正整数；同一邮箱 15 分钟内连续登录失败多少次后锁定 |
+| `SILVA_LOGIN_LOCKOUT_SECONDS` | `900`，正整数秒；账户登录锁定时长 |
 | `RUST_LOG` | `.env.example` 使用 `info,silva_api=debug` |
 
 初始化 CLI 额外读取 `SILVA_ADMIN_EMAIL`、`SILVA_ADMIN_NAME` 和 `SILVA_ADMIN_PASSWORD`。集成测试单独读取 `SILVA_TEST_DATABASE_URL`，不复用生产连接。
 
 API 和登录限流目前按直连 peer IP（IPv6 按 /64 前缀合并）使用进程内 60 秒固定窗口，API 与登录额度同时生效；不信任客户端提供的 `X-Forwarded-For`。通过同源反向代理部署时，后端看到的是代理 IP，经过该代理的请求会共享额度。生产入口应按可信的真实客户端 IP 限流，并在多个后端副本之间统一执行限制；后端阈值需结合代理汇总流量配置。重启进程会清空本机限流窗口。
+
+登录另按规范化邮箱执行连续失败锁定（不论账户是否存在），锁定期内返回 429 `rate_limited`，`Retry-After` 为剩余锁定秒数。该计数同样保存在单个 API 进程内存中：多副本部署时各副本独立计数，重启后清空；需要跨副本一致时应改为共享存储。
 
 ## 检查与测试
 

@@ -17,9 +17,33 @@ pub struct RequestMeta {
     pub request_id: Option<Uuid>,
 }
 
+/// 按规范化邮箱查到的登录账户，包含停用账户，以便审计区分失败原因。
 pub struct LoginRecord {
     pub id: Uuid,
     pub password_hash: String,
+    /// 账户是否为启用状态；停用账户不得登录。
+    pub active: bool,
+}
+
+/// 登录失败的审计原因，写入 `auth.login_failed` 审计的 `metadata.reason`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginFailure {
+    /// 账户不存在或密码错误。
+    InvalidCredentials,
+    /// 密码正确但账户已停用。
+    AccountDisabled,
+    /// 该邮箱处于连续失败锁定期，未校验密码。
+    Locked,
+}
+
+impl LoginFailure {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::AccountDisabled => "account_disabled",
+            Self::Locked => "locked",
+        }
+    }
 }
 
 pub struct NewUser {
@@ -51,7 +75,15 @@ pub struct UserChanges {
 
 #[async_trait]
 pub trait IdentityRepository: Send + Sync {
+    /// 按规范化邮箱查找账户（含停用账户）。
     async fn find_login(&self, email: &str) -> Result<Option<LoginRecord>>;
+    /// 写入 `auth.login_failed` 审计；`user_id` 仅在账户存在时提供，不记录尝试的邮箱或密码。
+    async fn record_login_failure(
+        &self,
+        user_id: Option<Uuid>,
+        reason: LoginFailure,
+        meta: &RequestMeta,
+    ) -> Result<()>;
     /// 锁定有效账户，在同一事务中创建会话、更新登录时间并写入审计。
     async fn create_session(
         &self,

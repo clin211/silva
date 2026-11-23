@@ -180,6 +180,8 @@ fn config(database_url: String) -> Config {
         worker_interval: Duration::from_secs(60),
         api_rate_per_minute: 10_000,
         login_rate_per_minute: 1000,
+        login_lockout_threshold: 1000,
+        login_lockout_duration: Duration::from_secs(900),
     }
 }
 
@@ -223,6 +225,7 @@ async fn identity_security_and_account_lifecycle() {
         run_account_queries(&app).await;
         run_audit_logs(&app, &test_pool).await;
         run_rate_limits(&test_pool, &database_url).await;
+        run_login_lockout(&test_pool, &database_url).await;
     })
     .await;
     pool.close().await;
@@ -932,7 +935,20 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some(ORIGIN),
     )
     .await;
-    assert_eq!(disabled_login.status, StatusCode::UNAUTHORIZED);
+    assert_error(
+        &disabled_login,
+        StatusCode::UNAUTHORIZED,
+        "invalid_credentials",
+    );
+    // 停用账户对外与密码错误一致，审计中区分原因并关联账户。
+    let (disabled_resource, disabled_metadata): (Option<Uuid>, Value) = sqlx::query_as(
+        "SELECT resource_id, metadata FROM audit_logs WHERE action = 'auth.login_failed' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(disabled_resource, Some(Uuid::parse_str(author_id).unwrap()));
+    assert_eq!(disabled_metadata, json!({"reason":"account_disabled"}));
     let enabled = request(
         app,
         Method::PATCH,
@@ -1680,4 +1696,128 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     )
     .await;
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
+}
+
+async fn login_attempt(app: &Router, email: &str, password: &str) -> Response {
+    request(
+        app,
+        Method::POST,
+        "/api/v1/admin/auth/login",
+        Some(json!({"email": email, "password": password})),
+        None,
+        None,
+        Some(ORIGIN),
+    )
+    .await
+}
+
+fn assert_locked(response: &Response, max_seconds: u64) {
+    assert_error(response, StatusCode::TOO_MANY_REQUESTS, "rate_limited");
+    let seconds: u64 = response.headers[header::RETRY_AFTER]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        (1..=max_seconds).contains(&seconds),
+        "Retry-After 应为剩余锁定秒数：{seconds}"
+    );
+}
+
+/// 按账户的连续失败锁定：阈值调小为 3 次、锁定 2 秒，验证锁定、审计、到期和成功清零。
+async fn run_login_lockout(pool: &PgPool, database_url: &str) {
+    const WRONG: &str = "wrong-password-0000";
+    let mut lockout_config = config(database_url.to_owned());
+    lockout_config.login_lockout_threshold = 3;
+    lockout_config.login_lockout_duration = Duration::from_secs(2);
+    let app = silva_api::build_router(lockout_config, pool.clone())
+        .await
+        .unwrap();
+    let admin_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE email = 'admin@example.test'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    // UUIDv7 按时间递增，以此筛选本段测试写入的审计。
+    let baseline = ids::new_id();
+    tokio::time::sleep(Duration::from_millis(5)).await;
+
+    for _ in 0..3 {
+        let response = login_attempt(&app, "admin@example.test", WRONG).await;
+        assert_error(&response, StatusCode::UNAUTHORIZED, "invalid_credentials");
+    }
+    // 锁定期内即使密码正确也被拒绝。
+    assert_locked(
+        &login_attempt(&app, "admin@example.test", PASSWORD).await,
+        2,
+    );
+    assert_locked(
+        &login_attempt(&app, "ADMIN@example.test", PASSWORD).await,
+        2,
+    );
+
+    // 不存在的账户按规范化邮箱同样计数和锁定，响应与存在的账户一致。
+    for email in [
+        " Ghost@Example.test",
+        "ghost@example.test ",
+        "GHOST@example.test",
+    ] {
+        let response = login_attempt(&app, email, WRONG).await;
+        assert_error(&response, StatusCode::UNAUTHORIZED, "invalid_credentials");
+    }
+    assert_locked(
+        &login_attempt(&app, "ghost@example.test", PASSWORD).await,
+        2,
+    );
+    assert_locked(&login_attempt(&app, "ghost@example.test", WRONG).await, 2);
+
+    /// actor_user_id、resource_id、resource_type、metadata 与整行 JSON 文本。
+    type FailedLoginRow = (Option<Uuid>, Option<Uuid>, String, Value, String);
+    let rows: Vec<FailedLoginRow> = sqlx::query_as(
+        "SELECT actor_user_id, resource_id, resource_type, metadata, row_to_json(a)::text FROM audit_logs a WHERE action = 'auth.login_failed' AND id > $1 ORDER BY id",
+    )
+    .bind(baseline)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    let summary: Vec<_> = rows
+        .iter()
+        .map(|(actor, resource, kind, metadata, _)| {
+            assert_eq!(*actor, None);
+            assert_eq!(kind, "user");
+            (*resource, metadata["reason"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    let expected = |resource: Option<Uuid>| {
+        let mut rows = vec![(resource, "invalid_credentials".to_owned()); 3];
+        // 同一轮锁定只在首次被拒时记录一次。
+        rows.push((resource, "locked".to_owned()));
+        rows
+    };
+    assert_eq!(summary, [expected(Some(admin_id)), expected(None)].concat());
+    for (_, _, _, metadata, row) in &rows {
+        assert_eq!(metadata.as_object().unwrap().len(), 1, "{metadata}");
+        for secret in ["example.test", PASSWORD, WRONG] {
+            assert!(
+                !row.to_lowercase().contains(&secret.to_lowercase()),
+                "失败登录审计不得包含邮箱或密码：{row}"
+            );
+        }
+    }
+
+    // 锁定到期后恢复登录。
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+    login(&app, "admin@example.test").await;
+
+    // 成功登录清零：两次失败、成功、再两次失败后仍可登录。
+    for _ in 0..2 {
+        let response = login_attempt(&app, "admin@example.test", WRONG).await;
+        assert_error(&response, StatusCode::UNAUTHORIZED, "invalid_credentials");
+    }
+    login(&app, "admin@example.test").await;
+    for _ in 0..2 {
+        let response = login_attempt(&app, "admin@example.test", WRONG).await;
+        assert_error(&response, StatusCode::UNAUTHORIZED, "invalid_credentials");
+    }
+    login(&app, "admin@example.test").await;
 }

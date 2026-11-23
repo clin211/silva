@@ -12,6 +12,10 @@ pub struct Config {
     pub worker_interval: Duration,
     pub api_rate_per_minute: u32,
     pub login_rate_per_minute: u32,
+    /// 同一登录邮箱在失败窗口内连续失败多少次后锁定。
+    pub login_lockout_threshold: u32,
+    /// 账户登录锁定时长。
+    pub login_lockout_duration: Duration,
 }
 
 impl Config {
@@ -49,6 +53,11 @@ impl Config {
             )?)),
             api_rate_per_minute: positive("SILVA_API_RATE_PER_MINUTE", 600)?,
             login_rate_per_minute: positive("SILVA_LOGIN_RATE_PER_MINUTE", 10)?,
+            login_lockout_threshold: positive("SILVA_LOGIN_LOCKOUT_THRESHOLD", 5)?,
+            login_lockout_duration: Duration::from_secs(u64::from(positive(
+                "SILVA_LOGIN_LOCKOUT_SECONDS",
+                900,
+            )?)),
         })
     }
 }
