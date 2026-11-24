@@ -32,6 +32,19 @@ unset SILVA_ADMIN_PASSWORD
 
 也可用 `--email` 和 `--display-name` 指定邮箱与名称。重复执行初始化不会覆盖已有账户密码或权限。不要在生产使用演示密码。
 
+创建其他角色的账户使用 `create-user`，`--role` 可重复指定（`author`、`editor`、`admin`），密码读取 `SILVA_USER_PASSWORD`：
+
+```sh
+printf '账户密码: '
+read -r -s SILVA_USER_PASSWORD
+printf '\n'
+export SILVA_USER_PASSWORD
+cargo run --locked -p silva-cli -- create-user --email author@example.com --display-name 作者 --role author
+unset SILVA_USER_PASSWORD
+```
+
+本地开发要快速得到一个随机邮箱和密码的账户，运行 `scripts/create-user.sh [--role author|editor|admin]...`（默认 admin），凭据会打印到终端；本机没有 cargo 时脚本自动改用 Docker 中的 Rust 工具链。
+
 在两个终端分别启动：
 
 ```sh

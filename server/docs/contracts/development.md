@@ -35,6 +35,7 @@ CLI 管理员密码只通过 `SILVA_ADMIN_PASSWORD` 提供，不出现在命令�
 - `cargo run -p silva-cli -- migrate`
 - `cargo run -p silva-cli -- check-schema`：必须在真实迁移后的数据库检查表/列非空注释及 UUIDv7 约束。
 - `cargo run -p silva-cli -- seed-admin --email admin@example.com --display-name Administrator`：密码读取 `SILVA_ADMIN_PASSWORD`。
+- `cargo run -p silva-cli -- create-user --email author@example.com --display-name Author --role author`：创建指定内置角色的账户，`--role` 可重复（`author`、`editor`、`admin`）；密码读取 `SILVA_USER_PASSWORD`。审计动作与 `seed-admin` 相同，为无操作账户的 `users.bootstrap`。
 - `cargo run -p silva-worker -- --once`：执行一次真实维护清理后退出，不声称处理尚未实现的发布或采集任务。
 - `cargo test -p silva-api --test identity -- --ignored`：读取 `SILVA_TEST_DATABASE_URL`，连接角色需 CREATEDB，用独立临时数据库测试后清理。CI URL 为 `postgres://silva:silva@localhost:5432/silva_test`。
 

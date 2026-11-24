@@ -341,12 +341,26 @@ impl IdentityService {
         display_name: String,
         password: String,
     ) -> Result<User> {
+        self.provision_user(email, display_name, password, vec!["admin".into()])
+            .await
+    }
+
+    /// 仅供 CLI 直接创建指定内置角色的账户，不经过 HTTP 会话与 RBAC；
+    /// 输入校验与管理员创建账户一致，审计记录没有操作账户与请求来源。
+    #[tracing::instrument(name = "identity.provision_user", skip_all)]
+    pub async fn provision_user(
+        &self,
+        email: String,
+        display_name: String,
+        password: String,
+        roles: Vec<String>,
+    ) -> Result<User> {
         self.create(
             None,
             email,
             display_name,
             password,
-            vec!["admin".into()],
+            roles,
             &RequestMeta::default(),
         )
         .await
