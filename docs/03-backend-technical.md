@@ -793,35 +793,37 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 5.4 Admin API
 
+所有接口遵守 [RESTful 接口设计规范](../server/docs/contracts/restful-api.md)：路径只用资源名词，动作由 HTTP 方法表达。
+
 下表路径相对 `/api/v1/admin`。`CRUD` 仅为表内简写：集合 `GET/POST`、实体 `GET/PATCH/DELETE`，OpenAPI 中逐条定义。
 
-| Method      | Path                                                                                                      | 说明                                           |
-| ----------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| POST        | `/auth/login`                                                                                             | 公开入口；只返回两个令牌及其过期时间          |
-| POST        | `/auth/refresh`                                                                                           | 公开入口；轮换 refresh token，返回新令牌对     |
-| POST        | `/auth/logout`                                                                                            | 撤销当前会话及其全部令牌；204                  |
-| GET         | `/users/info`                                                                                             | 当前账户详情、角色和权限                       |
-| GET, POST   | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章            |
-| GET         | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID   |
-| POST        | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                              |
-| GET         | `/posts/{id}/revisions`、`/posts/{id}/revisions/{revision_id}`                                            | 修订列表及详情，供编辑、预览和历史查看         |
-| POST        | `/posts/{id}/submit-review`                                                                               | Author 可提交自己的指定修订                    |
-| POST        | `/posts/{id}/reviews`                                                                                     | Editor/Admin 批准或拒绝指定修订                |
-| POST        | `/posts/{id}/publish`、`/posts/{id}/unpublish`                                                            | Editor/Admin 提交上线或下线目标，见 §6.2       |
-| CRUD        | `/categories`、`/tags`                                                                                    | 分类标签维护；有引用时不允许删除               |
-| POST        | `/media/presign`、`/media/{id}/complete`                                                                  | 申请和确认上传，见 §6.4                        |
-| GET, DELETE | `/media/{id}`                                                                                             | 媒体元数据和授权删除；列表使用 `GET /media`    |
-| GET         | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存               |
-| GET, PUT    | `/profile`                                                                                                | 读取和整体保存单例个人资料                     |
-| GET         | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                             |
-| PATCH       | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                      |
-| GET         | `/ai-trending/runs`                                                                                       | 采集批次、错误与限流信息                       |
-| POST        | `/ai-trending/ingestion-runs`                                                                             | Admin 请求当日批次；运行中或已成功返回现有记录 |
-| GET         | `/publishing/jobs`、`/publishing/jobs/{id}`                                                               | 列表和详情；支持通过 generation 定位任务       |
-| POST        | `/publishing/jobs/{id}/retry`                                                                             | Admin 重试仍为最新目标的失败任务，202          |
-| GET, POST   | `/users`                                                                                                  | Admin 列表和创建账户                           |
-| PATCH       | `/users/{id}`                                                                                             | Admin 停用、启用及分配内置角色                 |
-| GET         | `/roles`、`/audit-logs`                                                                                   | Admin 读取内置角色及审计                       |
+| Method             | Path                                                                                                      | 说明                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| POST               | `/sessions`                                                                                               | 登录即创建会话，公开入口；201，只返回两个令牌及过期时间                     |
+| POST               | `/tokens`                                                                                                 | 公开入口；用 refresh token 轮换并签发新令牌对，201                          |
+| DELETE             | `/sessions/current`                                                                                       | 退出登录：删除当前会话及其全部令牌；204                                     |
+| GET                | `/users/me`                                                                                               | 当前账户详情、角色和权限                                                    |
+| PUT                | `/users/me/password`                                                                                      | 校验当前密码后替换本人密码；204                                             |
+| GET, POST          | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章                                         |
+| GET                | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID                                |
+| POST               | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                                                           |
+| GET                | `/posts/{id}/revisions`、`/posts/{id}/revisions/{revision_id}`                                            | 修订列表及详情，供编辑、预览和历史查看                                      |
+| POST               | `/posts/{id}/reviews`                                                                                     | Author 为自己的指定修订创建待审核记录，201                                  |
+| PATCH              | `/posts/{id}/reviews/{review_id}`                                                                         | Editor/Admin 批准或拒绝待审核记录                                           |
+| PUT, DELETE        | `/posts/{id}/publication`                                                                                 | Editor/Admin 设置或撤下上线目标，202，见 §6.2                               |
+| CRUD               | `/categories`、`/tags`                                                                                    | 分类标签维护；有引用时不允许删除                                            |
+| POST               | `/media`                                                                                                  | 创建媒体记录并返回直传地址，201，见 §6.4                                    |
+| GET, PATCH, DELETE | `/media/{id}`                                                                                             | 媒体元数据、确认上传（`status: uploaded`）和授权删除；列表使用 `GET /media` |
+| GET                | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存                                            |
+| GET, PUT           | `/profile`                                                                                                | 读取和整体保存单例个人资料                                                  |
+| GET                | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                                                          |
+| PATCH              | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                                                   |
+| GET, POST          | `/ai-trending/ingestion-runs`                                                                             | 采集批次、错误与限流信息；Admin 请求当日批次，运行中或已成功返回现有记录    |
+| GET                | `/publishing/jobs`、`/publishing/jobs/{id}`                                                               | 列表和详情；支持通过 generation 定位任务                                    |
+| POST               | `/publishing/jobs/{id}/attempts`                                                                          | Admin 为仍是最新目标的失败任务创建重试，202                                 |
+| GET, POST          | `/users`                                                                                                  | Admin 列表和创建账户；创建返回 201 与 `Location`                            |
+| PATCH              | `/users/{id}`                                                                                             | Admin 停用、启用及分配内置角色                                              |
+| GET                | `/roles`、`/audit-logs`                                                                                   | Admin 读取内置角色及审计                                                    |
 
 默认由 Editor/Admin 维护个人资料和分类标签。Author 仅可操作自己名下的文章与媒体，以及读取自己有权访问的任务。个人资料、公开分类标签和 AI 榜单展示设置保存成功后，响应包含 `publish_job_id` 和 `desired_generation`，供后台单独显示上线状态。
 
@@ -852,7 +854,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 创建返回 201，含 `post_id`、`revision_id`、`revision_no`。`POST /posts/{id}/revisions` 采用同样的完整修订内容，去掉 `slug`，新增必填 `expected_revision_id`。事务中校验文章权限、锁定文章行并比较当前指针，再追加 revision 和更新指针；不一致返回 `409 revision_conflict`（`details` 提供实际 `current_revision_id`），不创建修订。
 
-`submit-review` 传 `revision_id`，创建 `pending` 审核并返回 201；重复提交返回 `409 review_already_submitted`。`reviews` 传 `revision_id`、`decision`（`approved` 或 `rejected`）及可选 `comment`，返回审核记录；不是待审核状态时返回 `409 review_not_pending`。文章详情返回 `current_revision_id`、可空的 `desired_published_revision_id` 和 `live_revision_id`、`publication_version` 及 `desired_generation`、`active_generation`。
+`POST /posts/{id}/reviews` 传 `revision_id`，创建 `pending` 审核并返回 201 与 `Location`；重复提交返回 `409 review_already_submitted`。`PATCH /posts/{id}/reviews/{review_id}` 传 `decision`（`approved` 或 `rejected`）及可选 `comment`，返回审核记录；不是待审核状态时返回 `409 review_not_pending`。文章详情返回 `current_revision_id`、可空的 `desired_published_revision_id` 和 `live_revision_id`、`publication_version` 及 `desired_generation`、`active_generation`。
 
 ### 6.2 发布与取消发布
 
@@ -863,7 +865,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 }
 ```
 
-`unpublish` 只传 `expected_publication_version`。事务校验当前 `publication_version`、权限及指定 revision 的归属和审批结果；更新或清空期望公开 revision 和时间，同时增加 `publication_version`、创建 job 和 Outbox 事件。两类操作均返回 202，含 `publish_job_id`、`desired_generation`、`publication_version`，并不保证已上线。并发冲突为 `409 publication_conflict`，未批准为 `409 revision_not_approved`，无期望公开版本可撤下为 `409 already_unpublished`。
+上线使用 `PUT /posts/{id}/publication`，正文如上；撤下使用 `DELETE /posts/{id}/publication?expected_publication_version=N`，不带正文。事务校验当前 `publication_version`、权限及指定 revision 的归属和审批结果；更新或清空期望公开 revision 和时间，同时增加 `publication_version`、创建 job 和 Outbox 事件。两类操作均返回 202，含 `publish_job_id`、`desired_generation`、`publication_version`，并不保证已上线。并发冲突为 `409 publication_conflict`，未批准为 `409 revision_not_approved`，无期望公开版本可撤下为 `409 already_unpublished`。
 
 ### 6.3 AI Trending 列表参数
 
@@ -874,7 +876,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 6.4 媒体上传
 
-`presign` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `complete`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或个人资料时，引用未通过校验的媒体返回 `422 media_not_ready`。删除被引用的媒体返回 `409 media_in_use`。
+`POST /media` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201、`Location` 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或个人资料时，引用未通过校验的媒体返回 `422 media_not_ready`。删除被引用的媒体返回 `409 media_in_use`。
 
 ## 7. 核心业务流程
 

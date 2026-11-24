@@ -4,7 +4,7 @@
 
 ## OpenAPI 交付与 Apifox 导入
 
-接口字段、约束和请求/响应示例统一维护在 [OpenAPI 文件](../../apps/api/openapi.json) 中。成功与失败的响应结构、错误码登记表见 [API 响应结构规范](../contracts/api-response.md)。将 `server/apps/api/openapi.json` 作为 OpenAPI 3.1 文件导入 Apifox，进行预览与调试。
+接口字段、约束和请求/响应示例统一维护在 [OpenAPI 文件](../../apps/api/openapi.json) 中。路径与方法遵守 [RESTful 接口设计规范](../contracts/restful-api.md)。成功与失败的响应结构、错误码登记表见 [API 响应结构规范](../contracts/api-response.md)。将 `server/apps/api/openapi.json` 作为 OpenAPI 3.1 文件导入 Apifox，进行预览与调试。
 
 `info.version` 表示当前 API 发布版本；`openapi` 表示文档规范版本。变更接口时同步更新该文件，再重新导入 Apifox。
 
@@ -12,7 +12,7 @@
 
 管理接口使用 JWT Bearer 认证。登录返回 `access_token` 与 `refresh_token`，之后在请求头 `Authorization: Bearer <access_token>` 中携带 access token；Apifox 中把认证方式设为 Bearer Token 并填入 access token。服务端不使用 Cookie、CSRF token 或 Origin 校验。
 
-- access token 默认 900 秒过期（`SILVA_ACCESS_TOKEN_TTL_SECONDS`），过期后返回 401 `token_expired`，此时调用 `POST /api/v1/admin/auth/refresh` 提交 `{"refresh_token": "..."}` 换取新令牌对，再重试原请求。
+- access token 默认 900 秒过期（`SILVA_ACCESS_TOKEN_TTL_SECONDS`），过期后返回 401 `token_expired`，此时调用 `POST /api/v1/admin/tokens` 提交 `{"refresh_token": "..."}` 换取新令牌对，再重试原请求。
 - refresh token 默认 7 天过期（`SILVA_REFRESH_TOKEN_TTL_SECONDS`），每次刷新都会轮换：旧 refresh token 立即失效，必须保存新返回的 refresh token。已用过的 refresh token 再次提交视为重放，整个会话被撤销，需要重新登录。
 - 每次请求都按令牌中的会话读取账户当前状态、角色和权限。退出登录、账户停用、管理员重置密码或本人修改密码（其他会话）后，相关令牌立即返回 401 `unauthorized`。
 - 令牌等同于凭据：不要写入日志、URL 或共享的调试环境；生产环境只通过 HTTPS 传输。生产入口应限制运维接口的外部访问。
@@ -34,7 +34,7 @@ export SILVA_API_PASSWORD
 
 jq -nc '{email: env.SILVA_API_EMAIL, password: env.SILVA_API_PASSWORD}' \
   | curl --fail-with-body --silent --show-error \
-      "$SILVA_API_BASE/api/v1/admin/auth/login" \
+      "$SILVA_API_BASE/api/v1/admin/sessions" \
       -H 'Content-Type: application/json' \
       --data-binary @- > "$SILVA_API_TMP/login.json"
 unset SILVA_API_PASSWORD
@@ -42,25 +42,25 @@ SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/login.json")
 SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/login.json")
 
 curl --fail-with-body --silent --show-error \
-  "$SILVA_API_BASE/api/v1/admin/users/info" \
+  "$SILVA_API_BASE/api/v1/admin/users/me" \
   -H "Authorization: Bearer $SILVA_API_ACCESS"
 ```
 
-登录响应只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致。`GET /users/info` 返回当前账户详情、角色与权限：`{"data": {"id", "email", "display_name", "status", "roles", "created_at", "updated_at", "last_login_at", "permissions"}}`。
+登录成功返回 201 Created，正文只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致。`GET /users/me` 返回当前账户详情、角色与权限：`{"data": {"id", "email", "display_name", "status", "roles", "created_at", "updated_at", "last_login_at", "permissions"}}`。
 
 access token 过期后刷新令牌，并同时替换两个变量：
 
 ```sh
 jq -nc --arg token "$SILVA_API_REFRESH" '{refresh_token: $token}' \
   | curl --fail-with-body --silent --show-error \
-      "$SILVA_API_BASE/api/v1/admin/auth/refresh" \
+      "$SILVA_API_BASE/api/v1/admin/tokens" \
       -H 'Content-Type: application/json' \
       --data-binary @- > "$SILVA_API_TMP/refresh.json"
 SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/refresh.json")
 SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/refresh.json")
 ```
 
-刷新响应与登录相同：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`。同一 refresh token 并发提交时只有一次成功。
+刷新同样返回 201，正文与登录相同：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`。同一 refresh token 并发提交时只有一次成功。
 
 ## 查询列表与更新账户
 
@@ -89,11 +89,11 @@ curl --fail-with-body --silent --show-error \
 
 登录与刷新之外的管理接口都要求有效的 access token。JSON 请求最大 64 KiB，输入不接受未知字段。密码长度按 UTF-8 字节计算，创建账户时为 12–1024 字节；显示名称最多 100 字节。
 
-操作完成后退出登录，成功返回 204 且没有响应体；该会话的 access token 和 refresh token 随即失效：
+操作完成后删除当前会话（退出登录），成功返回 204 且没有响应体；该会话的 access token 和 refresh token 随即失效：
 
 ```sh
 curl --fail-with-body --silent --show-error \
-  --request POST "$SILVA_API_BASE/api/v1/admin/auth/logout" \
+  --request DELETE "$SILVA_API_BASE/api/v1/admin/sessions/current" \
   -H "Authorization: Bearer $SILVA_API_ACCESS"
 unset SILVA_API_ACCESS SILVA_API_REFRESH
 ```
@@ -102,8 +102,8 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 
 | 接口 | 要求 |
 | --- | --- |
-| `POST /api/v1/admin/auth/login`、`POST /api/v1/admin/auth/refresh` | 无需 access token |
-| `GET /api/v1/admin/users/info`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效 access token |
+| `POST /api/v1/admin/sessions`（登录）、`POST /api/v1/admin/tokens`（刷新） | 无需 access token |
+| `GET /api/v1/admin/users/me`、`DELETE /api/v1/admin/sessions/current`（退出）、`PUT /api/v1/admin/users/me/password` | 有效 access token |
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
@@ -131,7 +131,7 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | HTTP 状态 | 常见错误码 | 处理 |
 | --- | --- | --- |
 | 400 | `malformed_json` | 检查请求体是否为合法 JSON |
-| 401 | `token_expired` | 用 refresh token 调用 `auth/refresh` 后重试 |
+| 401 | `token_expired` | 用 refresh token 调用 `POST /tokens` 后重试 |
 | 401 | `invalid_credentials`、`unauthorized` | 检查凭据，或重新登录 |
 | 403 | `forbidden` | 检查当前账户的权限 |
 | 404 / 405 | `not_found` / `method_not_allowed` | 检查资源、路径或方法 |

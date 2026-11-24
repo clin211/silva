@@ -196,17 +196,17 @@ fn token_pair(data: &Value, access_ttl: i64) -> (String, String) {
     (access, refresh)
 }
 
-/// 登录并返回 (access_token, refresh_token, 当前账户详情)；账户详情来自登录后的 `GET /users/info`。
+/// 登录并返回 (access_token, refresh_token, 当前账户详情)；账户详情来自登录后的 `GET /users/me`。
 async fn login(app: &Router, email: &str) -> (String, String, Value) {
     let response = request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(json!({"email": email, "password": PASSWORD})),
         None,
     )
     .await;
-    assert_eq!(response.status, StatusCode::OK, "{}", response.json);
+    assert_eq!(response.status, StatusCode::CREATED, "{}", response.json);
     assert_eq!(response.headers[header::CACHE_CONTROL], "no-store");
     assert!(response.headers.get(header::SET_COOKIE).is_none());
     let (access, refresh) = token_pair(&response.json["data"], 900);
@@ -227,7 +227,7 @@ async fn refresh(app: &Router, refresh_token: &str) -> Response {
     request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/refresh",
+        "/api/v1/admin/tokens",
         Some(json!({"refresh_token": refresh_token})),
         None,
     )
@@ -238,7 +238,7 @@ async fn me(app: &Router, access: &str) -> Response {
     request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(access),
     )
@@ -438,7 +438,7 @@ async fn run_token_validation(app: &Router, access: &str, refresh_token: &str, c
     let missing = request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/refresh",
+        "/api/v1/admin/tokens",
         Some(json!({})),
         None,
     )
@@ -448,7 +448,7 @@ async fn run_token_validation(app: &Router, access: &str, refresh_token: &str, c
     // 重复的 Authorization 请求头即使都有效也拒绝。
     let duplicate = Request::builder()
         .method(Method::GET)
-        .uri("/api/v1/admin/users/info")
+        .uri("/api/v1/admin/users/me")
         .header(header::AUTHORIZATION, format!("Bearer {access}"))
         .header(header::AUTHORIZATION, format!("Bearer {access}"));
     assert_unauthorized(&send(app, duplicate, None).await);
@@ -532,7 +532,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_eq!(live.status, StatusCode::OK, "{}", live.json);
     assert_eq!(live.json["status"], "ok");
     // 缺失或格式错误的 Authorization 请求头一律 401 unauthorized，并带 Bearer 质询。
-    assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/users/info", None, None).await);
+    assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/users/me", None, None).await);
     for authorization in [
         "",
         "Bearer",
@@ -548,7 +548,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         let response = raw_request(
             app,
             Method::GET,
-            "/api/v1/admin/users/info",
+            "/api/v1/admin/users/me",
             None,
             None,
             Some(authorization),
@@ -560,7 +560,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let not_json = raw_request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some("email=admin@example.test"),
         Some("text/plain"),
         None,
@@ -574,7 +574,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let malformed = raw_request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some("{"),
         Some("application/json"),
         None,
@@ -586,7 +586,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let oversized = raw_request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(&oversized_body),
         Some("application/json"),
         None,
@@ -607,7 +607,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         let response = request(
             app,
             Method::POST,
-            "/api/v1/admin/auth/login",
+            "/api/v1/admin/sessions",
             Some(json!({"email":email,"password":password})),
             None,
         )
@@ -630,16 +630,17 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let me_response = me(app, &admin_access).await;
     assert_eq!(me_response.status, StatusCode::OK, "{}", me_response.json);
     assert_eq!(me_response.json["data"]["id"], admin_id);
-    // 账户详情只由 /users/info 提供，旧的 /auth/me 已移除。
-    let removed = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/auth/me",
-        None,
-        Some(&admin_access),
-    )
-    .await;
-    assert_error(&removed, StatusCode::NOT_FOUND, "not_found");
+    // 动词式旧路径已全部移除，统一改为资源路径。
+    for (method, path) in [
+        (Method::GET, "/api/v1/admin/auth/me"),
+        (Method::POST, "/api/v1/admin/auth/login"),
+        (Method::POST, "/api/v1/admin/auth/refresh"),
+        (Method::POST, "/api/v1/admin/auth/logout"),
+        (Method::POST, "/api/v1/admin/auth/password"),
+    ] {
+        let removed = request(app, method, path, None, Some(&admin_access)).await;
+        assert_error(&removed, StatusCode::NOT_FOUND, "not_found");
+    }
     assert_eq!(me_response.headers[header::CACHE_CONTROL], "no-store");
     assert!(me_response.headers.get("x-csrf-token").is_none());
     // access token 只含账户与会话标识，sessions 只保存 refresh token 的 SHA-256 哈希。
@@ -668,7 +669,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_ne!(admin_access, other_access);
     assert_ne!(admin_refresh, other_refresh);
     let rotated = refresh(app, &other_refresh).await;
-    assert_eq!(rotated.status, StatusCode::OK, "{}", rotated.json);
+    assert_eq!(rotated.status, StatusCode::CREATED, "{}", rotated.json);
     assert_eq!(rotated.headers[header::CACHE_CONTROL], "no-store");
     let (rotated_access, rotated_refresh) = token_pair(&rotated.json["data"], 900);
     assert_ne!(rotated_refresh, other_refresh);
@@ -718,19 +719,19 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let attempts = futures_join(app, &concurrent_refresh).await;
     let succeeded = attempts
         .iter()
-        .filter(|response| response.status == StatusCode::OK)
+        .filter(|response| response.status == StatusCode::CREATED)
         .count();
     assert_eq!(succeeded, 1, "并发刷新只能成功一次");
     for response in attempts
         .iter()
-        .filter(|response| response.status != StatusCode::OK)
+        .filter(|response| response.status != StatusCode::CREATED)
     {
         assert_unauthorized(response);
     }
     // 落败的一次无法与重放区分，按重放撤销该会话，成功换得的新令牌随之失效。
     for response in attempts
         .iter()
-        .filter(|response| response.status == StatusCode::OK)
+        .filter(|response| response.status == StatusCode::CREATED)
     {
         let access = response.json["data"]["access_token"].as_str().unwrap();
         assert_unauthorized(&me(app, access).await);
@@ -739,6 +740,10 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let created = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"author@example.test","display_name":"Acceptance Author","password":PASSWORD,"roles":["author"]})), Some(&admin_access)).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
     let author_id = created.json["data"]["id"].as_str().unwrap();
+    assert_eq!(
+        created.headers[header::LOCATION],
+        format!("/api/v1/admin/users/{author_id}").as_str()
+    );
     assert_eq!(Uuid::parse_str(author_id).unwrap().get_version_num(), 7);
     assert!(created.json["data"].get("password_hash").is_none());
     let duplicate = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"AUTHOR@example.test","display_name":"Duplicate","password":PASSWORD,"roles":["author"]})), Some(&admin_access)).await;
@@ -814,8 +819,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     ] {
         let response = request(
             app,
-            Method::POST,
-            "/api/v1/admin/auth/password",
+            Method::PUT,
+            "/api/v1/admin/users/me/password",
             Some(body),
             Some(&author_access),
         )
@@ -824,8 +829,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     }
     let anonymous_change = request(
         app,
-        Method::POST,
-        "/api/v1/admin/auth/password",
+        Method::PUT,
+        "/api/v1/admin/users/me/password",
         Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
         None,
     )
@@ -833,8 +838,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_unauthorized(&anonymous_change);
     let changed = request(
         app,
-        Method::POST,
-        "/api/v1/admin/auth/password",
+        Method::PUT,
+        "/api/v1/admin/users/me/password",
         Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
         Some(&author_access),
     )
@@ -843,7 +848,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let kept = request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&author_access),
     )
@@ -852,7 +857,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let other = request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&author_access2),
     )
@@ -872,12 +877,12 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_eq!(change_audit["revoked_sessions"], 1);
     for (password, status) in [
         (PASSWORD, StatusCode::UNAUTHORIZED),
-        (NEW_PASSWORD, StatusCode::OK),
+        (NEW_PASSWORD, StatusCode::CREATED),
     ] {
         let response = request(
             app,
             Method::POST,
-            "/api/v1/admin/auth/login",
+            "/api/v1/admin/sessions",
             Some(json!({"email":"author@example.test","password":password})),
             None,
         )
@@ -898,7 +903,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let after_reset = request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&author_access),
     )
@@ -1155,7 +1160,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let disabled_login = request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(json!({"email":"author@example.test","password":PASSWORD})),
         None,
     )
@@ -1187,7 +1192,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let old_session = request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&author_access),
     )
@@ -1242,7 +1247,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let method = request(
         app,
         Method::DELETE,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&admin_access),
     )
@@ -1254,8 +1259,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     );
     let logout = request(
         app,
-        Method::POST,
-        "/api/v1/admin/auth/logout",
+        Method::DELETE,
+        "/api/v1/admin/sessions/current",
         None,
         Some(&admin_access),
     )
@@ -1265,7 +1270,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let after_logout = request(
         app,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         Some(&admin_access),
     )
@@ -1315,7 +1320,7 @@ fn assert_timestamp(value: &Value) {
 async fn run_account_queries(app: &Router) {
     let (admin_access, _, admin_login) = login(app, "admin@example.test").await;
     assert_timestamp(&admin_login["last_login_at"]);
-    let me = get(app, "/api/v1/admin/users/info", &admin_access).await;
+    let me = get(app, "/api/v1/admin/users/me", &admin_access).await;
     assert_eq!(me.status, StatusCode::OK, "{}", me.json);
     assert_eq!(
         me.json["data"]["last_login_at"],
@@ -1837,7 +1842,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let first = request(
         &api_limited,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         None,
     )
@@ -1846,7 +1851,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let second = request(
         &api_limited,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         None,
     )
@@ -1862,7 +1867,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let first = request(
         &login_limited,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(json!({"email":"missing@example.test","password":PASSWORD})),
         None,
     )
@@ -1871,7 +1876,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let second = request(
         &login_limited,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(json!({"email":"missing@example.test","password":PASSWORD})),
         None,
     )
@@ -1882,7 +1887,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let me = request(
         &login_limited,
         Method::GET,
-        "/api/v1/admin/users/info",
+        "/api/v1/admin/users/me",
         None,
         None,
     )
@@ -1894,7 +1899,7 @@ async fn login_attempt(app: &Router, email: &str, password: &str) -> Response {
     request(
         app,
         Method::POST,
-        "/api/v1/admin/auth/login",
+        "/api/v1/admin/sessions",
         Some(json!({"email": email, "password": password})),
         None,
     )

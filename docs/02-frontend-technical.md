@@ -150,7 +150,7 @@ src/features/
 - 在管理域使用未发布 revision 做安全预览，不生成公开预览 URL。
 - 提交审核、批准、拒绝都绑定明确的 revision；发布仅可选择已批准 revision，另提供取消发布。
 - 编辑分类标签、封面、SEO 和首页精选标记；这些字段随 revision 发布。
-- 上传先向 Admin API 申请签名，再直传私有对象存储，最后调用确认接口。仅在服务端返回 `ready` 后插入媒体引用；失败保留编辑内容并提示。
+- 上传先调用 `POST /media` 创建媒体记录并取得直传地址，再直传私有对象存储，最后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}` 确认。仅在服务端返回 `ready` 后插入媒体引用；失败保留编辑内容并提示。
 - 保存失败时保留本地编辑状态。
 
 每次保存由后端创建不可变 revision。保存传 `expected_revision_id`；收到 `409 revision_conflict` 时停止自动保存、保留本地草稿并提示读取最新记录，不盲重试。发布和取消发布传 `expected_publication_version`；若冲突，重新读取文章与发布状态后再由用户确认。
@@ -175,7 +175,9 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - 由后端 OpenAPI 文档生成 TS Client，禁止手写重复 DTO。
 - 本站业务实体 ID 是由服务端生成的 UUID v7（UUIDv7）字符串。前端原样传递 API 返回的 ID，不自行生成或转成数字；slug、外部来源 ID 和发布 generation 保持各自的类型。
 - Admin 浏览器请求使用同源相对路径 `/api/v1/admin`，由入口代理到 Axum；本地开发由 Vite 代理。公开页面浏览器请求同源 `/api/v1/public`，不带管理会话。
-- Admin 使用 Cookie Session；除登录外的写操作发送 `X-CSRF-Token`，由登录响应或 `auth/me` 提供，仅保存在内存并随会话刷新。登录自身校验同源 Origin 和 JSON Content-Type。
+- Admin 使用 JWT Bearer 认证，不使用 Cookie、CSRF token 或 Origin 校验。除登录（`POST /sessions`）和刷新（`POST /tokens`）外，请求都带 `Authorization: Bearer <access_token>`。登录只返回令牌对及过期时间，当前账户详情、角色与权限通过 `GET /users/me` 读取。
+- API Client 统一处理令牌：收到 401 `token_expired` 时用 refresh token 调用 `POST /tokens`，保存返回的新令牌对后重试原请求，只重试一次；收到 401 `unauthorized` 或刷新失败时清空令牌并跳转登录页。refresh token 每次刷新都会轮换，重复提交旧值会被视为重放并撤销整个会话，所以同一页面内的刷新必须单飞：并发请求共享同一次刷新，不能各自刷新。
+- 退出登录调用 `DELETE /sessions/current`，无论成功与否都清空本地令牌。
 - 统一处理 401、403、409、422、429 和 5xx，并根据 `error.code` 区分 revision 冲突、发布版本冲突、站点版本变化等。
 - TanStack Query key 按资源域组织，例如 `['posts', filters]`。
 - 写操作成功后精确 invalidate 相关 query。
@@ -185,8 +187,10 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 
 ## 6. 登录与安全
 
-- Admin 使用 host-only 的 HttpOnly、Secure、SameSite=Lax Session Cookie；Cookie 不跨到公共站域名。服务端对后台写操作校验 Origin 和 CSRF（登录例外见 §5）。
-- 前端不在 localStorage 保存长期 bearer token。
+- access token 只保存在内存中。refresh token 保存在 sessionStorage，用于刷新页面后恢复会话（启动时调用 `POST /tokens`），关闭标签页即丢弃。不在 localStorage 或 Cookie 中保存任何令牌。
+- sessionStorage 按标签页隔离，但“复制标签页”会复制其中的 refresh token。两个标签页先后刷新时，后一次会被判为重放，会话随之撤销，用户需要重新登录。这是预期行为，不做跨标签页同步。
+- 令牌不写入 URL、日志或错误上报。生产环境只通过 HTTPS 访问后台。
+- 需要防范 XSS：内存和 sessionStorage 中的令牌都能被注入脚本读取。后台不渲染未消毒的 HTML，并配置严格的 CSP。
 - 按后端 RBAC 控制导航和按钮显示，但真正授权必须由后端执行。
 - Markdown 预览应使用安全渲染策略；不信任未经消毒的 HTML。
 - 上传限制文件大小、MIME、扩展名，并由服务端重新校验。

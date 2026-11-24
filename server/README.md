@@ -85,7 +85,7 @@ read -r -s SILVA_LOGIN_PASSWORD
 printf '\n'
 export SILVA_LOGIN_PASSWORD
 SILVA_LOGIN_JSON=$(jq --null-input --compact-output '{email: env.SILVA_ADMIN_EMAIL, password: env.SILVA_LOGIN_PASSWORD}' \
-  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/auth/login \
+  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/sessions \
       -H 'Content-Type: application/json' \
       --data-binary @-)
 unset SILVA_LOGIN_PASSWORD
@@ -94,10 +94,10 @@ SILVA_REFRESH_TOKEN=$(jq -er '.data.refresh_token' <<<"$SILVA_LOGIN_JSON")
 unset SILVA_LOGIN_JSON
 ```
 
-成功响应只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。之后的管理接口携带 access token；当前账户详情、角色与权限通过 `GET /users/info` 读取：
+成功响应只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。之后的管理接口携带 access token；当前账户详情、角色与权限通过 `GET /users/me` 读取：
 
 ```sh
-curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/users/info \
+curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/users/me \
   -H "Authorization: Bearer $SILVA_ACCESS_TOKEN"
 ```
 
@@ -105,7 +105,7 @@ access token 默认 15 分钟过期，过期返回 401 `token_expired`。用 ref
 
 ```sh
 SILVA_REFRESH_JSON=$(jq --null-input --compact-output --arg token "$SILVA_REFRESH_TOKEN" '{refresh_token: $token}' \
-  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/auth/refresh \
+  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/tokens \
       -H 'Content-Type: application/json' \
       --data-binary @-)
 SILVA_ACCESS_TOKEN=$(jq -er '.data.access_token' <<<"$SILVA_REFRESH_JSON")
@@ -116,12 +116,12 @@ unset SILVA_REFRESH_JSON
 退出登录删除当前会话，该会话的 access token 和 refresh token 随即失效：
 
 ```sh
-curl --fail-with-body -X POST http://127.0.0.1:8088/api/v1/admin/auth/logout \
+curl --fail-with-body -X DELETE http://127.0.0.1:8088/api/v1/admin/sessions/current \
   -H "Authorization: Bearer $SILVA_ACCESS_TOKEN"
 unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 ```
 
-两种令牌都是 HS256 签名的 JWT，只携带账户 ID 与会话 ID；服务端每次请求都按会话读取账户当前状态、角色和权限，数据库只保存当前 refresh token 的 SHA-256 哈希。已轮换的 refresh token 再次提交视为重放：整个会话被撤销并写入 `auth.refresh_reuse` 审计。登录与刷新之外的管理接口执行令牌和 RBAC 检查，账户停用或管理员重置密码会撤销该账户全部会话；`POST /api/v1/admin/auth/password` 修改自己的密码，保留当前会话并撤销其他会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
+两种令牌都是 HS256 签名的 JWT，只携带账户 ID 与会话 ID；服务端每次请求都按会话读取账户当前状态、角色和权限，数据库只保存当前 refresh token 的 SHA-256 哈希。已轮换的 refresh token 再次提交视为重放：整个会话被撤销并写入 `auth.refresh_reuse` 审计。登录与刷新之外的管理接口执行令牌和 RBAC 检查，账户停用或管理员重置密码会撤销该账户全部会话；`PUT /api/v1/admin/users/me/password` 修改自己的密码，保留当前会话并撤销其他会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
 
 ## 配置
 

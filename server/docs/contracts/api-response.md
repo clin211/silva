@@ -30,10 +30,10 @@
 
 | 状态 | 适用场景 | 正文 |
 | --- | --- | --- |
-| 200 OK | 读取单个资源、读取集合、更新资源、返回结果的动作（如登录） | `{"data": ...}` 或 `{"data": [...], "meta": {...}}` |
-| 201 Created | 新建资源 | `{"data": <新建的资源>}` |
+| 200 OK | 读取单个资源、读取集合、更新资源 | `{"data": ...}` 或 `{"data": [...], "meta": {...}}` |
+| 201 Created | 新建资源（如创建账户、登录创建会话、签发令牌对）；资源有独立 URI 时带 `Location` 响应头 | `{"data": <新建的资源>}` |
 | 202 Accepted | 已受理的异步任务（预留，目前没有接口使用） | `{"data": <任务资源>}` |
-| 204 No Content | 动作成功且没有可返回的内容，如退出登录、修改密码 | 无正文 |
+| 204 No Content | 成功且没有可返回的内容，如删除当前会话（退出登录）、替换密码 | 无正文 |
 
 ### 3.2 单个资源或动作结果
 
@@ -136,7 +136,7 @@
 | --- | --- | --- | --- |
 | 400 | `malformed_json` | 请求体不是合法 JSON（语法错误、空正文、结尾有多余内容） | 修正请求体编码 |
 | 401 | `unauthorized` | 令牌缺失、格式错误、签名或声明无效、种类不符、会话已撤销或过期、refresh token 重放，或账户已停用 | 跳转登录 |
-| 401 | `token_expired` | access token 签名有效但已过期 | 用 refresh token 调用 `auth/refresh` 后重试原请求；刷新失败再跳转登录 |
+| 401 | `token_expired` | access token 签名有效但已过期 | 用 refresh token 调用 `POST /tokens` 后重试原请求；刷新失败再跳转登录 |
 | 401 | `invalid_credentials` | 登录时邮箱或密码错误。为防止枚举账户，不区分具体原因 | 提示重新输入 |
 | 403 | `forbidden` | 已登录，但缺少所需权限 | 提示无权限 |
 | 404 | `not_found` | 路径或资源不存在 | 提示资源不存在 |
@@ -184,23 +184,25 @@
 | `Cache-Control: no-store` | 所有响应 | 管理接口的响应不允许缓存 |
 | `X-Content-Type-Options: nosniff` | 所有响应 | 禁止浏览器猜测内容类型 |
 | `Retry-After` | 429 | 需要等待的秒数 |
+| `Location` | 带独立 URI 的 201 | 新建资源的路径，如 `/api/v1/admin/users/{id}` |
 | `WWW-Authenticate` | 所有 401 | `Bearer`；access token 过期时为 `Bearer error="invalid_token", error_description="The access token expired"`，见 [身份契约](identity.md) |
 
 ## 8. 代码落地
 
 | 位置 | 职责 |
 | --- | --- |
-| `apps/api/src/response.rs` | 构造成功响应：`ok`（200 + `data`）、`created`（201）、`page`（200 + `data` + `meta.pagination`）、`no_content`（204）。业务处理器只通过这些函数返回 2xx |
+| `apps/api/src/response.rs` | 构造成功响应：`ok`（200 + `data`）、`created`（201）、`created_at`（201 + `Location`）、`page`（200 + `data` + `meta.pagination`）、`no_content`（204）。业务处理器只通过这些函数返回 2xx |
 | `apps/api/src/error.rs` | `ErrorCode` 登记全部对外错误码，并通过 `status()` 决定 HTTP 状态；`ApiError` 负责序列化错误正文；请求 ID 由请求中间件写入响应头 `X-Request-Id` |
 | `crates/shared/src/error.rs` | 各层共用的 `AppError`、`Conflict`（每个变体对应一个 409 错误码）、`FieldError` 和 `FieldErrorCode`。领域层和应用层只表达“哪里出了什么问题”，不涉及 HTTP |
 | `apps/api/src/http.rs` | `Input`（JSON 请求体）、`PageInput`（分页参数）、`IdPath`（UUIDv7 路径参数）提取器，把解析失败转换为上述错误 |
 
 ### 8.1 新增接口
 
-1. 成功响应使用 `response::ok`、`created`、`page` 或 `no_content`，不要直接返回 `Json(...)`。
-2. JSON 请求体使用 `Input<T>`，输入结构体加 `#[serde(deny_unknown_fields)]`。
-3. 校验失败时返回 `AppError::Validation`，在 `field` 中写明具体字段；一次能发现多个问题时全部列出。
-4. 在 OpenAPI 中：成功响应引用 `{"data": ...}` 包装的 Schema；有 JSON 请求体的接口声明 `400`（引用 `#/components/responses/MalformedJson`）；每个错误响应声明 `x-error-codes` 和示例。
+1. 路径与方法遵守 [RESTful 接口设计规范](restful-api.md)。
+2. 成功响应使用 `response::ok`、`created`、`created_at`、`page` 或 `no_content`，不要直接返回 `Json(...)`。
+3. JSON 请求体使用 `Input<T>`，输入结构体加 `#[serde(deny_unknown_fields)]`。
+4. 校验失败时返回 `AppError::Validation`，在 `field` 中写明具体字段；一次能发现多个问题时全部列出。
+5. 在 OpenAPI 中：成功响应引用 `{"data": ...}` 包装的 Schema；有 JSON 请求体的接口声明 `400`（引用 `#/components/responses/MalformedJson`）；每个错误响应声明 `x-error-codes` 和示例。
 
 ### 8.2 新增错误码
 

@@ -10,7 +10,7 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
 use silva_application::{identity::IdentityService, login_lockout::LoginLockout};
 use silva_infrastructure::{TokenSettings, identity_service};
@@ -51,16 +51,21 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
     Ok(Router::new()
         .route("/health/live", get(http::live))
         .route("/metrics", get(metrics::endpoint))
-        .route("/api/v1/admin/auth/login", post(http::login))
-        .route("/api/v1/admin/auth/refresh", post(http::refresh))
-        .route("/api/v1/admin/auth/logout", post(http::logout))
-        .route("/api/v1/admin/auth/password", post(http::change_password))
+        // 登录即创建会话；注销删除当前会话。
+        .route("/api/v1/admin/sessions", post(http::login))
+        .route("/api/v1/admin/sessions/current", delete(http::logout))
+        // 用 refresh token 签发新的令牌对。
+        .route("/api/v1/admin/tokens", post(http::refresh))
         .route(
             "/api/v1/admin/users",
             get(http::users).post(http::create_user),
         )
-        // 静态路径优先于 `{id}` 参数匹配。
-        .route("/api/v1/admin/users/info", get(http::user_info))
+        // 静态路径 `me` 优先于 `{id}` 参数匹配，表示当前登录账户。
+        .route("/api/v1/admin/users/me", get(http::user_info))
+        .route(
+            "/api/v1/admin/users/me/password",
+            put(http::change_password),
+        )
         .route(
             "/api/v1/admin/users/{id}",
             get(http::user).patch(http::update_user),

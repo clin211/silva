@@ -64,7 +64,7 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/admin/auth/login")
+                .uri("/api/v1/admin/sessions")
                 .method("POST")
                 .header("content-type", "application/json")
                 .body(Body::from(

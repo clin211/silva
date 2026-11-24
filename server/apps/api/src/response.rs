@@ -3,7 +3,7 @@
 
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -30,9 +30,18 @@ pub(crate) fn ok<T: Serialize>(data: T) -> Response {
     Json(DataBody { data }).into_response()
 }
 
-/// 201，返回新建的资源。
+/// 201，返回新建但没有独立 URI 的资源（如会话签发的令牌对）。
 pub(crate) fn created<T: Serialize>(data: T) -> Response {
     (StatusCode::CREATED, Json(DataBody { data })).into_response()
+}
+
+/// 201，返回新建的资源，并在 `Location` 头给出该资源的 URI。
+pub(crate) fn created_at<T: Serialize>(location: &str, data: T) -> Response {
+    let mut response = created(data);
+    if let Ok(value) = HeaderValue::from_str(location) {
+        response.headers_mut().insert(header::LOCATION, value);
+    }
+    response
 }
 
 /// 200，返回一页集合与分页元数据。

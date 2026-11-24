@@ -21,7 +21,6 @@ use silva_application::{
 use silva_domain::identity::{
     AuditLogFilter, Principal, User, parse_audit_action, parse_audit_resource_type,
 };
-use silva_infrastructure::persistence;
 use silva_shared::{
     error::{AppError, FieldError, FieldErrorCode},
     ids::{self, EntityId},
@@ -36,7 +35,7 @@ use std::{
 use uuid::Uuid;
 
 /// 需要校验密码的入口共用登录额度，防止借修改密码接口暴力猜测当前密码。
-const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/password"];
+const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/sessions", "/api/v1/admin/users/me/password"];
 type HttpResult<T> = Result<T, ApiError>;
 
 /// JSON 请求体提取器：语法错误返回 400 `malformed_json`；类型、缺失或未知字段返回
@@ -554,7 +553,7 @@ pub(crate) struct LoginInput {
     password: String,
 }
 
-/// `GET /users/info` 返回的当前账户详情：账户字段加当前权限。
+/// `GET /users/me` 返回的当前账户详情：账户字段加当前权限。
 #[derive(Serialize)]
 struct UserInfo {
     #[serde(flatten)]
@@ -593,7 +592,7 @@ pub(crate) async fn login(
         .identity
         .login(input.email, input.password, &meta)
         .await?;
-    Ok(response::ok(TokenPair::from(tokens)))
+    Ok(response::created(TokenPair::from(tokens)))
 }
 
 #[derive(Deserialize)]
@@ -609,7 +608,7 @@ pub(crate) async fn refresh(
     Input(input): Input<RefreshInput>,
 ) -> HttpResult<Response> {
     let tokens = state.identity.refresh(&input.refresh_token, &meta).await?;
-    Ok(response::ok(TokenPair::from(tokens)))
+    Ok(response::created(TokenPair::from(tokens)))
 }
 
 /// 当前登录账户的详情、角色与权限；任何有效会话均可读取，不需要额外权限。
@@ -708,7 +707,8 @@ pub(crate) async fn create_user(
             &meta,
         )
         .await?;
-    Ok(response::created(user))
+    let location = format!("/api/v1/admin/users/{}", user.id);
+    Ok(response::created_at(&location, user))
 }
 
 #[derive(Deserialize)]

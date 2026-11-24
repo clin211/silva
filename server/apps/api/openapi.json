@@ -4,7 +4,7 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "Silva 后台管理 API。\n\n**已开放**：运维监控、身份认证、内置角色权限、账户管理与审计。CMS、媒体、发布、资源目录和采集接口尚未开放。\n\n## 快速开始\n\n1. 调用 `POST /api/v1/admin/auth/login` 获取 `access_token` 与 `refresh_token`。\n2. 其他管理接口在请求头携带 `Authorization: Bearer <access_token>`。\n3. 收到 `401 token_expired` 后，调用 `POST /api/v1/admin/auth/refresh` 换取新令牌对。\n\n## 响应结构\n\n| 场景 | 正文 |\n| --- | --- |\n| 成功 | `{\"data\": ...}` |\n| 分页列表 | `{\"data\": [...], \"meta\": {\"pagination\": ...}}` |\n| 失败 | `{\"error\": {\"code\", \"message\", \"details\"}}` |\n\n运维端点 `/health/live`、`/metrics` 不套用该结构。\n\n## 约定\n\n- **时间**：响应统一为北京时间（`+08:00`）的 RFC 3339 字符串；请求参数接受任意 RFC 3339 偏移，查询串中的 `+` 须编码为 `%2B`。\n- **请求追踪**：响应头 `X-Request-Id` 为服务端生成的 UUIDv7，错误正文不重复携带；`X-Trace-Id` 为 32 位小写十六进制 W3C trace ID。\n- **传输**：生产环境须通过 HTTPS 访问。\n- **调试**：导入 Apifox 预览和调试；示例中的账户、密码与令牌均为虚构。\n\n完整规范见 `server/docs/contracts/api-response.md`。"
+        "description": "Silva 后台管理 API。\n\n**已开放**：运维监控、身份认证、内置角色权限、账户管理与审计。CMS、媒体、发布、资源目录和采集接口尚未开放。\n\n## 快速开始\n\n1. 调用 `POST /api/v1/admin/sessions` 获取 `access_token` 与 `refresh_token`。\n2. 其他管理接口在请求头携带 `Authorization: Bearer <access_token>`。\n3. 收到 `401 token_expired` 后，调用 `POST /api/v1/admin/tokens` 换取新令牌对。\n\n## 响应结构\n\n| 场景 | 正文 |\n| --- | --- |\n| 成功 | `{\"data\": ...}` |\n| 分页列表 | `{\"data\": [...], \"meta\": {\"pagination\": ...}}` |\n| 失败 | `{\"error\": {\"code\", \"message\", \"details\"}}` |\n\n运维端点 `/health/live`、`/metrics` 不套用该结构。\n\n## 约定\n\n- **时间**：响应统一为北京时间（`+08:00`）的 RFC 3339 字符串；请求参数接受任意 RFC 3339 偏移，查询串中的 `+` 须编码为 `%2B`。\n- **请求追踪**：响应头 `X-Request-Id` 为服务端生成的 UUIDv7，错误正文不重复携带；`X-Trace-Id` 为 32 位小写十六进制 W3C trace ID。\n- **传输**：生产环境须通过 HTTPS 访问。\n- **调试**：导入 Apifox 预览和调试；示例中的账户、密码与令牌均为虚构。\n\n完整规范见 `server/docs/contracts/api-response.md`。"
     },
     "servers": [
         {
@@ -104,16 +104,16 @@
                 "description": "Prometheus 文本格式的运维指标。\n\n- **访问控制**：部署入口须限制此路径，仅供运维网络访问。\n- 指标不含密码或会话令牌；数据库故障时仍可读取。\n- 业务状态每 15 秒采样，读取队列值前先检查 `silva_business_metrics_up` 和最后成功时间。"
             }
         },
-        "/api/v1/admin/auth/login": {
+        "/api/v1/admin/sessions": {
             "post": {
                 "operationId": "login",
-                "summary": "登录并签发令牌",
+                "summary": "登录：创建会话并签发令牌",
                 "tags": [
                     "身份认证"
                 ],
                 "responses": {
-                    "200": {
-                        "description": "登录成功，返回令牌对及过期时间。",
+                    "201": {
+                        "description": "登录成功，会话已创建，返回令牌对及过期时间。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -324,19 +324,58 @@
                         }
                     }
                 },
-                "description": "用邮箱和密码登录，创建服务端会话并签发令牌。**无需认证**，不提供公开注册。\n\n- **返回**：`access_token`、`refresh_token` 及各自的过期时间。账户详情、角色与权限请调用 `GET /api/v1/admin/users/info`。\n- **限流**：同时受每 IP 的 API 限流和登录限流约束。\n- **锁定**：同一邮箱 15 分钟内连续失败 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后，锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）；登录成功后清零。\n- 服务端只保存 refresh token 的哈希。"
+                "description": "用邮箱和密码登录，创建服务端会话并签发令牌。**无需认证**，不提供公开注册。\n\n- **返回**：`access_token`、`refresh_token` 及各自的过期时间。账户详情、角色与权限请调用 `GET /api/v1/admin/users/me`。\n- **限流**：同时受每 IP 的 API 限流和登录限流约束。\n- **锁定**：同一邮箱 15 分钟内连续失败 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后，锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）；登录成功后清零。\n- 服务端只保存 refresh token 的哈希。"
             }
         },
-        "/api/v1/admin/auth/refresh": {
-            "post": {
-                "operationId": "refreshTokens",
-                "summary": "刷新令牌",
+        "/api/v1/admin/sessions/current": {
+            "delete": {
+                "operationId": "logout",
+                "summary": "退出：删除当前会话",
                 "tags": [
                     "身份认证"
                 ],
                 "responses": {
-                    "200": {
-                        "description": "轮换成功，返回新令牌对；旧 refresh token 立即失效。",
+                    "204": {
+                        "description": "已退出，无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证相关响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                },
+                "description": "退出登录：删除当前 access token 所属的服务端会话。\n\n- 该会话的 access token 与 refresh token **立即失效**，之后均返回 401。\n- 无需请求正文；写入 `auth.logout` 审计。"
+            }
+        },
+        "/api/v1/admin/tokens": {
+            "post": {
+                "operationId": "refreshTokens",
+                "summary": "用 refresh token 签发新令牌对",
+                "tags": [
+                    "身份认证"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "已签发新令牌对，旧 refresh token 失效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -516,191 +555,6 @@
                 "description": "用 refresh token 轮换令牌对。**无需** `Authorization` 请求头。\n\n- 返回新的 `access_token` 与 `refresh_token`，旧 refresh token **立即失效**。\n- 会话有效期按 `SILVA_REFRESH_TOKEN_TTL_SECONDS` 从刷新时刻重新计算。\n- **只能使用一次**：并发提交至多一次成功；重复提交视为重放，**撤销整个会话**。\n- 正常刷新不写审计。"
             }
         },
-        "/api/v1/admin/auth/logout": {
-            "post": {
-                "operationId": "logout",
-                "summary": "退出并注销当前会话的令牌",
-                "tags": [
-                    "身份认证"
-                ],
-                "responses": {
-                    "204": {
-                        "description": "已退出，无响应正文。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "Cache-Control": {
-                                "description": "认证相关响应不缓存。",
-                                "schema": {
-                                    "type": "string",
-                                    "const": "no-store"
-                                }
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimited"
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/Error"
-                    },
-                    "401": {
-                        "$ref": "#/components/responses/Unauthorized"
-                    }
-                },
-                "description": "退出登录：删除当前 access token 所属的服务端会话。\n\n- 该会话的 access token 与 refresh token **立即失效**，之后均返回 401。\n- 无需请求正文；写入 `auth.logout` 审计。"
-            }
-        },
-        "/api/v1/admin/auth/password": {
-            "post": {
-                "operationId": "changePassword",
-                "summary": "修改当前账户密码",
-                "tags": [
-                    "身份认证"
-                ],
-                "responses": {
-                    "204": {
-                        "description": "密码已更新，无响应正文。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "Cache-Control": {
-                                "description": "认证相关响应不缓存。",
-                                "schema": {
-                                    "type": "string",
-                                    "const": "no-store"
-                                }
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimited"
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/Error"
-                    },
-                    "401": {
-                        "$ref": "#/components/responses/Unauthorized"
-                    },
-                    "415": {
-                        "description": "`Content-Type` 必须为 `application/json`。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                },
-                                "example": {
-                                    "error": {
-                                        "code": "unsupported_media_type",
-                                        "message": "Expected application/json",
-                                        "details": []
-                                    }
-                                }
-                            }
-                        },
-                        "x-error-codes": [
-                            "unsupported_media_type"
-                        ]
-                    },
-                    "422": {
-                        "description": "字段缺失或类型不符、当前密码错误、新密码长度不符或与当前密码相同。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                },
-                                "example": {
-                                    "error": {
-                                        "code": "validation_error",
-                                        "message": "Request validation failed",
-                                        "details": [
-                                            {
-                                                "field": "current_password",
-                                                "code": "incorrect",
-                                                "message": "current password is incorrect"
-                                            }
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        "x-error-codes": [
-                            "validation_error"
-                        ]
-                    },
-                    "413": {
-                        "description": "JSON 请求正文超过 64 KiB。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                },
-                                "example": {
-                                    "error": {
-                                        "code": "payload_too_large",
-                                        "message": "Request body exceeds 64 KiB",
-                                        "details": []
-                                    }
-                                }
-                            }
-                        },
-                        "x-error-codes": [
-                            "payload_too_large"
-                        ]
-                    },
-                    "400": {
-                        "$ref": "#/components/responses/MalformedJson"
-                    }
-                },
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "$ref": "#/components/schemas/ChangePasswordInput"
-                            },
-                            "example": {
-                                "current_password": "example-password-only",
-                                "new_password": "another-example-password"
-                            }
-                        }
-                    }
-                },
-                "description": "修改当前账户的密码。\n\n- **保留当前会话**，撤销该账户的**其他所有会话**。\n- 与登录共用每 IP 登录限流额度。"
-            }
-        },
         "/api/v1/admin/users": {
             "get": {
                 "operationId": "listUsers",
@@ -833,6 +687,14 @@
                     "201": {
                         "description": "账户已创建，不返回密码及其哈希。",
                         "headers": {
+                            "Location": {
+                                "description": "新建账户的 URI。",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uri-reference"
+                                },
+                                "example": "/api/v1/admin/users/019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            },
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
@@ -1018,7 +880,7 @@
                 "description": "创建账户并分配内置角色。邮箱规范化（去首尾空白、转小写）后须唯一。\n\n**所需权限**：`users.manage`"
             }
         },
-        "/api/v1/admin/users/info": {
+        "/api/v1/admin/users/me": {
             "get": {
                 "operationId": "getCurrentUser",
                 "summary": "读取当前账户详情、角色与权限",
@@ -1084,6 +946,152 @@
                     }
                 },
                 "description": "读取当前登录账户的详情、角色与权限。\n\n- 任何有效会话均可调用，**不需要** `users.manage`。\n- 每次请求从数据库读取最新状态，角色变更立即生效。"
+            }
+        },
+        "/api/v1/admin/users/me/password": {
+            "put": {
+                "operationId": "changePassword",
+                "summary": "替换当前账户密码",
+                "tags": [
+                    "身份认证"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "密码已更新，无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证相关响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "415": {
+                        "description": "`Content-Type` 必须为 `application/json`。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
+                    },
+                    "422": {
+                        "description": "字段缺失或类型不符、当前密码错误、新密码长度不符或与当前密码相同。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "current_password",
+                                                "code": "incorrect",
+                                                "message": "current password is incorrect"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangePasswordInput"
+                            },
+                            "example": {
+                                "current_password": "example-password-only",
+                                "new_password": "another-example-password"
+                            }
+                        }
+                    }
+                },
+                "description": "修改当前账户的密码。\n\n- **保留当前会话**，撤销该账户的**其他所有会话**。\n- 与登录共用每 IP 登录限流额度。"
             }
         },
         "/api/v1/admin/users/{id}": {
@@ -1768,7 +1776,7 @@
                 "type": "http",
                 "scheme": "bearer",
                 "bearerFormat": "JWT",
-                "description": "在请求头携带 `Authorization: Bearer <access_token>`。\n\n- 令牌为 HS256 签名的 JWT，只含账户 ID 与会话 ID；每次请求按会话读取账户的最新状态、角色与权限。\n- access token 默认 **900 秒**过期，过期返回 `401 token_expired`，此时调用 `POST /api/v1/admin/auth/refresh`。\n- 退出登录、停用账户、重置或修改密码会撤销会话，令牌立即失效。\n- refresh token 不能用作 access token。"
+                "description": "在请求头携带 `Authorization: Bearer <access_token>`。\n\n- 令牌为 HS256 签名的 JWT，只含账户 ID 与会话 ID；每次请求按会话读取账户的最新状态、角色与权限。\n- access token 默认 **900 秒**过期，过期返回 `401 token_expired`，此时调用 `POST /api/v1/admin/tokens`。\n- 退出登录、停用账户、重置或修改密码会撤销会话，令牌立即失效。\n- refresh token 不能用作 access token。"
             }
         },
         "headers": {
@@ -1987,7 +1995,7 @@
                 }
             },
             "Unauthorized": {
-                "description": "认证失败，按错误码处理：\n\n- `token_expired`：access token 已过期，调用 `POST /api/v1/admin/auth/refresh` 后重试。\n- `unauthorized`：缺少 `Authorization` 或格式不是 `Bearer <token>`、签名或声明无效、不是 access 令牌、会话已撤销或过期、账户已停用。",
+                "description": "认证失败，按错误码处理：\n\n- `token_expired`：access token 已过期，调用 `POST /api/v1/admin/tokens` 后重试。\n- `unauthorized`：缺少 `Authorization` 或格式不是 `Bearer <token>`、签名或声明无效、不是 access 令牌、会话已撤销或过期、账户已停用。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
@@ -2986,7 +2994,7 @@
                     },
                     "refresh_token": {
                         "type": "string",
-                        "description": "JWT refresh token（HS256），**只能**用于 `POST /api/v1/admin/auth/refresh`。服务端只保存其 SHA-256 哈希。"
+                        "description": "JWT refresh token（HS256），**只能**用于 `POST /api/v1/admin/tokens`。服务端只保存其 SHA-256 哈希。"
                     },
                     "access_token_expires_at": {
                         "type": "string",

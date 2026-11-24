@@ -28,7 +28,7 @@ fn openapi_document_matches_official_schema() {
 
     for pointer in [
         "/info/title",
-        "/paths/~1api~1v1~1admin~1auth~1login/post/responses",
+        "/paths/~1api~1v1~1admin~1sessions/post/responses",
     ] {
         let mut invalid = spec.clone();
         *invalid.pointer_mut(pointer).unwrap() = serde_json::json!(42);
@@ -88,13 +88,13 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
     let expected = [
         ("/health/live", "get"),
         ("/metrics", "get"),
-        ("/api/v1/admin/auth/login", "post"),
-        ("/api/v1/admin/auth/refresh", "post"),
-        ("/api/v1/admin/auth/logout", "post"),
-        ("/api/v1/admin/auth/password", "post"),
+        ("/api/v1/admin/sessions", "post"),
+        ("/api/v1/admin/tokens", "post"),
+        ("/api/v1/admin/sessions/current", "delete"),
+        ("/api/v1/admin/users/me/password", "put"),
         ("/api/v1/admin/users", "get"),
         ("/api/v1/admin/users", "post"),
-        ("/api/v1/admin/users/info", "get"),
+        ("/api/v1/admin/users/me", "get"),
         ("/api/v1/admin/users/{id}", "get"),
         ("/api/v1/admin/users/{id}", "patch"),
         ("/api/v1/admin/roles", "get"),
@@ -124,7 +124,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         assert!(operation["responses"].get("default").is_some());
     }
     assert!(
-        spec["paths"]["/api/v1/admin/auth/logout"]["post"]["responses"]["204"]
+        spec["paths"]["/api/v1/admin/sessions/current"]["delete"]["responses"]["204"]
             .get("content")
             .is_none()
     );
@@ -184,7 +184,7 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
     assert_eq!(bearer["scheme"], "bearer");
     assert_eq!(bearer["bearerFormat"], "JWT");
 
-    let public = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh"];
+    let public = ["/api/v1/admin/sessions", "/api/v1/admin/tokens"];
     for (path, methods) in spec["paths"].as_object().unwrap() {
         for (method, operation) in methods.as_object().unwrap() {
             if !path.starts_with("/api/") || public.contains(&path.as_str()) {
@@ -255,7 +255,7 @@ fn input_shapes_and_pagination_match_runtime_validation() {
         12
     );
     assert_eq!(
-        spec["paths"]["/api/v1/admin/auth/password"]["post"]["responses"]["204"].get("content"),
+        spec["paths"]["/api/v1/admin/users/me/password"]["put"]["responses"]["204"].get("content"),
         None
     );
     assert_eq!(schemas["RoleAssignments"]["uniqueItems"], true);
@@ -537,7 +537,7 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         /// 期望出现的（字段, 字段错误码）；None 表示 details 为空。
         field: Option<(&'static str, &'static str)>,
     }
-    const LOGIN: &str = "/api/v1/admin/auth/login";
+    const LOGIN: &str = "/api/v1/admin/sessions";
     let post = |content_type, body, status, code, field| Case {
         method: "POST",
         path: LOGIN,
@@ -769,7 +769,7 @@ fn request_id_is_header_only_and_session_cookie_csrf_origin_are_gone() {
     }
 }
 
-/// 登录与刷新只返回两个令牌及其 UTC 过期时间；账户详情由 `GET /users/info` 提供。
+/// 登录与刷新只返回两个令牌及其 UTC 过期时间；账户详情由 `GET /users/me` 提供。
 #[test]
 fn token_responses_declare_only_tokens_and_expiry() {
     let spec = contract();
@@ -800,15 +800,15 @@ fn token_responses_declare_only_tokens_and_expiry() {
         serde_json::json!(["refresh_token"])
     );
     assert_eq!(schemas["RefreshInput"]["additionalProperties"], false);
-    for path in ["/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh"] {
+    for path in ["/api/v1/admin/sessions", "/api/v1/admin/tokens"] {
         assert_eq!(
-            spec["paths"][path]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+            spec["paths"][path]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
                 ["$ref"],
             "#/components/schemas/TokenResponse"
         );
     }
     // 当前账户详情：账户字段加权限，任何有效会话都可读取。
-    let info = &spec["paths"]["/api/v1/admin/users/info"]["get"];
+    let info = &spec["paths"]["/api/v1/admin/users/me"]["get"];
     assert!(info.get("x-required-permission").is_none());
     assert_eq!(
         info["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
@@ -819,6 +819,70 @@ fn token_responses_declare_only_tokens_and_expiry() {
         assert!(required.iter().any(|value| value == field), "{field}");
     }
     assert!(spec["paths"].get("/api/v1/admin/auth/me").is_none());
+}
+
+/// 路径只由资源名词组成：小写 kebab-case 段或 `{param}`，不出现动作动词；
+/// 动作通过 HTTP 方法表达。创建资源返回 201，有独立 URI 时给出 `Location`。
+#[test]
+fn paths_follow_restful_conventions() {
+    const VERBS: [&str; 16] = [
+        "login",
+        "logout",
+        "refresh",
+        "info",
+        "get",
+        "list",
+        "create",
+        "update",
+        "delete",
+        "remove",
+        "submit",
+        "publish",
+        "unpublish",
+        "retry",
+        "complete",
+        "presign",
+    ];
+    let spec = contract();
+    for (path, operations) in spec["paths"].as_object().unwrap() {
+        for segment in path.trim_start_matches('/').split('/') {
+            let is_param = segment.starts_with('{') && segment.ends_with('}');
+            assert!(
+                is_param
+                    || (!segment.is_empty()
+                        && segment
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')),
+                "{path}: 路径段 {segment} 必须是小写 kebab-case 或参数"
+            );
+            assert!(!VERBS.contains(&segment), "{path}: 路径段 {segment} 是动词");
+        }
+        for (method, operation) in operations.as_object().unwrap() {
+            let responses = operation["responses"].as_object().unwrap();
+            if method == "delete" {
+                assert!(
+                    responses.contains_key("204"),
+                    "{method} {path}: 删除成功返回 204"
+                );
+            }
+            if method == "get" {
+                assert!(
+                    operation.get("requestBody").is_none(),
+                    "{method} {path}: GET 不带正文"
+                );
+            }
+        }
+    }
+    let create_user = &spec["paths"]["/api/v1/admin/users"]["post"]["responses"]["201"];
+    assert!(create_user["headers"].get("Location").is_some());
+    for path in ["/api/v1/admin/sessions", "/api/v1/admin/tokens"] {
+        assert!(
+            spec["paths"][path]["post"]["responses"]
+                .get("201")
+                .is_some(),
+            "{path}"
+        );
+    }
 }
 
 /// 响应中的时间统一为北京时间并带显式偏移；契约中的响应示例必须与之一致。
