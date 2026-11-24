@@ -84,6 +84,8 @@
 | `GET /health/live` | 裸 JSON，如 `{"status": "ok"}` |
 | `GET /metrics` | Prometheus 文本格式 |
 
+`GET /api/v1/admin/media/{id}/content` 返回文件原始字节，`Content-Type` 为服务端识别的图片类型，同样不套信封；它的错误响应仍使用第 4 节的结构。
+
 ## 4. 失败响应
 
 ### 4.1 结构
@@ -143,11 +145,17 @@
 | 405 | `method_not_allowed` | 路径存在，但不支持该 HTTP 方法 | 修正调用代码 |
 | 409 | `email_in_use` | 规范化后的邮箱已被其他账户使用 | 提示更换邮箱 |
 | 409 | `last_admin_required` | 操作会导致系统中没有启用状态的管理员 | 先给其他账户分配 admin |
+| 409 | `upload_incomplete` | 确认上传时存储中还没有直传的文件 | 完成直传后重试确认 |
+| 409 | `upload_expired` | 确认上传时已超过 `upload_expires_at` | 重新申请上传 |
+| 409 | `media_not_ready` | 媒体尚未通过校验，不能读取内容或被引用 | 先完成上传确认 |
+| 409 | `media_in_use` | 媒体仍被文章修订（含历史修订）或个人资料引用 | 先解除引用再删除 |
 | 413 | `payload_too_large` | 请求体超过 64 KiB | 缩小请求 |
 | 415 | `unsupported_media_type` | `Content-Type` 不是 `application/json` 或 `application/*+json` | 修正请求头 |
 | 422 | `validation_error` | 输入不满足约束，`details` 中列出具体字段 | 按 `details` 标注表单 |
+| 422 | `media_invalid` | 上传的文件未通过图片校验，媒体变为 `rejected`；`message` 含拒绝原因，详情见媒体的 `rejection_reason`，`details` 为空 | 提示原因并重新申请上传 |
 | 429 | `rate_limited` | 超过请求频率限制 | 按 `Retry-After` 秒数等待后重试 |
 | 500 | `internal_error` | 服务端内部错误 | 展示通用错误和响应头 `X-Request-Id` |
+| 503 | `storage_unavailable` | 服务端未配置对象存储（生产环境 API 不会以此状态启动） | 提示媒体功能暂不可用 |
 
 [后端技术方案](../../../docs/03-backend-technical.md)中规划的 `revision_conflict`、`site_generation_changed`、`site_not_ready` 等错误码，要等对应接口实现时再按第 8 节的流程登记。
 
@@ -173,7 +181,8 @@
 - **409：** 请求本身合法，但与资源当前状态冲突，例如唯一性约束、并发版本或业务不变量。每种冲突使用单独的错误码。
 - **422 中的业务规则：** 只涉及请求自身字段的规则（如“新密码不能与当前密码相同”）返回 422，并在 `details` 中指明字段；需要依赖其他资源状态的规则返回 409。
 - **429：** 必须带 `Retry-After` 响应头。
-- **500：** 未预期的错误返回 500。需要表达“依赖暂时不可用、重试可能成功”（503）的接口，实现时再按第 8 节登记错误码。
+- **500：** 未预期的错误返回 500，包括对象存储请求失败。
+- **503：** 依赖未配置或暂不可用。目前只有 `storage_unavailable`；新增时按第 8 节登记错误码。
 
 ## 7. 响应头
 
@@ -181,7 +190,8 @@
 | --- | --- | --- |
 | `X-Request-Id` | 所有响应 | 服务端生成的 UUIDv7，排障时用它关联日志与审计；正文不重复携带 |
 | `X-Trace-Id` | 所有响应 | 32 位小写十六进制 W3C trace ID，用于链路查询 |
-| `Cache-Control: no-store` | 所有响应 | 管理接口的响应不允许缓存 |
+| `Cache-Control: no-store` | 所有响应 | 管理接口的响应（含媒体内容）不允许缓存 |
+| `Content-Security-Policy: default-src 'none'; sandbox` | 媒体内容 | 禁止把上传的文件当作页面执行 |
 | `X-Content-Type-Options: nosniff` | 所有响应 | 禁止浏览器猜测内容类型 |
 | `Retry-After` | 429 | 需要等待的秒数 |
 | `Location` | 带独立 URI 的 201 | 新建资源的路径，如 `/api/v1/admin/users/{id}` |

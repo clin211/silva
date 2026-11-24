@@ -135,7 +135,7 @@ impl PgIdentityRepository {
 
 const USER_SELECT: &str = "SELECT u.id,u.email,u.display_name,u.status,u.created_at,u.updated_at,u.last_login_at, ARRAY(SELECT r.key FROM roles r JOIN user_roles ur ON ur.role_id=r.id WHERE ur.user_id=u.id ORDER BY r.key) AS roles FROM users u";
 
-fn db(error: sqlx::Error) -> AppError {
+pub(crate) fn db(error: sqlx::Error) -> AppError {
     if !matches!(error, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed) {
         record_db_error(&error);
     }
@@ -201,7 +201,7 @@ async fn user(connection: &mut PgConnection, id: Uuid) -> Result<User> {
 /// 审计写入的 User-Agent 上限，防止超长请求头膨胀审计表。
 const USER_AGENT_MAX_BYTES: usize = 512;
 
-/// 写入审计记录；metadata 只允许字段名、状态等非敏感值，不得包含密码或令牌。
+/// 写入账户相关的审计记录（资源类型 `user`）。
 async fn audit(
     connection: &mut PgConnection,
     actor: Option<Uuid>,
@@ -210,14 +210,28 @@ async fn audit(
     meta: &RequestMeta,
     metadata: serde_json::Value,
 ) -> Result<()> {
+    audit_resource(connection, actor, action, "user", resource, meta, metadata).await
+}
+
+/// 写入审计记录；metadata 只允许字段名、状态等非敏感值，不得包含密码或令牌。
+pub(crate) async fn audit_resource(
+    connection: &mut PgConnection,
+    actor: Option<Uuid>,
+    action: &str,
+    resource_type: &str,
+    resource: impl Into<Option<Uuid>>,
+    meta: &RequestMeta,
+    metadata: serde_json::Value,
+) -> Result<()> {
     let user_agent = meta
         .user_agent
         .as_deref()
         .map(|value| truncate_utf8(value, USER_AGENT_MAX_BYTES));
-    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, request_id) VALUES ($1,$2,$3,'user',$4,$5::inet,$6,$7,$8)")
+    sqlx::query("INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, request_id) VALUES ($1,$2,$3,$4,$5,$6::inet,$7,$8,$9)")
         .bind(ids::new_id())
         .bind(actor)
         .bind(action)
+        .bind(resource_type)
         .bind(resource.into())
         .bind(meta.ip_address.map(|ip| ip.to_string()))
         .bind(user_agent)
@@ -849,7 +863,9 @@ fn record_db_error(error: &sqlx::Error) {
     METRICS.db_errors.with_label_values(&[kind]).inc();
 }
 
-async fn acquire(pool: &PgPool) -> std::result::Result<PoolConnection<Postgres>, sqlx::Error> {
+pub(crate) async fn acquire(
+    pool: &PgPool,
+) -> std::result::Result<PoolConnection<Postgres>, sqlx::Error> {
     let started = Instant::now();
     let result = pool.acquire().await;
     METRICS
@@ -862,7 +878,9 @@ async fn acquire(pool: &PgPool) -> std::result::Result<PoolConnection<Postgres>,
     result
 }
 
-async fn begin(pool: &PgPool) -> std::result::Result<Transaction<'static, Postgres>, sqlx::Error> {
+pub(crate) async fn begin(
+    pool: &PgPool,
+) -> std::result::Result<Transaction<'static, Postgres>, sqlx::Error> {
     let started = Instant::now();
     let result = pool.begin().await;
     METRICS

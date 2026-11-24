@@ -10,6 +10,8 @@
 - 所有 FK 写出删除策略。原文已有策略原样保留；原文未指定者统一显式 `ON DELETE NO ACTION`，保持 PostgreSQL 默认语义、避免擅自删除作者/审计/发布引用。两个 post revision 复合 FK 保持 `DEFERRABLE INITIALLY DEFERRED`，使用 `ON DELETE NO ACTION` 以允许事务内先预分配 post/revision ID 后写入。
 - `site_state` 在 schema migration 初始化唯一 `singleton=true` 行；期望与线上 generation 初值 NULL，不能伪造已上线。
 - 账户密码仅 Argon2id hash、session 仅当前 refresh token 的 SHA-256 hash（迁移 `20261124000001` 更新 `sessions` 注释）；角色和权限由 Rust seed 通过 `shared::ids` 分配 UUIDv7，SQL 不写固定业务实体 ID。
+- 媒体（迁移 `20261124000002`）：`media_assets` 增加客户端声明的 `declared_mime_type`、`declared_size_bytes`，拒绝原因 `rejection_reason`、拒绝时间 `rejected_at`（已拒绝记录的保留期按它计算），Worker 清理失败时间 `purge_attempted_at`（失败的记录排到后续批次末尾），以及由触发器维护的 `updated_at`。CHECK 约束限定声明与实际类型为 JPEG、PNG、WebP，大小不超过 10 MiB，`ready` 必须有尺寸，`rejection_reason` 与 `rejected_at` 当且仅当 `rejected` 时有值。对象存储键 `upload_key`（`uploads/{id}`）与 `storage_key`（`media/{id}`）只在服务端使用，不出现在 API 中。删除媒体时锁定媒体行，并检查 `post_revisions.cover_media_id`、`post_revision_media` 和 `profiles.avatar_media_id` 中的引用；这三列补充了索引。
+- 项目展览与工具导航（迁移 `20261124000003`）：产品已取消这两项功能，删除 `projects`、`project_technologies`、`project_links`、`tools`，它们对媒体的引用随之移除。引用媒体的表只剩 `post_revisions`、`post_revision_media` 和 `profiles`。
 - schema 不替代业务授权：账号停用的会话撤销、动态读取角色权限、JWT 校验与 refresh token 轮换、媒体就绪及归属、只追加 revision、generation 原子切换和租约 fencing 由对应 Rust 用例负责。
 
 ## 实施约束与待确认项
@@ -22,7 +24,7 @@
 ## 验证锚点
 
 1. 空 PostgreSQL 数据库执行全部 SQLx migration；再次 migrate 无操作，校验校验和。已有数据库追加执行清理迁移；已执行的历史迁移保留原版本与校验和。
-2. `tests/sql/schema_invariants.sql` 在事务内检查当前 31 张业务表、24 个 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录表仍存在时，输出对象名并使执行失败。
+2. `tests/sql/schema_invariants.sql` 在事务内检查当前 27 张业务表、21 个 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录、项目展览与工具导航表仍存在时，输出对象名并使执行失败。同一脚本验证媒体状态约束（`ready` 缺尺寸、`rejected` 缺原因、`pending` 带原因、不允许的声明类型均被拒绝）和 `media_assets.updated_at` 触发器。
 3. 验证 `is_uuid_v7` 接受合法 v7、拒绝 v4 及版本位为 7 但变体位错误的 UUID；逐个实体表通过实际 INSERT 或事务更新现有主键验证 v4/错误变体被 CHECK 拒绝。
 4. 验证实际 `users` v7 插入成功、v4 和错误变体失败；无外键 UUID 引用（outbox aggregate、audit resource）也拒绝非法 UUID。
 5. 检查全部 FK 的删除策略、两个 post revision 外键的延迟属性、唯一约束、site_state 单例和未上线初始状态。
@@ -314,97 +316,6 @@ COMMENT ON COLUMN post_revision_media.media_id IS '该修订正文引用的已�
 ```
 
 ```sql
-CREATE TABLE projects (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  slug text NOT NULL UNIQUE,
-  name text NOT NULL,
-  summary text NOT NULL,
-  description_md text,
-  cover_media_id uuid REFERENCES media_assets(id),
-  repository_url text,
-  demo_url text,
-  homepage_url text,
-  status text NOT NULL DEFAULT 'active',
-  featured boolean NOT NULL DEFAULT false,
-  sort_order integer NOT NULL DEFAULT 0,
-  started_at date,
-  completed_at date,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE projects IS '公开站点的项目展览条目，每条记录对应一个项目。';
-COMMENT ON COLUMN projects.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN projects.slug IS '用于公开页面路由的唯一标识。';
-COMMENT ON COLUMN projects.name IS '项目展示名称';
-COMMENT ON COLUMN projects.summary IS '项目列表使用的简介';
-COMMENT ON COLUMN projects.description_md IS '项目详情的 Markdown 说明，未填写时为 NULL';
-COMMENT ON COLUMN projects.cover_media_id IS '已校验的封面媒体 ID，未设置时为 NULL';
-COMMENT ON COLUMN projects.repository_url IS '源代码仓库地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.demo_url IS '演示地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.homepage_url IS '项目主页地址，未填写时为 NULL';
-COMMENT ON COLUMN projects.status IS '项目自身状态，默认 active，不是站点发布状态';
-COMMENT ON COLUMN projects.featured IS '是否作为精选项目展示';
-COMMENT ON COLUMN projects.sort_order IS '人工设置的项目展示排序值';
-COMMENT ON COLUMN projects.started_at IS '项目开始日期，未知时为 NULL';
-COMMENT ON COLUMN projects.completed_at IS '项目完成日期，未完成或未知时为 NULL';
-COMMENT ON COLUMN projects.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN projects.updated_at IS '该记录在本系统最近一次更新的时间。';
-
-CREATE TABLE project_technologies (
-  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  technology text NOT NULL,
-  position integer NOT NULL DEFAULT 0,
-  PRIMARY KEY (project_id, technology)
-);
-
-COMMENT ON TABLE project_technologies IS '项目使用的技术条目，同一项目不能重复录入同名技术。';
-COMMENT ON COLUMN project_technologies.project_id IS '该技术条目所属的项目 ID';
-COMMENT ON COLUMN project_technologies.technology IS '前台展示的技术名称';
-COMMENT ON COLUMN project_technologies.position IS '技术在项目技术列表中的排序值';
-
-CREATE TABLE project_links (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  label text NOT NULL,
-  url text NOT NULL,
-  position integer NOT NULL DEFAULT 0
-);
-
-COMMENT ON TABLE project_links IS '项目详情展示的附加链接，每条记录对应一个链接。';
-COMMENT ON COLUMN project_links.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN project_links.project_id IS '附加链接所属的项目 ID';
-COMMENT ON COLUMN project_links.label IS '链接展示文案';
-COMMENT ON COLUMN project_links.url IS '链接目标地址';
-COMMENT ON COLUMN project_links.position IS '链接在项目详情中的排序值';
-
-CREATE TABLE tools (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  slug text NOT NULL UNIQUE,
-  name text NOT NULL,
-  description text NOT NULL,
-  url text NOT NULL,
-  icon_media_id uuid REFERENCES media_assets(id),
-  category text,
-  featured boolean NOT NULL DEFAULT false,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE tools IS '开发工具与资源导航，每条记录对应一个工具或资源。';
-COMMENT ON COLUMN tools.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN tools.slug IS '用于公开页面路由的唯一标识。';
-COMMENT ON COLUMN tools.name IS '工具或资源的展示名称';
-COMMENT ON COLUMN tools.description IS '工具或资源的用途说明';
-COMMENT ON COLUMN tools.url IS '工具或资源的访问地址';
-COMMENT ON COLUMN tools.icon_media_id IS '已校验的图标媒体 ID，未设置时为 NULL';
-COMMENT ON COLUMN tools.category IS '导航中的分类名称，未分类时为 NULL';
-COMMENT ON COLUMN tools.featured IS '是否标记为精选工具';
-COMMENT ON COLUMN tools.sort_order IS '人工设置的工具展示排序值';
-COMMENT ON COLUMN tools.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN tools.updated_at IS '该记录在本系统最近一次更新的时间。';
-
 CREATE TABLE profiles (
   id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
   display_name text NOT NULL,

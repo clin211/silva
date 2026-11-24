@@ -1,6 +1,6 @@
 # Silva 可观测性
 
-当前实现覆盖 API、数据库适配器、会话维护 Worker，以及数据库中发布、采集和 Outbox 的队列快照。发布构建、外部来源采集和 Outbox 消费尚未实现；空队列不能作为这些业务链路可用的证据。
+当前实现覆盖 API、数据库适配器、执行会话维护与媒体清理的 Worker，以及数据库中发布、采集和 Outbox 的队列快照。发布构建、外部来源采集和 Outbox 消费尚未实现；空队列不能作为这些业务链路可用的证据。
 
 ## 启动与入口
 
@@ -98,7 +98,7 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 | --- | --- |
 | HTTP | `silva_http_requests_total`、`silva_http_request_duration_seconds`、`silva_http_requests_in_flight` |
 | 数据库 | `silva_db_acquire_duration_seconds`、`silva_db_operation_duration_seconds`、`silva_db_errors_total`、`silva_db_pool_*` |
-| Worker | `silva_worker_runs_total`、`silva_worker_run_duration_seconds`、`silva_worker_last_success_timestamp_seconds` |
+| Worker | `silva_worker_runs_total`、`silva_worker_run_duration_seconds`、`silva_worker_last_success_timestamp_seconds`、`silva_worker_deleted_sessions_total`、`silva_worker_purged_media_total`、`silva_worker_task_failures_total{task}`（`sessions` 或 `media`，区分哪项维护失败） |
 | 业务状态 | `silva_business_metrics_up`、`silva_business_metrics_last_success_timestamp_seconds`、`silva_queue_pending`、`silva_queue_oldest_age_seconds`、`silva_publish_delayed` |
 
 新增发布、采集和 Outbox 消费者时，同步实现任务执行结果、重试耗尽、构建耗时、提交到激活耗时和来源新鲜度。API 生产任务时通过 `telemetry::inject_context()` 保存 W3C 上下文，Worker 使用 `set_parent()` 关联消费 span；长时间等待或多次消费可采用 span link。业务事件、任务 ID 和 generation 放在日志/span 属性中，不能放指标标签。当前未增加无消费者的任务追踪字段或虚构成功率。

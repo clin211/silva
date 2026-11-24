@@ -8,6 +8,8 @@ publish.workspace = true
 [dependencies]
 silva-shared.workspace = true
 silva-infrastructure.workspace = true
+silva-application.workspace = true
+chrono.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true

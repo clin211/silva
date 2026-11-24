@@ -24,8 +24,7 @@ BEGIN
   FROM unnest(ARRAY[
     'users', 'roles', 'permissions', 'user_roles', 'role_permissions', 'sessions',
     'posts', 'post_revisions', 'categories', 'tags', 'post_revision_categories',
-    'post_revision_tags', 'post_reviews', 'media_assets', 'post_revision_media',
-    'projects', 'project_technologies', 'project_links', 'tools', 'profiles',
+    'post_revision_tags', 'post_reviews', 'media_assets', 'post_revision_media', 'profiles',
     'experiences', 'skills', 'social_links', 'ai_sources', 'ai_repositories',
     'ai_ingestion_runs', 'ai_repository_snapshots', 'publish_jobs', 'site_state',
     'outbox_events', 'audit_logs'
@@ -35,11 +34,12 @@ BEGIN
     RAISE EXCEPTION 'Missing schema tables: %', missing_objects;
   END IF;
 
-  -- 已取消的目录表必须由清理迁移删除，避免旧库漏执行迁移却通过校验。
+  -- 已取消的目录、项目展览与工具导航表必须由清理迁移删除，避免旧库漏执行迁移却通过校验。
   SELECT string_agg(removed_name, ', ' ORDER BY removed_name)
   INTO missing_objects
   FROM unnest(ARRAY[
-    'mcp_servers', 'mcp_server_versions', 'mcp_categories', 'mcp_server_categories'
+    'mcp_servers', 'mcp_server_versions', 'mcp_categories', 'mcp_server_categories',
+    'projects', 'project_technologies', 'project_links', 'tools'
   ]) AS removed(removed_name)
   WHERE to_regclass(format('public.%I', removed_name)) IS NOT NULL;
   IF missing_objects IS NOT NULL THEN
@@ -107,7 +107,8 @@ BEGIN
           WHEN d.oid IS NOT NULL THEN 'DEFAULT'
           WHEN a.atttypid = 'uuid'::regtype THEN quote_literal(test_id) || '::uuid'
           WHEN a.atttypid = 'text'::regtype THEN
-            CASE WHEN a.attname = 'status' THEN
+            CASE WHEN a.attname LIKE '%mime_type' THEN quote_literal('image/png')
+            WHEN a.attname = 'status' THEN
               quote_literal(CASE entity_table.relname WHEN 'post_reviews' THEN 'pending' ELSE 'queued' END)
             ELSE quote_literal('silva-schema-probe') END
           WHEN a.atttypid IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) THEN '1'
@@ -139,7 +140,7 @@ BEGIN
     END LOOP;
     DROP TABLE silva_uuid_probe;
   END LOOP;
-  IF entity_count < 24 THEN
+  IF entity_count < 21 THEN
     RAISE EXCEPTION 'UUID entity coverage unexpectedly low: %', entity_count;
   END IF;
 
@@ -211,6 +212,41 @@ BEGIN
   UPDATE users SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE id = test_id;
   IF (SELECT updated_at FROM users WHERE id = test_id) <= '2000-01-01T00:00:00Z'::timestamptz THEN
     RAISE EXCEPTION 'users.updated_at trigger did not maintain the update time';
+  END IF;
+
+  -- 媒体状态一致性：ready 必须有尺寸，rejected 必须有拒绝原因和拒绝时间，声明类型限定为允许的图片格式。
+  INSERT INTO media_assets (id, upload_key, original_filename, declared_mime_type,
+    declared_size_bytes, upload_expires_at, uploaded_by)
+  VALUES (other_test_id, 'uploads/' || other_test_id, 'probe.png', 'image/png', 1, now(), test_id);
+  BEGIN
+    UPDATE media_assets SET status = 'ready', storage_key = 'media/' || other_test_id,
+      mime_type = 'image/png', size_bytes = 1 WHERE id = other_test_id;
+    RAISE EXCEPTION 'media_assets accepted ready without dimensions';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE media_assets SET status = 'rejected' WHERE id = other_test_id;
+    RAISE EXCEPTION 'media_assets accepted rejected without a reason';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE media_assets SET status = 'rejected', rejection_reason = 'too_large' WHERE id = other_test_id;
+    RAISE EXCEPTION 'media_assets accepted rejected without rejected_at';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE media_assets SET rejection_reason = 'too_large' WHERE id = other_test_id;
+    RAISE EXCEPTION 'media_assets accepted a rejection reason on a pending record';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE media_assets SET declared_mime_type = 'image/svg+xml' WHERE id = other_test_id;
+    RAISE EXCEPTION 'media_assets accepted an unsupported declared MIME type';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  UPDATE media_assets SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE id = other_test_id;
+  IF (SELECT updated_at FROM media_assets WHERE id = other_test_id) <= '2000-01-01T00:00:00Z'::timestamptz THEN
+    RAISE EXCEPTION 'media_assets.updated_at trigger did not maintain the update time';
   END IF;
 END;
 $$;

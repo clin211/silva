@@ -27,6 +27,10 @@
             "description": "账户管理、内置角色与审计"
         },
         {
+            "name": "媒体管理",
+            "description": "图片直传、校验确认、读取与删除"
+        },
+        {
             "name": "运维监控",
             "description": "进程存活探针与 Prometheus 指标"
         }
@@ -1768,6 +1772,1071 @@
                 ],
                 "description": "按 ID 读取审计记录，包含请求 ID 与操作账户摘要。\n\n**所需权限**：`audit.read`"
             }
+        },
+        "/api/v1/admin/media": {
+            "get": {
+                "operationId": "listMedia",
+                "summary": "分页查询媒体",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/Page"
+                    },
+                    {
+                        "$ref": "#/components/parameters/PerPage"
+                    },
+                    {
+                        "$ref": "#/components/parameters/MediaStatusFilter"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "媒体列表，按 `created_at DESC, id DESC` 排序。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MediaPage"
+                                },
+                                "example": {
+                                    "data": [
+                                        {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "status": "ready",
+                                            "original_filename": "cover.png",
+                                            "declared_mime_type": "image/png",
+                                            "declared_size_bytes": 245760,
+                                            "mime_type": "image/png",
+                                            "size_bytes": 245760,
+                                            "width": 1600,
+                                            "height": 900,
+                                            "alt_text": "文章封面：热气球升空",
+                                            "rejection_reason": null,
+                                            "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                            "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                            "created_at": "2026-11-24T15:00:00+08:00",
+                                            "updated_at": "2026-11-24T15:01:12+08:00"
+                                        }
+                                    ],
+                                    "meta": {
+                                        "pagination": {
+                                            "page": 1,
+                                            "per_page": 20,
+                                            "total": 1,
+                                            "total_pages": 1
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "分页或筛选参数无效。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "status",
+                                                "code": "invalid_value",
+                                                "message": "status must be one of: pending, ready, rejected"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "分页查询媒体，可按 `status` 筛选。只有 `media.manage_own` 权限时只返回本人上传的媒体。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            },
+            "post": {
+                "operationId": "createMedia",
+                "summary": "申请直传：创建媒体记录并返回预签名上传地址",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMediaInput"
+                            },
+                            "example": {
+                                "filename": "cover.png",
+                                "declared_mime_type": "image/png",
+                                "size_bytes": 245760
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "已创建 `pending` 媒体记录。",
+                        "headers": {
+                            "Location": {
+                                "description": "新建媒体的 URI。",
+                                "schema": {
+                                    "type": "string",
+                                    "format": "uri-reference"
+                                },
+                                "example": "/api/v1/admin/media/019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            },
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MediaUploadResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "media": {
+                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                            "status": "pending",
+                                            "original_filename": "cover.png",
+                                            "declared_mime_type": "image/png",
+                                            "declared_size_bytes": 245760,
+                                            "mime_type": null,
+                                            "size_bytes": null,
+                                            "width": null,
+                                            "height": null,
+                                            "alt_text": null,
+                                            "rejection_reason": null,
+                                            "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                            "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                            "created_at": "2026-11-24T15:00:00+08:00",
+                                            "updated_at": "2026-11-24T15:00:00+08:00"
+                                        },
+                                        "upload": {
+                                            "method": "PUT",
+                                            "url": "https://example-account.r2.cloudflarestorage.com/silva-media/uploads/019535d9-3df7-79fb-b466-fa907fa17f9e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Signature=5d6f1c2b9a8e7d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c",
+                                            "headers": {
+                                                "content-type": "image/png"
+                                            },
+                                            "expires_at": "2026-11-24T15:15:00+08:00"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "415": {
+                        "description": "`Content-Type` 必须为 `application/json`。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
+                    },
+                    "422": {
+                        "description": "字段缺失、未知字段、类型不符，或文件名、类型、大小不符合限制。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "size_bytes",
+                                                "code": "out_of_range",
+                                                "message": "size_bytes must be between 1 and 10485760"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "503": {
+                        "description": "服务端未配置对象存储（仅开发环境可能出现）。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "storage_unavailable",
+                                        "message": "Object storage is not configured",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "storage_unavailable"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "申请上传一张图片：只接受 JPEG、PNG、WebP，单文件不超过 10 MiB。\n\n1. 调用本接口，得到 `media`（状态 `pending`）和 `upload` 直传说明。\n2. 浏览器按 `upload.method` 把文件原始字节发送到 `upload.url`，并原样携带 `upload.headers`；该请求直达对象存储，不经过 API，也不带 `Authorization`。\n3. 在 `upload.expires_at` 之前调用 `PATCH /media/{id}` 提交 `{\"status\": \"uploaded\"}` 完成校验。\n\n签名同时覆盖 `Content-Type` 和 `Content-Length`：直传的请求体必须恰好是 `size_bytes` 字节，否则存储服务拒绝。声明的类型只用于签名和展示；服务端确认时按实际字节重新识别格式并解码。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            }
+        },
+        "/api/v1/admin/media/{id}": {
+            "get": {
+                "operationId": "getMedia",
+                "summary": "读取媒体详情",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/MediaId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "媒体详情。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MediaResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "status": "ready",
+                                        "original_filename": "cover.png",
+                                        "declared_mime_type": "image/png",
+                                        "declared_size_bytes": 245760,
+                                        "mime_type": "image/png",
+                                        "size_bytes": 245760,
+                                        "width": 1600,
+                                        "height": 900,
+                                        "alt_text": "文章封面：热气球升空",
+                                        "rejection_reason": null,
+                                        "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                        "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                        "created_at": "2026-11-24T15:00:00+08:00",
+                                        "updated_at": "2026-11-24T15:01:12+08:00"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "媒体不存在；只有 `media.manage_own` 权限时，他人上传的媒体同样返回 404。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    },
+                    "422": {
+                        "description": "路径 `id` 不是 UUIDv7。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "id",
+                                                "code": "invalid_format",
+                                                "message": "id must be a hyphenated UUIDv7"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "读取媒体记录，含状态、校验结果和拒绝原因。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            },
+            "patch": {
+                "operationId": "updateMedia",
+                "summary": "确认上传或修改替代文本",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/MediaId"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateMediaInput"
+                            },
+                            "example": {
+                                "status": "uploaded",
+                                "alt_text": "文章封面：热气球升空"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "返回更新后的媒体；确认成功时状态为 `ready`。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MediaResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "status": "ready",
+                                        "original_filename": "cover.png",
+                                        "declared_mime_type": "image/png",
+                                        "declared_size_bytes": 245760,
+                                        "mime_type": "image/png",
+                                        "size_bytes": 245760,
+                                        "width": 1600,
+                                        "height": 900,
+                                        "alt_text": "文章封面：热气球升空",
+                                        "rejection_reason": null,
+                                        "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                        "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                        "created_at": "2026-11-24T15:00:00+08:00",
+                                        "updated_at": "2026-11-24T15:01:12+08:00"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
+                    },
+                    "404": {
+                        "description": "媒体不存在；只有 `media.manage_own` 权限时，他人上传的媒体同样返回 404。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    },
+                    "409": {
+                        "description": "`upload_incomplete`：存储中还没有直传的文件，完成上传后重试；`upload_expired`：已超过 `upload_expires_at`，需重新申请上传。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "upload_incomplete",
+                                        "message": "The uploaded object was not found; finish the upload first",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "upload_incomplete",
+                            "upload_expired"
+                        ]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "415": {
+                        "description": "`Content-Type` 必须为 `application/json`。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
+                    },
+                    "422": {
+                        "description": "`validation_error`：路径或字段无效；`media_invalid`：文件未通过校验，媒体已变为 `rejected`，拒绝原因见消息和媒体详情的 `rejection_reason`，需重新申请上传。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "media_invalid",
+                                        "message": "Uploaded file is not an accepted image (unsupported_format)",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error",
+                            "media_invalid"
+                        ]
+                    },
+                    "503": {
+                        "description": "服务端未配置对象存储（仅开发环境可能出现）。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "storage_unavailable",
+                                        "message": "Object storage is not configured",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "storage_unavailable"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "部分更新媒体。\n\n- `status: \"uploaded\"`：确认直传已完成。服务端读取文件，按实际字节识别格式并完整解码，检查大小与尺寸；通过后写入不可覆盖的正式位置，状态变为 `ready`。\n- **重复确认返回同一结果**：已就绪直接返回记录；已拒绝再次返回同一 `media_invalid`。\n- `alt_text`：修改替代文本，可与确认同时提交；确认失败时不修改。\n- 两个字段都省略时原样返回记录。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            },
+            "delete": {
+                "operationId": "deleteMedia",
+                "summary": "删除媒体",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/MediaId"
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "已删除，无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "媒体不存在；只有 `media.manage_own` 权限时，他人上传的媒体同样返回 404。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    },
+                    "409": {
+                        "description": "媒体仍被文章修订或个人资料引用。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "media_in_use",
+                                        "message": "Media is still referenced",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "media_in_use"
+                        ]
+                    },
+                    "422": {
+                        "description": "路径 `id` 不是 UUIDv7。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "id",
+                                                "code": "invalid_format",
+                                                "message": "id must be a hyphenated UUIDv7"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "503": {
+                        "description": "服务端未配置对象存储（仅开发环境可能出现）。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "storage_unavailable",
+                                        "message": "Object storage is not configured",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "storage_unavailable"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "删除媒体记录及其存储对象。仍被任何文章修订（含历史修订）或个人资料引用时返回 `409 media_in_use`。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            }
+        },
+        "/api/v1/admin/media/{id}/content": {
+            "get": {
+                "operationId": "getMediaContent",
+                "summary": "读取已校验的文件内容",
+                "tags": [
+                    "媒体管理"
+                ],
+                "x-required-permission": "media.manage_own",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/MediaId"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "文件原始字节，`Content-Type` 为服务端识别的类型；响应不缓存。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            },
+                            "Cache-Control": {
+                                "description": "管理域媒体不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "Content-Security-Policy": {
+                                "description": "禁止把文件当作页面执行。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "default-src 'none'; sandbox"
+                                }
+                            }
+                        },
+                        "content": {
+                            "image/jpeg": {
+                                "schema": {
+                                    "type": "string",
+                                    "contentMediaType": "image/jpeg"
+                                },
+                                "example": "(图片二进制内容)"
+                            },
+                            "image/png": {
+                                "schema": {
+                                    "type": "string",
+                                    "contentMediaType": "image/png"
+                                },
+                                "example": "(图片二进制内容)"
+                            },
+                            "image/webp": {
+                                "schema": {
+                                    "type": "string",
+                                    "contentMediaType": "image/webp"
+                                },
+                                "example": "(图片二进制内容)"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "媒体不存在；只有 `media.manage_own` 权限时，他人上传的媒体同样返回 404。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "not_found",
+                                        "message": "Resource not found",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "not_found"
+                        ]
+                    },
+                    "409": {
+                        "description": "媒体尚未通过校验。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "media_not_ready",
+                                        "message": "Media has not passed verification",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "media_not_ready"
+                        ]
+                    },
+                    "422": {
+                        "description": "路径 `id` 不是 UUIDv7。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "id",
+                                                "code": "invalid_format",
+                                                "message": "id must be a hyphenated UUIDv7"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "503": {
+                        "description": "服务端未配置对象存储（仅开发环境可能出现）。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "storage_unavailable",
+                                        "message": "Object storage is not configured",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "storage_unavailable"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                },
+                "description": "授权读取 `ready` 媒体的文件内容。需要 `Authorization` 请求头，因此前端应通过 `fetch` 读取后用 `URL.createObjectURL` 显示，不能直接用作 `<img src>`。\n\n**所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。"
+            }
         }
     },
     "components": {
@@ -1966,6 +3035,26 @@
                     "$ref": "#/components/schemas/AccountStatus"
                 },
                 "example": "active"
+            },
+            "MediaId": {
+                "name": "id",
+                "in": "path",
+                "required": true,
+                "description": "媒体 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。",
+                "schema": {
+                    "$ref": "#/components/schemas/UuidV7"
+                },
+                "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+            },
+            "MediaStatusFilter": {
+                "name": "status",
+                "in": "query",
+                "required": false,
+                "description": "只返回该状态的媒体；其他值返回 `status/invalid_value`。",
+                "schema": {
+                    "$ref": "#/components/schemas/MediaStatus"
+                },
+                "example": "ready"
             }
         },
         "responses": {
@@ -2837,13 +3926,19 @@
                     "method_not_allowed",
                     "email_in_use",
                     "last_admin_required",
+                    "upload_incomplete",
+                    "upload_expired",
+                    "media_not_ready",
+                    "media_in_use",
                     "payload_too_large",
                     "unsupported_media_type",
                     "validation_error",
+                    "media_invalid",
                     "rate_limited",
-                    "internal_error"
+                    "internal_error",
+                    "storage_unavailable"
                 ],
-                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。\n\n- 客户端按 `code` 分支，不解析 `message`。\n- 新增错误码属于向后兼容变更，未知错误码按 HTTP 状态兜底处理。\n\n| 错误码 | HTTP | 含义 |\n| --- | --- | --- |\n| `malformed_json` | 400 | 请求体不是合法 JSON。 |\n| `unauthorized` | 401 | 令牌缺失、无效、已撤销，refresh token 重放，或账户已停用。 |\n| `token_expired` | 401 | access token 已过期，应使用 refresh token 刷新后重试。 |\n| `invalid_credentials` | 401 | 登录邮箱或密码错误。 |\n| `forbidden` | 403 | 当前账户缺少所需权限。 |\n| `not_found` | 404 | 路径或资源不存在。 |\n| `method_not_allowed` | 405 | 路径存在但不支持该方法。 |\n| `email_in_use` | 409 | 规范化后的邮箱已被占用。 |\n| `last_admin_required` | 409 | 操作会导致系统没有启用状态的管理员。 |\n| `payload_too_large` | 413 | 请求体超过 64 KiB。 |\n| `unsupported_media_type` | 415 | `Content-Type` 不是 `application/json`。 |\n| `validation_error` | 422 | 输入不满足约束，`details` 列出每个字段错误。 |\n| `rate_limited` | 429 | 超过请求限额，按 `Retry-After` 等待。 |\n| `internal_error` | 500 | 服务端内部错误，细节只记录在日志中。 |",
+                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。\n\n- 客户端按 `code` 分支，不解析 `message`。\n- 新增错误码属于向后兼容变更，未知错误码按 HTTP 状态兜底处理。\n\n| 错误码 | HTTP | 含义 |\n| --- | --- | --- |\n| `malformed_json` | 400 | 请求体不是合法 JSON。 |\n| `unauthorized` | 401 | 令牌缺失、无效、已撤销，refresh token 重放，或账户已停用。 |\n| `token_expired` | 401 | access token 已过期，应使用 refresh token 刷新后重试。 |\n| `invalid_credentials` | 401 | 登录邮箱或密码错误。 |\n| `forbidden` | 403 | 当前账户缺少所需权限。 |\n| `not_found` | 404 | 路径或资源不存在。 |\n| `method_not_allowed` | 405 | 路径存在但不支持该方法。 |\n| `email_in_use` | 409 | 规范化后的邮箱已被占用。 |\n| `last_admin_required` | 409 | 操作会导致系统没有启用状态的管理员。 |\n| `upload_incomplete` | 409 | 存储中还没有直传的文件，完成上传后重试确认。 |\n| `upload_expired` | 409 | 已超过上传截止时间，需重新申请上传。 |\n| `media_not_ready` | 409 | 媒体尚未通过校验，不能读取或引用。 |\n| `media_in_use` | 409 | 媒体仍被文章修订或个人资料引用，不能删除。 |\n| `payload_too_large` | 413 | 请求体超过 64 KiB。 |\n| `unsupported_media_type` | 415 | `Content-Type` 不是 `application/json`。 |\n| `validation_error` | 422 | 输入不满足约束，`details` 列出每个字段错误。 |\n| `media_invalid` | 422 | 上传的文件未通过图片校验，媒体已变为 `rejected`。 |\n| `rate_limited` | 429 | 超过请求限额，按 `Retry-After` 等待。 |\n| `internal_error` | 500 | 服务端内部错误，细节只记录在日志中。 |\n| `storage_unavailable` | 503 | 服务端未配置对象存储，媒体操作暂不可用。 |",
                 "examples": [
                     "validation_error"
                 ]
@@ -3190,6 +4285,445 @@
                                 "media.manage_own",
                                 "jobs.read_own"
                             ]
+                        }
+                    }
+                ]
+            },
+            "ImageMimeType": {
+                "type": "string",
+                "enum": [
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp"
+                ],
+                "description": "允许的图片 MIME 类型。"
+            },
+            "MediaStatus": {
+                "type": "string",
+                "enum": [
+                    "pending",
+                    "ready",
+                    "rejected"
+                ],
+                "description": "`pending` 已申请直传待确认；`ready` 已校验可引用；`rejected` 未通过校验，需重新申请上传。"
+            },
+            "MediaRejectionReason": {
+                "type": "string",
+                "enum": [
+                    "too_large",
+                    "unsupported_format",
+                    "undecodable",
+                    "dimensions_exceeded"
+                ],
+                "description": "拒绝原因：`too_large` 超过 10 MiB；`unsupported_format` 不是 JPEG、PNG 或 WebP；`undecodable` 无法完整解码；`dimensions_exceeded` 单边超过 16384 像素或总像素超过 4000 万。"
+            },
+            "Media": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "媒体记录。不包含对象存储键；文件内容通过 `GET /media/{id}/content` 读取。",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "服务端分配的 UUIDv7 标识。"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/MediaStatus"
+                    },
+                    "original_filename": {
+                        "type": "string",
+                        "description": "上传方提供的原文件名，仅用于显示。"
+                    },
+                    "declared_mime_type": {
+                        "$ref": "#/components/schemas/ImageMimeType",
+                        "description": "申请上传时声明的类型，仅作参考。"
+                    },
+                    "declared_size_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10485760,
+                        "description": "申请上传时声明的字节数。"
+                    },
+                    "mime_type": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/ImageMimeType"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "服务端按实际字节识别的类型；未就绪时为 `null`。"
+                    },
+                    "size_bytes": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10485760
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "实际字节数；未就绪时为 `null`。"
+                    },
+                    "width": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "图片宽度（像素）；未就绪时为 `null`。"
+                    },
+                    "height": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "图片高度（像素）；未就绪时为 `null`。"
+                    },
+                    "alt_text": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "x-max-bytes": 1000
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "无障碍替代文本；未填写时为 `null`。"
+                    },
+                    "rejection_reason": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/MediaRejectionReason"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "仅 `rejected` 状态有值。"
+                    },
+                    "uploaded_by": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/UuidV7"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "上传者账户 ID。"
+                    },
+                    "upload_expires_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "直传地址与上传确认的截止时间。"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "创建时间。"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "最后更新时间。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "original_filename",
+                    "declared_mime_type",
+                    "declared_size_bytes",
+                    "mime_type",
+                    "size_bytes",
+                    "width",
+                    "height",
+                    "alt_text",
+                    "rejection_reason",
+                    "uploaded_by",
+                    "upload_expires_at",
+                    "created_at",
+                    "updated_at"
+                ],
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "status": "ready",
+                        "original_filename": "cover.png",
+                        "declared_mime_type": "image/png",
+                        "declared_size_bytes": 245760,
+                        "mime_type": "image/png",
+                        "size_bytes": 245760,
+                        "width": 1600,
+                        "height": 900,
+                        "alt_text": "文章封面：热气球升空",
+                        "rejection_reason": null,
+                        "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                        "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                        "created_at": "2026-11-24T15:00:00+08:00",
+                        "updated_at": "2026-11-24T15:01:12+08:00"
+                    }
+                ]
+            },
+            "MediaResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "单个媒体。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/Media"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "status": "ready",
+                            "original_filename": "cover.png",
+                            "declared_mime_type": "image/png",
+                            "declared_size_bytes": 245760,
+                            "mime_type": "image/png",
+                            "size_bytes": 245760,
+                            "width": 1600,
+                            "height": 900,
+                            "alt_text": "文章封面：热气球升空",
+                            "rejection_reason": null,
+                            "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                            "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                            "created_at": "2026-11-24T15:00:00+08:00",
+                            "updated_at": "2026-11-24T15:01:12+08:00"
+                        }
+                    }
+                ]
+            },
+            "MediaPage": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Media"
+                        },
+                        "description": "当前页的数据。"
+                    },
+                    "meta": {
+                        "$ref": "#/components/schemas/ListMeta"
+                    }
+                },
+                "required": [
+                    "data",
+                    "meta"
+                ],
+                "examples": [
+                    {
+                        "data": [
+                            {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "status": "ready",
+                                "original_filename": "cover.png",
+                                "declared_mime_type": "image/png",
+                                "declared_size_bytes": 245760,
+                                "mime_type": "image/png",
+                                "size_bytes": 245760,
+                                "width": 1600,
+                                "height": 900,
+                                "alt_text": "文章封面：热气球升空",
+                                "rejection_reason": null,
+                                "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                "created_at": "2026-11-24T15:00:00+08:00",
+                                "updated_at": "2026-11-24T15:01:12+08:00"
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {
+                                "page": 1,
+                                "per_page": 20,
+                                "total": 1,
+                                "total_pages": 1
+                            }
+                        }
+                    }
+                ]
+            },
+            "CreateMediaInput": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "x-min-bytes": 1,
+                        "x-max-bytes": 255,
+                        "description": "原文件名，去首尾空白后 1–255 字节，不含控制字符；仅用于显示。"
+                    },
+                    "declared_mime_type": {
+                        "$ref": "#/components/schemas/ImageMimeType",
+                        "description": "文件类型，通常取浏览器 `File.type`。"
+                    },
+                    "size_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10485760,
+                        "description": "文件字节数，通常取浏览器 `File.size`。"
+                    }
+                },
+                "required": [
+                    "filename",
+                    "declared_mime_type",
+                    "size_bytes"
+                ],
+                "examples": [
+                    {
+                        "filename": "cover.png",
+                        "declared_mime_type": "image/png",
+                        "size_bytes": 245760
+                    }
+                ]
+            },
+            "UpdateMediaInput": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "status": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "const": "uploaded"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "传 `uploaded` 表示直传已完成，请求服务端校验；省略或 `null` 不确认。"
+                    },
+                    "alt_text": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "x-max-bytes": 1000
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "替代文本，去首尾空白后最多 1000 字节；空字符串清除；省略或 `null` 保持原值。"
+                    }
+                },
+                "required": [],
+                "examples": [
+                    {
+                        "status": "uploaded",
+                        "alt_text": "文章封面：热气球升空"
+                    }
+                ]
+            },
+            "UploadInstruction": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "浏览器直传说明：按 `method` 向 `url` 发送文件原始字节作为请求体，并原样携带 `headers`。不要附加 `Authorization`。签名覆盖 `Content-Length`，请求体字节数必须等于申请时的 `size_bytes`；该头由浏览器自动设置，不在 `headers` 中下发。",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "const": "PUT"
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "预签名地址，到期后失效。"
+                    },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "签名要求的请求头，至少包含 `content-type`。"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "直传地址与上传确认的截止时间。"
+                    }
+                },
+                "required": [
+                    "method",
+                    "url",
+                    "headers",
+                    "expires_at"
+                ]
+            },
+            "MediaUpload": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "media": {
+                        "$ref": "#/components/schemas/Media"
+                    },
+                    "upload": {
+                        "$ref": "#/components/schemas/UploadInstruction"
+                    }
+                },
+                "required": [
+                    "media",
+                    "upload"
+                ]
+            },
+            "MediaUploadResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "新建的媒体记录与直传说明。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/MediaUpload"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "media": {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "status": "pending",
+                                "original_filename": "cover.png",
+                                "declared_mime_type": "image/png",
+                                "declared_size_bytes": 245760,
+                                "mime_type": null,
+                                "size_bytes": null,
+                                "width": null,
+                                "height": null,
+                                "alt_text": null,
+                                "rejection_reason": null,
+                                "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                                "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                                "created_at": "2026-11-24T15:00:00+08:00",
+                                "updated_at": "2026-11-24T15:00:00+08:00"
+                            },
+                            "upload": {
+                                "method": "PUT",
+                                "url": "https://example-account.r2.cloudflarestorage.com/silva-media/uploads/019535d9-3df7-79fb-b466-fa907fa17f9e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=900&X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost&X-Amz-Signature=5d6f1c2b9a8e7d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c",
+                                "headers": {
+                                    "content-type": "image/png"
+                                },
+                                "expires_at": "2026-11-24T15:15:00+08:00"
+                            }
                         }
                     }
                 ]

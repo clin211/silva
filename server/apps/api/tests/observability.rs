@@ -27,6 +27,8 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         login_rate_per_minute: 100,
         login_lockout_threshold: 5,
         login_lockout_duration: Duration::from_secs(900),
+        storage: None,
+        media_upload_ttl: Duration::from_secs(900),
     };
     let app = silva_api::build_router(config, pool.clone()).await.unwrap();
     let response = app

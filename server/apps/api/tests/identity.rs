@@ -469,6 +469,8 @@ fn config(database_url: String) -> Config {
         login_rate_per_minute: 1000,
         login_lockout_threshold: 1000,
         login_lockout_duration: Duration::from_secs(900),
+        storage: None,
+        media_upload_ttl: Duration::from_secs(900),
     }
 }
 

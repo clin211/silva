@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use silva_domain::identity::{AuditLog, AuditLogFilter, Principal, Role, User};
+use silva_domain::{
+    identity::{AuditLog, AuditLogFilter, Principal, Role, User},
+    media::{Media, MediaStatus, RejectionReason, VerifiedImage},
+};
 use silva_shared::{
     error::Result,
     pagination::{Page, PageRequest},
@@ -232,4 +235,173 @@ pub trait TokenService: Send + Sync {
         token: &str,
         kind: TokenKind,
     ) -> std::result::Result<TokenClaims, TokenRejection>;
+}
+
+/// 新建媒体记录的持久化数据。
+pub struct NewMedia {
+    pub id: Uuid,
+    pub upload_key: String,
+    pub original_filename: String,
+    pub declared_mime_type: String,
+    pub declared_size_bytes: u64,
+    pub upload_expires_at: DateTime<Utc>,
+    pub uploaded_by: Uuid,
+}
+
+/// 媒体记录及其内部对象键；对象键只在服务端使用，不对外返回。
+#[derive(Clone, Debug)]
+pub struct MediaRecord {
+    pub media: Media,
+    pub upload_key: String,
+    pub storage_key: Option<String>,
+}
+
+/// 媒体列表筛选条件，多个条件按 AND 组合。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MediaFilter {
+    pub status: Option<MediaStatus>,
+    /// 只返回该账户上传的媒体；无 `media.manage` 权限时由用例强制设为当前账户。
+    pub uploaded_by: Option<Uuid>,
+}
+
+/// 媒体变更的操作者与请求来源，用于审计。
+pub struct MediaActor<'a> {
+    pub user_id: Uuid,
+    pub meta: &'a RequestMeta,
+}
+
+/// Worker 清理的过期或已拒绝媒体：删除记录前需清理的临时对象键。
+#[derive(Clone, Debug)]
+pub struct StaleMedia {
+    pub id: Uuid,
+    pub upload_key: String,
+}
+
+#[async_trait]
+pub trait MediaRepository: Send + Sync {
+    /// 创建 `pending` 记录并写入 `media.create` 审计。
+    async fn create(&self, media: &NewMedia, meta: &RequestMeta) -> Result<Media>;
+    async fn find(&self, id: Uuid) -> Result<Option<MediaRecord>>;
+    /// 按筛选条件分页，按 `created_at DESC, id DESC` 排序。
+    async fn list(&self, page: &PageRequest, filter: &MediaFilter) -> Result<Page<Media>>;
+    /// 仅当记录仍为 `pending` 时标记为 `ready` 并写入审计；已不是 `pending` 时返回 None。
+    async fn mark_ready(
+        &self,
+        id: Uuid,
+        storage_key: &str,
+        image: &VerifiedImage,
+        actor: &MediaActor<'_>,
+    ) -> Result<Option<Media>>;
+    /// 仅当记录仍为 `pending` 时标记为 `rejected` 并写入审计；已不是 `pending` 时返回 None。
+    async fn mark_rejected(
+        &self,
+        id: Uuid,
+        reason: RejectionReason,
+        actor: &MediaActor<'_>,
+    ) -> Result<Option<Media>>;
+    /// 替换替代文本（None 表示清除）并写入审计；记录不存在时返回 `NotFound`。
+    async fn update_alt_text(
+        &self,
+        id: Uuid,
+        alt_text: Option<&str>,
+        actor: &MediaActor<'_>,
+    ) -> Result<Media>;
+    /// 锁定并删除记录、写入审计，返回删除前的对象键。仍被文章修订或个人资料引用时
+    /// 返回 `Conflict(MediaInUse)` 并回滚。
+    async fn delete(&self, id: Uuid, actor: &MediaActor<'_>) -> Result<MediaRecord>;
+    /// 返回最多 `limit` 条可清理的记录：直传截止时间早于 `expired_before` 的 `pending`，
+    /// 以及被拒绝时间早于 `rejected_before` 的 `rejected`。保留期按拒绝时间计算，
+    /// 修改替代文本等后续更新不会延后清理。仍被引用的记录不返回；从未清理失败的记录在前，
+    /// 清理失败过的按最近失败时间排在后面，持续失败的记录不会挡住其他记录。
+    async fn stale(
+        &self,
+        expired_before: DateTime<Utc>,
+        rejected_before: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<StaleMedia>>;
+    /// 删除仍处于 `pending` 或 `rejected` 的记录；状态已变化或仍被引用时不删除并返回 false。
+    async fn purge(&self, id: Uuid) -> Result<bool>;
+    /// 记录一次清理失败，使该记录排到后续批次的末尾。
+    async fn defer_purge(&self, id: Uuid) -> Result<()>;
+}
+
+/// 浏览器直传请求：方法、地址和必须原样携带的请求头。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresignedUpload {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+}
+
+/// 有大小上限的对象读取结果。
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoredObject {
+    Missing,
+    /// 对象存在但超过读取上限，未下载内容。
+    TooLarge {
+        size: u64,
+    },
+    Bytes(Vec<u8>),
+}
+
+/// 对象内容的字节流。
+pub type ByteStream =
+    std::pin::Pin<Box<dyn futures_core::Stream<Item = std::io::Result<bytes::Bytes>> + Send>>;
+
+/// 有大小上限的流式读取结果。
+pub enum StreamedObject {
+    Missing,
+    /// 对象存在但超过读取上限，未开始传输。
+    TooLarge {
+        size: u64,
+    },
+    Stream {
+        size: u64,
+        body: ByteStream,
+    },
+}
+
+/// 条件写入的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutOutcome {
+    Created,
+    /// 同名对象已存在，未覆盖。
+    AlreadyExists,
+}
+
+/// 私有对象存储。实现须保证 bucket 不公开，键由服务端生成。
+#[async_trait]
+pub trait ObjectStorage: Send + Sync {
+    /// 为指定键签发有效期内的 PUT 直传地址。签名必须覆盖 `Content-Type` 与 `Content-Length`，
+    /// 使客户端只能上传声明类型、且字节数恰好为 `content_length` 的请求体。
+    async fn presign_put(
+        &self,
+        key: &str,
+        content_type: &str,
+        content_length: u64,
+        expires_in: std::time::Duration,
+    ) -> Result<PresignedUpload>;
+    /// 读取对象，超过 `max_bytes` 时不下载内容。
+    async fn read(&self, key: &str, max_bytes: u64) -> Result<StoredObject>;
+    /// 以字节流读取对象，不把整个对象读入内存；超过 `max_bytes` 时不传输内容。
+    async fn stream(&self, key: &str, max_bytes: u64) -> Result<StreamedObject>;
+    /// 仅在键不存在时写入，已存在时不覆盖。
+    async fn put_if_absent(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> Result<PutOutcome>;
+    /// 删除对象；对象不存在视为成功。
+    async fn delete(&self, key: &str) -> Result<()>;
+}
+
+/// 按实际字节识别并完整解码图片。
+#[async_trait]
+pub trait ImageInspector: Send + Sync {
+    /// 返回校验通过的图片信息，或拒绝原因；只有基础设施故障才返回 `Err`。
+    async fn inspect(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<(Vec<u8>, std::result::Result<VerifiedImage, RejectionReason>)>;
 }

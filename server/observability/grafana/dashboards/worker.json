@@ -246,7 +246,7 @@
       }
     },
     {
-      "title": "已清理会话",
+      "title": "已清理会话与媒体",
       "type": "timeseries",
       "description": "",
       "datasource": {
@@ -257,7 +257,17 @@
         {
           "expr": "silva_worker_deleted_sessions_total{job=\"silva-worker\"}",
           "refId": "A",
-          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+          "legendFormat": "会话"
+        },
+        {
+          "expr": "silva_worker_purged_media_total{job=\"silva-worker\"}",
+          "refId": "B",
+          "legendFormat": "媒体"
+        },
+        {
+          "expr": "silva_worker_task_failures_total{job=\"silva-worker\"}",
+          "refId": "C",
+          "legendFormat": "失败任务 {{task}}"
         }
       ],
       "fieldConfig": {

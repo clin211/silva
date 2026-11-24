@@ -876,7 +876,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 6.4 媒体上传
 
-`POST /media` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201、`Location` 和 `media_id`、`upload_url`、请求方法、签名要求的头及 `expires_at`。浏览器直传后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。保存文章或个人资料时，引用未通过校验的媒体返回 `422 media_not_ready`。删除被引用的媒体返回 `409 media_in_use`。
+`POST /media` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201、`Location` 和 `{"media": <媒体记录>, "upload": {"method", "url", "headers", "expires_at"}}`。浏览器按 `upload` 直传到私有临时键后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。读取未就绪媒体的内容，以及保存文章或个人资料时引用未通过校验的媒体，返回 `409 media_not_ready`（依赖其他资源状态，按响应规范归为 409）。删除被引用的媒体返回 `409 media_in_use`。对象存储使用 Cloudflare R2 或阿里云 OSS，由 `SILVA_STORAGE_PROVIDER` 选择。
 
 ## 7. 核心业务流程
 

@@ -37,6 +37,8 @@ pub struct Metrics {
     pub worker_last_success: IntGauge,
     pub worker_interval: IntGauge,
     pub worker_deleted_sessions: IntCounter,
+    pub worker_purged_media: IntCounter,
+    pub worker_task_failures: IntCounterVec,
 }
 
 impl Default for Metrics {
@@ -132,24 +134,38 @@ impl Default for Metrics {
                 "当前发布目标未激活且等待超过五分钟"
             )),
             worker_runs: register!(IntCounterVec::new(
-                Opts::new("silva_worker_runs_total", "会话维护执行次数"),
+                Opts::new(
+                    "silva_worker_runs_total",
+                    "Worker 维护执行次数，任一维护任务失败时记为 error"
+                ),
                 &["outcome"]
             )),
             worker_duration: register!(HistogramVec::new(
-                HistogramOpts::new("silva_worker_run_duration_seconds", "会话维护执行耗时"),
+                HistogramOpts::new("silva_worker_run_duration_seconds", "Worker 维护执行耗时"),
                 &["outcome"]
             )),
             worker_last_success: register!(IntGauge::new(
                 "silva_worker_last_success_timestamp_seconds",
-                "最近成功执行会话维护的时间"
+                "最近一次全部维护任务成功的时间"
             )),
             worker_interval: register!(IntGauge::new(
                 "silva_worker_interval_seconds",
-                "会话维护执行周期"
+                "Worker 维护执行周期"
             )),
             worker_deleted_sessions: register!(IntCounter::new(
                 "silva_worker_deleted_sessions_total",
                 "会话维护删除的记录数"
+            )),
+            worker_purged_media: register!(IntCounter::new(
+                "silva_worker_purged_media_total",
+                "清理的过期未确认或保留期已满的已拒绝媒体记录数"
+            )),
+            worker_task_failures: register!(IntCounterVec::new(
+                Opts::new(
+                    "silva_worker_task_failures_total",
+                    "Worker 维护任务失败次数，task 为 sessions 或 media"
+                ),
+                &["task"]
             )),
             registry,
         }
@@ -198,7 +214,37 @@ impl Metrics {
         }
     }
 
-    pub fn record_worker(&self, success: bool, elapsed: f64, deleted: u64) {
+    /// 记录一轮维护。各任务的结果分别计数；任一任务失败时整轮记为 error，
+    /// 成功任务的清理数量照常累计。
+    pub fn record_worker(&self, elapsed: f64, run: &WorkerRun) {
+        let mut success = true;
+        match run.deleted_sessions {
+            Some(deleted) => self.worker_deleted_sessions.inc_by(deleted),
+            None => {
+                success = false;
+                self.worker_task_failures
+                    .with_label_values(&["sessions"])
+                    .inc();
+            }
+        }
+        match run.purged_media {
+            // 部分记录清理失败同样计为媒体任务失败，已清理的数量照常累计。
+            Some(purged) => {
+                self.worker_purged_media.inc_by(purged);
+                if run.failed_media > 0 {
+                    success = false;
+                    self.worker_task_failures
+                        .with_label_values(&["media"])
+                        .inc();
+                }
+            }
+            None => {
+                success = false;
+                self.worker_task_failures
+                    .with_label_values(&["media"])
+                    .inc();
+            }
+        }
         let outcome = if success { "success" } else { "error" };
         self.worker_runs.with_label_values(&[outcome]).inc();
         self.worker_duration
@@ -206,9 +252,17 @@ impl Metrics {
             .observe(elapsed);
         if success {
             self.worker_last_success.set(unix_seconds());
-            self.worker_deleted_sessions.inc_by(deleted);
         }
     }
+}
+
+/// 一轮 Worker 维护中各任务的结果；None 表示该任务失败。
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WorkerRun {
+    pub deleted_sessions: Option<u64>,
+    pub purged_media: Option<u64>,
+    /// 本轮清理失败、留待后续批次的媒体记录数。
+    pub failed_media: u64,
 }
 
 pub struct InFlight<'a>(&'a IntGauge);
@@ -258,11 +312,52 @@ mod tests {
     #[test]
     fn worker_failure_preserves_last_success() {
         let metrics = Metrics::default();
-        metrics.record_worker(true, 0.1, 3);
+        metrics.record_worker(
+            0.1,
+            &WorkerRun {
+                deleted_sessions: Some(3),
+                purged_media: Some(2),
+                failed_media: 0,
+            },
+        );
         let last = metrics.worker_last_success.get();
-        metrics.record_worker(false, 0.2, 0);
+        // 媒体清理失败：整轮记为 error，但会话清理数量照常累计，失败任务单独计数。
+        metrics.record_worker(
+            0.2,
+            &WorkerRun {
+                deleted_sessions: Some(1),
+                purged_media: None,
+                failed_media: 0,
+            },
+        );
         assert_eq!(metrics.worker_last_success.get(), last);
         assert_eq!(metrics.worker_runs.with_label_values(&["error"]).get(), 1);
-        assert_eq!(metrics.worker_deleted_sessions.get(), 3);
+        assert_eq!(metrics.worker_deleted_sessions.get(), 4);
+        assert_eq!(metrics.worker_purged_media.get(), 2);
+        // 部分媒体记录清理失败：已清理的数量累计，整轮记为 error，媒体任务失败计数增加。
+        metrics.record_worker(
+            0.3,
+            &WorkerRun {
+                deleted_sessions: Some(0),
+                purged_media: Some(5),
+                failed_media: 1,
+            },
+        );
+        assert_eq!(metrics.worker_purged_media.get(), 7);
+        assert_eq!(metrics.worker_runs.with_label_values(&["error"]).get(), 2);
+        assert_eq!(
+            metrics
+                .worker_task_failures
+                .with_label_values(&["media"])
+                .get(),
+            2
+        );
+        assert_eq!(
+            metrics
+                .worker_task_failures
+                .with_label_values(&["sessions"])
+                .get(),
+            0
+        );
     }
 }

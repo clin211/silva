@@ -23,15 +23,21 @@ pub enum ErrorCode {
     MethodNotAllowed,
     EmailInUse,
     LastAdminRequired,
+    UploadIncomplete,
+    UploadExpired,
+    MediaNotReady,
+    MediaInUse,
     PayloadTooLarge,
     UnsupportedMediaType,
     ValidationError,
+    MediaInvalid,
     RateLimited,
     InternalError,
+    StorageUnavailable,
 }
 
 impl ErrorCode {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 20] = [
         Self::MalformedJson,
         Self::Unauthorized,
         Self::TokenExpired,
@@ -41,11 +47,17 @@ impl ErrorCode {
         Self::MethodNotAllowed,
         Self::EmailInUse,
         Self::LastAdminRequired,
+        Self::UploadIncomplete,
+        Self::UploadExpired,
+        Self::MediaNotReady,
+        Self::MediaInUse,
         Self::PayloadTooLarge,
         Self::UnsupportedMediaType,
         Self::ValidationError,
+        Self::MediaInvalid,
         Self::RateLimited,
         Self::InternalError,
+        Self::StorageUnavailable,
     ];
 
     pub fn status(self) -> StatusCode {
@@ -57,12 +69,18 @@ impl ErrorCode {
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
-            Self::EmailInUse | Self::LastAdminRequired => StatusCode::CONFLICT,
+            Self::EmailInUse
+            | Self::LastAdminRequired
+            | Self::UploadIncomplete
+            | Self::UploadExpired
+            | Self::MediaNotReady
+            | Self::MediaInUse => StatusCode::CONFLICT,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Self::ValidationError => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::ValidationError | Self::MediaInvalid => StatusCode::UNPROCESSABLE_ENTITY,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::StorageUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
@@ -122,6 +140,12 @@ impl From<AppError> for ApiError {
             AppError::NotFound => ErrorCode::NotFound,
             AppError::Conflict(Conflict::EmailInUse) => ErrorCode::EmailInUse,
             AppError::Conflict(Conflict::LastAdminRequired) => ErrorCode::LastAdminRequired,
+            AppError::Conflict(Conflict::UploadIncomplete) => ErrorCode::UploadIncomplete,
+            AppError::Conflict(Conflict::UploadExpired) => ErrorCode::UploadExpired,
+            AppError::Conflict(Conflict::MediaNotReady) => ErrorCode::MediaNotReady,
+            AppError::Conflict(Conflict::MediaInUse) => ErrorCode::MediaInUse,
+            AppError::MediaInvalid { .. } => ErrorCode::MediaInvalid,
+            AppError::StorageUnavailable => ErrorCode::StorageUnavailable,
         };
         Self::new(code, error.to_string())
     }

@@ -78,7 +78,7 @@
       "title": "能力范围与数据口径",
       "options": {
         "mode": "markdown",
-        "content": "当前 Worker 仅执行会话维护。发布、采集与 Outbox 消费尚未实现，空队列不代表业务链路已就绪。队列每 15 秒刷新，失败保留旧值，请先检查采集状态。采集等待时间以 started_at 或 UTC slot_date 起点估算。"
+        "content": "当前 Worker 仅执行会话维护与媒体清理。发布、采集与 Outbox 消费尚未实现，空队列不代表业务链路已就绪。队列每 15 秒刷新，失败保留旧值，请先检查采集状态。采集等待时间以 started_at 或 UTC slot_date 起点估算。"
       },
       "fieldConfig": {
         "defaults": {},

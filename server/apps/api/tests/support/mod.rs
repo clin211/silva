@@ -106,6 +106,18 @@ pub fn assert_response(
         .split(';')
         .next()
         .unwrap();
+    // 二进制内容（如媒体文件）只核对媒体类型已在契约中声明，不做 JSON Schema 校验。
+    if !media.starts_with("application/") && !media.starts_with("text/") {
+        let (template, response_key) = template
+            .zip(response_key)
+            .unwrap_or_else(|| panic!("{method} {path}: 未声明的二进制响应"));
+        let key = format!("{method} {template} {response_key} {media}");
+        assert!(
+            VALIDATORS.contains_key(&key),
+            "{key}: 响应媒体类型未在契约中声明"
+        );
+        return;
+    }
     let body: Value = if media == "application/json" {
         serde_json::from_slice(bytes).unwrap()
     } else {

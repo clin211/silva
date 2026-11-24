@@ -2,7 +2,7 @@
 
 Rust + Axum + Tokio + SQLx + PostgreSQL 的模块化单体。API、Worker 和运维 CLI 共用领域与用例，分别运行。
 
-当前交付后端技术方案的第一里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理。数据库已预建后续领域的 schema；媒体、CMS、站点构建与切换、资源目录和 GitHub 采集在后续里程碑实现。Worker 当前执行会话维护，不消费尚未实现的发布或采集任务。
+当前交付后端技术方案的第一里程碑，以及第二里程碑中的媒体上传：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理，以及经 Cloudflare R2 或阿里云 OSS 私有 bucket 直传、服务端校验的图片媒体。数据库已预建后续领域的 schema；CMS、站点构建与切换、资源目录和 GitHub 采集在后续里程碑实现。Worker 当前执行会话维护和过期媒体清理，不消费尚未实现的发布或采集任务。
 
 ## 本地启动
 
@@ -141,6 +141,13 @@ unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 | `SILVA_LOGIN_RATE_PER_MINUTE` | `10`，正整数 |
 | `SILVA_LOGIN_LOCKOUT_THRESHOLD` | `5`，正整数；同一邮箱 15 分钟内连续登录失败多少次后锁定 |
 | `SILVA_LOGIN_LOCKOUT_SECONDS` | `900`，正整数秒；账户登录锁定时长 |
+| `SILVA_STORAGE_PROVIDER` | 空；`r2` 或 `oss`。生产环境必填，否则 API 启动失败；开发环境留空时媒体上传、确认、读取内容和删除返回 503 `storage_unavailable` |
+| `SILVA_STORAGE_ENDPOINT` | 设置服务商时必填。R2 为 `https://<account_id>.r2.cloudflarestorage.com`，OSS 为地域地址如 `https://oss-cn-hangzhou.aliyuncs.com`（不含 bucket）；生产只接受 HTTPS |
+| `SILVA_STORAGE_BUCKET` | 设置服务商时必填，私有 bucket 名称，只含 `a-z`、`0-9`、`-`、`.` |
+| `SILVA_STORAGE_REGION` | R2 默认 `auto`；OSS 必填，为不含 `oss-` 前缀的地域 ID，如 `cn-hangzhou`（直传地址使用 OSS V4 签名） |
+| `SILVA_STORAGE_ROOT` | `/`；bucket 内的根前缀，多个环境共用一个 bucket 时用于隔离，如 `/silva/production/`；路径段只允许 `A-Za-z0-9._-` |
+| `SILVA_STORAGE_ACCESS_KEY_ID`、`SILVA_STORAGE_ACCESS_KEY_SECRET` | 设置服务商时必填；只读取显式配置，不读取云主机元数据或默认凭据文件 |
+| `SILVA_MEDIA_UPLOAD_TTL_SECONDS` | `900`，正整数秒，最大 `86400`；直传地址与上传确认的有效期，需短于 `uploads/` 的生命周期规则 |
 | `RUST_LOG` | `.env.example` 使用 `info,silva_api=debug` |
 
 初始化 CLI 额外读取 `SILVA_ADMIN_EMAIL`、`SILVA_ADMIN_NAME` 和 `SILVA_ADMIN_PASSWORD`。集成测试单独读取 `SILVA_TEST_DATABASE_URL`，不复用生产连接。
@@ -148,6 +155,44 @@ unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 API 和登录限流目前按直连 peer IP（IPv6 按 /64 前缀合并）使用进程内 60 秒固定窗口，API 与登录额度同时生效；不信任客户端提供的 `X-Forwarded-For`。通过同源反向代理部署时，后端看到的是代理 IP，经过该代理的请求会共享额度。生产入口应按可信的真实客户端 IP 限流，并在多个后端副本之间统一执行限制；后端阈值需结合代理汇总流量配置。重启进程会清空本机限流窗口。
 
 登录另按规范化邮箱执行连续失败锁定（不论账户是否存在），锁定期内返回 429 `rate_limited`，`Retry-After` 为剩余锁定秒数。该计数同样保存在单个 API 进程内存中：多副本部署时各副本独立计数，重启后清空；需要跨副本一致时应改为共享存储。
+
+## 媒体存储
+
+媒体只存放在私有 bucket。浏览器用 API 签发的短时预签名地址把文件直传到临时键 `uploads/{id}`，文件不经过 API。签名覆盖 `Content-Type` 和 `Content-Length`：R2 使用 SigV4，OSS 使用 V4 签名，上传的字节数必须与申请时声明的 `size_bytes` 完全一致，否则存储服务拒绝该请求，因此预签名地址不能用来上传超大文件。确认时服务端读取文件，按实际字节识别 JPEG、PNG、WebP 并完整解码，通过后写入不可覆盖的正式键 `media/{id}`，并删除临时对象。后台通过 `GET /api/v1/admin/media/{id}/content` 授权读取，bucket 本身不对外公开。流程与接口见 [API 接入指南](docs/api/README.md#媒体上传)。
+
+R2 与 OSS 都需要按以下要求配置 bucket：
+
+1. **私有访问。** 关闭公共读写，R2 不绑定公开域名或 `r2.dev` 访问。
+2. **访问密钥最小权限。** R2 创建只作用于该 bucket 的「对象读和写」API 令牌；OSS 使用 RAM 子账号，只授予该 bucket（或 `SILVA_STORAGE_ROOT` 前缀）的 `oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`。
+3. **CORS。** 只允许后台 origin 使用 `PUT` 方法和 `content-type` 请求头，例如 R2：
+
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://admin.example.com"],
+       "AllowedMethods": ["PUT"],
+       "AllowedHeaders": ["content-type"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+
+   OSS 在「数据安全 → 跨域设置」添加同样的来源、方法 `PUT` 和允许 Headers `content-type`。本地开发再加入本机后台地址，如 `http://localhost:5173`。
+4. **生命周期规则（必须配置）。** 为 `uploads/` 前缀（若设置了 `SILVA_STORAGE_ROOT`，前缀要包含根路径）添加 1 天后删除对象的规则。Worker 只清理仍有待确认或已拒绝记录对应的临时对象：过期 1 小时以上的未确认上传、被拒绝满 7 天的上传，以及中断的确认可能留下的正式对象。以下临时对象只能靠该规则删除：确认成功后在直传地址有效期内被再次上传的文件、直传后从未调用 API 的文件，以及 Worker 删除失败的文件。不要对 `media/` 设置过期规则。
+5. **不开启版本控制（OSS）。** OSS 在开启或暂停版本控制的 bucket 上会忽略禁止覆盖写入的请求头，正式对象将不再受保护。R2 使用 `If-None-Match` 条件写入，不受此影响。
+
+配置完成后用真实 bucket 运行冒烟测试。测试只用预签名地址直传，确认大小与签名不符的上传被拒绝，并验证条件写入、读取和删除，测试对象写在根前缀下的 `smoke/`，结束时删除：
+
+```sh
+export SILVA_STORAGE_PROVIDER=r2 SILVA_STORAGE_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com \
+  SILVA_STORAGE_BUCKET=<bucket> SILVA_STORAGE_ROOT=/silva/development/
+read -r SILVA_STORAGE_ACCESS_KEY_ID
+read -r -s SILVA_STORAGE_ACCESS_KEY_SECRET
+export SILVA_STORAGE_ACCESS_KEY_ID SILVA_STORAGE_ACCESS_KEY_SECRET
+cargo test -p silva-infrastructure --test object_storage_live -- --ignored
+```
+
+该测试不经过浏览器，因此不检查 CORS；CORS 需在后台页面实际上传一次确认。
 
 ## 检查与测试
 
@@ -161,11 +206,11 @@ make worker-once
 
 `make check` 执行格式、Clippy（警告视为错误）、Workspace 构建和普通测试，其中包括 Rust OpenAPI 契约、Schema 及示例校验。`make api-docs-check` 可单独运行契约测试。`make test-db` 显式执行数据库集成测试，并按契约校验真实接口的状态、媒体类型、响应头和 JSON Schema：连接角色需有 `CREATEDB`，测试创建独立临时数据库并在结束后清理。缺少测试 URL 或数据库不可用会失败，不把数据库测试静默当作成功。
 
-`check-schema` 在迁移后的真实数据库检查业务表/字段非空注释及 UUIDv7 约束；测试覆盖 UUIDv7 写入、v4/错误变体拒绝和 API 非 v7 ID 拒绝，以及登录、JWT 校验与刷新轮换、RBAC、账户停用和会话撤销。GitHub Actions 使用临时 PostgreSQL 执行相同门禁。
+`check-schema` 在迁移后的真实数据库检查业务表/字段非空注释、UUIDv7 约束及媒体状态约束；测试覆盖 UUIDv7 写入、v4/错误变体拒绝和 API 非 v7 ID 拒绝，登录、JWT 校验与刷新轮换、RBAC、账户停用和会话撤销，以及媒体申请、确认、拒绝、过期、归属、引用保护和清理（对象存储用内存实现，图片解码为真实实现）。GitHub Actions 使用临时 PostgreSQL 执行相同门禁。
 
 所有业务实体、事件、审计和 request ID 都通过 `silva_shared::ids` 生成 UUIDv7。新增或变更数据库字段时，在同一次迁移维护 `COMMENT ON TABLE/COLUMN`；已执行的迁移不修改，追加新迁移。
 
-数据库当前保留 31 张业务表。旧开发库执行 `make migrate` 后会删除已取消的目录功能对应的四张表及其数据，再运行 `make check-schema` 验证；历史迁移保留原校验和。
+数据库当前保留 27 张业务表。旧开发库执行 `make migrate` 后会删除已取消的目录功能对应的四张表，以及项目展览与工具导航对应的四张表（`projects`、`project_technologies`、`project_links`、`tools`）及其数据，再运行 `make check-schema` 验证；历史迁移保留原校验和。
 
 ## 容器运行
 

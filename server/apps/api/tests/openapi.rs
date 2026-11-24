@@ -100,6 +100,12 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/roles", "get"),
         ("/api/v1/admin/audit-logs", "get"),
         ("/api/v1/admin/audit-logs/{id}", "get"),
+        ("/api/v1/admin/media", "get"),
+        ("/api/v1/admin/media", "post"),
+        ("/api/v1/admin/media/{id}", "get"),
+        ("/api/v1/admin/media/{id}", "patch"),
+        ("/api/v1/admin/media/{id}", "delete"),
+        ("/api/v1/admin/media/{id}/content", "get"),
     ];
     let paths = spec["paths"].as_object().expect("paths object");
     let actual: BTreeSet<_> = paths
@@ -164,6 +170,7 @@ fn all_entity_and_request_ids_constrain_uuid_version_and_variant() {
         "AuditActorUserId",
         "AuditResourceId",
         "AuditRequestId",
+        "MediaId",
     ] {
         assert_uuid_v7(
             &spec,
@@ -214,6 +221,16 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
         ("/api/v1/admin/roles", "get", "roles.read"),
         ("/api/v1/admin/audit-logs", "get", "audit.read"),
         ("/api/v1/admin/audit-logs/{id}", "get", "audit.read"),
+        ("/api/v1/admin/media", "get", "media.manage_own"),
+        ("/api/v1/admin/media", "post", "media.manage_own"),
+        ("/api/v1/admin/media/{id}", "get", "media.manage_own"),
+        ("/api/v1/admin/media/{id}", "patch", "media.manage_own"),
+        ("/api/v1/admin/media/{id}", "delete", "media.manage_own"),
+        (
+            "/api/v1/admin/media/{id}/content",
+            "get",
+            "media.manage_own",
+        ),
     ] {
         assert_eq!(
             spec["paths"][path][method]["x-required-permission"],
@@ -231,6 +248,8 @@ fn input_shapes_and_pagination_match_runtime_validation() {
         "CreateUserInput",
         "UpdateUserInput",
         "ChangePasswordInput",
+        "CreateMediaInput",
+        "UpdateMediaInput",
     ] {
         assert_eq!(schemas[name]["additionalProperties"], false);
     }
@@ -496,6 +515,8 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         login_rate_per_minute: 100,
         login_lockout_threshold: 5,
         login_lockout_duration: Duration::from_secs(900),
+        storage: None,
+        media_upload_ttl: Duration::from_secs(900),
     };
     let app = silva_api::build_router(config, pool).await.unwrap();
     let spec = contract();
@@ -692,6 +713,51 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         },
         Case {
             method: "GET",
+            path: "/api/v1/admin/media?status=uploaded",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("status", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/media/not-an-id/content",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("id", "invalid_format")),
+        },
+        Case {
+            method: "POST",
+            path: "/api/v1/admin/media",
+            content_type: Some("text/plain"),
+            body: "{}",
+            status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            code: "unsupported_media_type",
+            field: None,
+        },
+        Case {
+            method: "POST",
+            path: "/api/v1/admin/media",
+            content_type: Some("application/json"),
+            body: r#"{"filename":"a.png","declared_mime_type":"image/png","size_bytes":-1}"#,
+            status: invalid,
+            code: "validation_error",
+            field: Some(("size_bytes", "invalid_type")),
+        },
+        Case {
+            method: "PATCH",
+            path: "/api/v1/admin/media/019535d9-3df7-79fb-b466-fa907fa17f9e",
+            content_type: Some("application/json"),
+            body: r#"{"status":"uploaded","url":"https://example.test"}"#,
+            status: invalid,
+            code: "validation_error",
+            field: Some(("url", "unknown_field")),
+        },
+        Case {
+            method: "GET",
             path: "/api/v1/admin/users/not-an-id",
             content_type: None,
             body: "",
@@ -873,8 +939,10 @@ fn paths_follow_restful_conventions() {
             }
         }
     }
-    let create_user = &spec["paths"]["/api/v1/admin/users"]["post"]["responses"]["201"];
-    assert!(create_user["headers"].get("Location").is_some());
+    for path in ["/api/v1/admin/users", "/api/v1/admin/media"] {
+        let created = &spec["paths"][path]["post"]["responses"]["201"];
+        assert!(created["headers"].get("Location").is_some(), "{path}");
+    }
     for path in ["/api/v1/admin/sessions", "/api/v1/admin/tokens"] {
         assert!(
             spec["paths"][path]["post"]["responses"]
@@ -918,4 +986,59 @@ fn response_example_timestamps_use_beijing_offset() {
     walk(&spec["components"]["schemas"], "schemas", &mut found);
     walk(&spec["components"]["responses"], "responses", &mut found);
     assert!(found.is_empty(), "以下示例时间不是 +08:00：{found:#?}");
+}
+
+/// 媒体契约中的取值与运行时的领域常量一致。
+#[test]
+fn media_contract_matches_domain_rules() {
+    use silva_domain::media::{
+        ALLOWED_MIME_TYPES, ALT_TEXT_MAX_BYTES, FILENAME_MAX_BYTES, MAX_UPLOAD_BYTES, MediaStatus,
+        RejectionReason,
+    };
+    let spec = contract();
+    let schemas = &spec["components"]["schemas"];
+    assert_eq!(
+        schemas["ImageMimeType"]["enum"],
+        serde_json::json!(ALLOWED_MIME_TYPES)
+    );
+    assert_eq!(
+        schemas["MediaStatus"]["enum"],
+        serde_json::to_value(MediaStatus::ALL).unwrap()
+    );
+    assert_eq!(
+        schemas["MediaRejectionReason"]["enum"],
+        serde_json::to_value(RejectionReason::ALL).unwrap()
+    );
+    let input = &schemas["CreateMediaInput"]["properties"];
+    assert_eq!(input["size_bytes"]["maximum"], MAX_UPLOAD_BYTES);
+    assert_eq!(input["filename"]["x-max-bytes"], FILENAME_MAX_BYTES);
+    assert_eq!(
+        schemas["UpdateMediaInput"]["properties"]["alt_text"]["anyOf"][0]["x-max-bytes"],
+        ALT_TEXT_MAX_BYTES
+    );
+    assert_eq!(
+        schemas["CreateMediaInput"]["required"],
+        serde_json::json!(["filename", "declared_mime_type", "size_bytes"])
+    );
+    // 媒体记录不暴露对象存储键，可空字段也始终存在。
+    let media = &schemas["Media"];
+    assert_eq!(media["additionalProperties"], false);
+    for internal in ["upload_key", "storage_key"] {
+        assert!(media["properties"].get(internal).is_none(), "{internal}");
+    }
+    let required = media["required"].as_array().unwrap();
+    for field in media["properties"].as_object().unwrap().keys() {
+        assert!(
+            required.iter().any(|value| value == field.as_str()),
+            "Media.{field} 必须为必填字段"
+        );
+    }
+    let content =
+        &spec["paths"]["/api/v1/admin/media/{id}/content"]["get"]["responses"]["200"]["content"];
+    let declared: BTreeSet<_> = content.as_object().unwrap().keys().cloned().collect();
+    let allowed: BTreeSet<_> = ALLOWED_MIME_TYPES
+        .iter()
+        .map(|mime| mime.to_string())
+        .collect();
+    assert_eq!(declared, allowed);
 }

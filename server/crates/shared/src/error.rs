@@ -24,6 +24,12 @@ pub enum AppError {
     Validation(Vec<FieldError>),
     #[error("{}", .0.message())]
     Conflict(Conflict),
+    /// 上传的文件未通过媒体校验；`reason` 为稳定的拒绝原因代码，同时保存在媒体记录中。
+    #[error("Uploaded file is not an accepted image ({reason})")]
+    MediaInvalid { reason: &'static str },
+    /// 对象存储未配置，媒体相关操作暂不可用。
+    #[error("Object storage is not configured")]
+    StorageUnavailable,
     #[error("Infrastructure failure: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -46,6 +52,14 @@ pub enum Conflict {
     EmailInUse,
     /// 操作后系统将不再有启用状态的管理员。
     LastAdminRequired,
+    /// 直传对象尚未写入存储，客户端应完成上传后再确认。
+    UploadIncomplete,
+    /// 上传确认已超过有效期，需重新申请上传。
+    UploadExpired,
+    /// 媒体尚未通过校验，不能读取或引用。
+    MediaNotReady,
+    /// 媒体仍被文章修订或个人资料引用，不能删除。
+    MediaInUse,
 }
 
 impl Conflict {
@@ -53,6 +67,10 @@ impl Conflict {
         match self {
             Self::EmailInUse => "Email is already in use",
             Self::LastAdminRequired => "At least one active administrator is required",
+            Self::UploadIncomplete => "The uploaded object was not found; finish the upload first",
+            Self::UploadExpired => "The upload has expired; request a new upload",
+            Self::MediaNotReady => "Media has not passed verification",
+            Self::MediaInUse => "Media is still referenced",
         }
     }
 }

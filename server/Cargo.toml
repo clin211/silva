@@ -16,14 +16,22 @@ silva-infrastructure = { path = "crates/infrastructure" }
 anyhow = "1"
 async-trait = "0.1"
 base64 = "0.22"
+bytes = "1"
 argon2 = "0.5"
 axum = { version = "0.8", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
+futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false }
 hex = "0.4"
+http = "1"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 rand = "0.8"
+reqsign-aliyun-oss = { version = "3.2.2", default-features = false }
+reqsign-aws-v4 = { version = "3.5.0", default-features = false }
+reqsign-core = { version = "3.3.4", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,10 +39,11 @@ serde_path_to_error = "0.1"
 sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opendal = { version = "0.59.5", default-features = false, features = ["services-s3", "services-oss", "executors-tokio", "http-transport-reqwest-rustls", "layers-retry", "layers-timeout"] }
 opentelemetry = "0.33"
 opentelemetry_sdk = "0.33"
 opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }

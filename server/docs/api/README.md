@@ -1,6 +1,6 @@
 # Silva API 接入指南
 
-当前版本提供健康检查、身份认证、内置角色、账户管理和审计查询。CMS、媒体、发布与采集接口尚未开放。
+当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询和媒体上传。CMS、发布与采集接口尚未开放。
 
 ## OpenAPI 交付与 Apifox 导入
 
@@ -98,6 +98,42 @@ curl --fail-with-body --silent --show-error \
 unset SILVA_API_ACCESS SILVA_API_REFRESH
 ```
 
+## 媒体上传
+
+图片不经过 API 上传：先向 API 申请，再由浏览器直传到私有对象存储（Cloudflare R2 或阿里云 OSS），最后请 API 校验。只接受 JPEG、PNG、WebP，单文件不超过 10 MiB，单边不超过 16384 像素且总像素不超过 4000 万。
+
+1. `POST /api/v1/admin/media` 提交文件名、类型和大小，得到 `media`（`pending`）和 `upload` 直传说明。
+2. 按 `upload.method` 把文件原始字节发到 `upload.url`，原样带上 `upload.headers`，**不要**带 `Authorization`。签名包含声明的大小，请求体必须正是第 1 步声明的那个文件，字节数不符时存储服务返回 403。
+3. 在 `upload.expires_at`（默认 15 分钟）前调用 `PATCH /api/v1/admin/media/{id}` 提交 `{"status": "uploaded"}`。服务端按实际字节识别格式并完整解码，通过后返回 `status: ready`，记录里的 `mime_type`、`size_bytes`、`width`、`height` 是校验结果。
+
+```ts
+async function uploadImage(file: File, accessToken: string) {
+  const auth = { Authorization: `Bearer ${accessToken}` };
+  const created = await fetch("/api/v1/admin/media", {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, declared_mime_type: file.type, size_bytes: file.size }),
+  }).then((response) => response.json());
+  const { media, upload } = created.data;
+  const put = await fetch(upload.url, { method: upload.method, headers: upload.headers, body: file });
+  if (!put.ok) throw new Error(`直传失败：${put.status}`);
+  const confirmed = await fetch(`/api/v1/admin/media/${media.id}`, {
+    method: "PATCH",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "uploaded" }),
+  });
+  return confirmed.json(); // 422 media_invalid 时需重新申请上传
+}
+```
+
+- **重复确认是安全的**：已就绪的媒体再次确认返回同一记录；已拒绝的返回同一个 `422 media_invalid`。网络中断后可以直接重试确认。
+- **被拒绝后不能复用**：`rejected` 记录的拒绝原因见 `rejection_reason`，需重新调用 `POST /media` 申请新的上传。
+- **替代文本**：`PATCH /media/{id}` 提交 `{"alt_text": "..."}` 修改，空字符串清除；可与确认放在同一个请求。
+- **直传地址只用一次**：确认成功后不要再向同一地址上传；地址在 `expires_at` 前仍然有效，重复上传的文件不会被使用，只会由存储的生命周期规则删除。
+- **显示图片**：`GET /media/{id}/content` 以流式响应返回文件，需要 `Authorization`，不能直接作为 `<img src>`。用 `fetch` 读取后 `URL.createObjectURL(await response.blob())` 显示，不再使用时调用 `URL.revokeObjectURL`。
+- **删除**：`DELETE /media/{id}` 删除记录和文件；仍被文章修订或个人资料引用时返回 `409 media_in_use`。
+- 过期未确认的上传在截止后约 1 小时由 Worker 删除，被拒绝的记录保留 7 天。
+
 ## 权限
 
 | 接口 | 要求 |
@@ -107,8 +143,9 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
+| `/api/v1/admin/media` 下的全部接口 | `media.manage_own`（所有内置角色）只能看到和操作本人上传的媒体，他人媒体返回 404；`media.manage`（Editor、Admin）可操作全部媒体 |
 
-内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。目前账户、角色和审计接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
+内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。账户、角色和审计接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
 
 ## 响应结构与排障
 
@@ -137,10 +174,14 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | 404 / 405 | `not_found` / `method_not_allowed` | 检查资源、路径或方法 |
 | 409 | `email_in_use` | 更换已存在的邮箱 |
 | 409 | `last_admin_required` | 至少保留一个启用状态的管理员，先为其他账户分配 admin 再停用或降级 |
+| 409 | `upload_incomplete` / `upload_expired` | 完成直传后重试确认 / 已超过截止时间，重新申请上传 |
+| 409 | `media_not_ready` / `media_in_use` | 媒体尚未通过校验 / 先解除文章或个人资料对该媒体的引用 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
 | 422 | `validation_error` | 按 `details` 中的字段与字段错误码修正输入；路径 ID 不是 UUIDv7 时 `field` 为 `id` |
+| 422 | `media_invalid` | 文件未通过校验，原因见媒体的 `rejection_reason`；重新申请上传 |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 | `internal_error` | 记录请求标识并排查服务依赖 |
+| 503 | `storage_unavailable` | 服务端未配置对象存储（仅开发环境），配置 `SILVA_STORAGE_*` 后重启 |
 
 响应头 `X-Request-Id` 是服务端生成的 UUIDv7，排障时提供它；错误正文不重复携带。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。
 

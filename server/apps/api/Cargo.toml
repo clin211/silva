@@ -22,7 +22,11 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 base64.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+image.workspace = true
 jsonwebtoken.workspace = true
 jsonschema = { version = "0.61.2", default-features = false }
 tower.workspace = true

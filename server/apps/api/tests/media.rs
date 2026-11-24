@@ -1,0 +1,769 @@
+//! 媒体上传的验收测试：真实 PostgreSQL、真实图片解码，对象存储使用内存实现。
+//! 通过 `cargo test -p silva-api --test media -- --ignored` 显式执行。
+mod support;
+
+use async_trait::async_trait;
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    extract::ConnectInfo,
+    http::{HeaderMap, Method, Request, StatusCode, header},
+};
+use serde_json::{Value, json};
+use silva_application::ports::{
+    MediaRepository, ObjectStorage, PresignedUpload, PutOutcome, StoredObject, StreamedObject,
+};
+use silva_shared::{
+    config::{Config, JwtSecret},
+    error::Result as AppResult,
+    ids,
+};
+use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    net::SocketAddr,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tower::ServiceExt;
+use uuid::Uuid;
+
+const PASSWORD: &str = "acceptance-password-2026";
+const JWT_SECRET: &[u8] = b"acceptance-jwt-secret-0123456789abcdef";
+const STORAGE_ORIGIN: &str = "https://storage.test/";
+
+/// 内存对象存储：签发的直传地址形如 `https://storage.test/<key>?signature=test`。
+/// 与真实存储一致，直传的字节数必须等于签名时绑定的长度。
+#[derive(Default)]
+struct MemoryStorage {
+    objects: Mutex<HashMap<String, Vec<u8>>>,
+    signed_lengths: Mutex<HashMap<String, u64>>,
+    /// 删除时总是失败的键，用于模拟存储故障。
+    failing_deletes: Mutex<Vec<String>>,
+}
+
+impl MemoryStorage {
+    /// 模拟浏览器按直传地址 PUT 文件；字节数与签名不符时返回 false 且不写入。
+    fn upload(&self, url: &str, bytes: &[u8]) -> bool {
+        let key = url
+            .strip_prefix(STORAGE_ORIGIN)
+            .and_then(|rest| rest.split('?').next())
+            .expect("直传地址指向测试存储");
+        if self.signed_lengths.lock().unwrap().get(key) != Some(&(bytes.len() as u64)) {
+            return false;
+        }
+        self.objects
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), bytes.to_vec());
+        true
+    }
+
+    fn keys(&self) -> Vec<String> {
+        let mut keys: Vec<_> = self.objects.lock().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+}
+
+#[async_trait]
+impl ObjectStorage for MemoryStorage {
+    async fn presign_put(
+        &self,
+        key: &str,
+        content_type: &str,
+        content_length: u64,
+        _expires_in: Duration,
+    ) -> AppResult<PresignedUpload> {
+        self.signed_lengths
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), content_length);
+        Ok(PresignedUpload {
+            method: "PUT".into(),
+            url: format!("{STORAGE_ORIGIN}{key}?signature=test"),
+            headers: vec![("content-type".into(), content_type.into())],
+        })
+    }
+
+    async fn read(&self, key: &str, max_bytes: u64) -> AppResult<StoredObject> {
+        Ok(match self.objects.lock().unwrap().get(key) {
+            None => StoredObject::Missing,
+            Some(bytes) if bytes.len() as u64 > max_bytes => StoredObject::TooLarge {
+                size: bytes.len() as u64,
+            },
+            Some(bytes) => StoredObject::Bytes(bytes.clone()),
+        })
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        _content_type: &str,
+    ) -> AppResult<PutOutcome> {
+        let mut objects = self.objects.lock().unwrap();
+        if objects.contains_key(key) {
+            return Ok(PutOutcome::AlreadyExists);
+        }
+        objects.insert(key.to_owned(), bytes);
+        Ok(PutOutcome::Created)
+    }
+
+    async fn stream(&self, key: &str, max_bytes: u64) -> AppResult<StreamedObject> {
+        Ok(match self.objects.lock().unwrap().get(key) {
+            None => StreamedObject::Missing,
+            Some(bytes) if bytes.len() as u64 > max_bytes => StreamedObject::TooLarge {
+                size: bytes.len() as u64,
+            },
+            // 分成两块传输，验证响应按流拼接。
+            Some(bytes) => {
+                let (head, tail) = bytes.split_at(bytes.len() / 2);
+                StreamedObject::Stream {
+                    size: bytes.len() as u64,
+                    body: Box::pin(futures_util::stream::iter([
+                        Ok(bytes::Bytes::copy_from_slice(head)),
+                        Ok(bytes::Bytes::copy_from_slice(tail)),
+                    ])),
+                }
+            }
+        })
+    }
+
+    async fn delete(&self, key: &str) -> AppResult<()> {
+        if self
+            .failing_deletes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|k| k == key)
+        {
+            return Err(silva_shared::error::AppError::Internal(anyhow_error()));
+        }
+        self.objects.lock().unwrap().remove(key);
+        Ok(())
+    }
+}
+
+fn anyhow_error() -> anyhow::Error {
+    anyhow::anyhow!("simulated storage delete failure")
+}
+
+struct Response {
+    status: StatusCode,
+    headers: HeaderMap,
+    bytes: Vec<u8>,
+    json: Value,
+}
+
+async fn request(
+    app: &Router,
+    method: Method,
+    path: &str,
+    body: Option<Value>,
+    token: &str,
+) -> Response {
+    let mut builder = Request::builder()
+        .method(method.clone())
+        .uri(path)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::USER_AGENT, "silva-media-acceptance/1.0")
+        .extension(ConnectInfo(
+            "192.0.2.10:40000".parse::<SocketAddr>().unwrap(),
+        ));
+    if body.is_some() {
+        builder = builder.header(header::CONTENT_TYPE, "application/json");
+    }
+    let body = body.map(|value| value.to_string()).unwrap_or_default();
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), 16 * 1024 * 1024)
+        .await
+        .unwrap()
+        .to_vec();
+    support::assert_response(&method, path, status, &headers, &bytes);
+    let is_json = headers
+        .get(header::CONTENT_TYPE)
+        .is_some_and(|value| value.to_str().unwrap().starts_with("application/json"));
+    let json = if is_json {
+        serde_json::from_slice(&bytes).unwrap()
+    } else {
+        Value::Null
+    };
+    Response {
+        status,
+        headers,
+        bytes,
+        json,
+    }
+}
+
+fn assert_error(response: &Response, status: StatusCode, code: &str) {
+    assert_eq!(response.status, status, "{}", response.json);
+    assert_eq!(response.json["error"]["code"], code, "{}", response.json);
+}
+
+async fn login(app: &Router, email: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/admin/sessions")
+                .header(header::CONTENT_TYPE, "application/json")
+                .extension(ConnectInfo(
+                    "192.0.2.10:40000".parse::<SocketAddr>().unwrap(),
+                ))
+                .body(Body::from(
+                    json!({"email": email, "password": PASSWORD}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 64 * 1024).await.unwrap()).unwrap();
+    body["data"]["access_token"].as_str().unwrap().to_owned()
+}
+
+fn encode(width: u32, height: u32, format: image::ImageFormat) -> Vec<u8> {
+    let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+        width,
+        height,
+        image::Rgb([30, 120, 200]),
+    ));
+    let mut bytes = Cursor::new(Vec::new());
+    image.write_to(&mut bytes, format).unwrap();
+    bytes.into_inner()
+}
+
+fn config(database_url: String) -> Config {
+    Config {
+        database_url,
+        bind: "127.0.0.1:0".parse().unwrap(),
+        production: false,
+        jwt_secret: Some(JwtSecret::new(JWT_SECRET)),
+        db_max_connections: 5,
+        access_token_ttl: Duration::from_secs(900),
+        refresh_token_ttl: Duration::from_secs(3600),
+        worker_interval: Duration::from_secs(60),
+        api_rate_per_minute: 10_000,
+        login_rate_per_minute: 1000,
+        login_lockout_threshold: 1000,
+        login_lockout_duration: Duration::from_secs(900),
+        storage: None,
+        media_upload_ttl: Duration::from_secs(900),
+    }
+}
+
+/// 申请上传并返回（媒体 ID、直传地址、完整响应）。
+async fn create(
+    app: &Router,
+    token: &str,
+    filename: &str,
+    mime: &str,
+    size: usize,
+) -> (Uuid, String, Response) {
+    let response = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/media",
+        Some(json!({"filename": filename, "declared_mime_type": mime, "size_bytes": size})),
+        token,
+    )
+    .await;
+    assert_eq!(response.status, StatusCode::CREATED, "{}", response.json);
+    let data = &response.json["data"];
+    let id: Uuid = data["media"]["id"].as_str().unwrap().parse().unwrap();
+    let url = data["upload"]["url"].as_str().unwrap().to_owned();
+    (id, url, response)
+}
+
+async fn confirm(app: &Router, token: &str, id: Uuid) -> Response {
+    request(
+        app,
+        Method::PATCH,
+        &format!("/api/v1/admin/media/{id}"),
+        Some(json!({"status": "uploaded"})),
+        token,
+    )
+    .await
+}
+
+#[tokio::test]
+#[ignore = "需要通过 SILVA_TEST_DATABASE_URL 连接 PostgreSQL，且账户具备 CREATEDB 权限"]
+async fn media_upload_lifecycle() {
+    let database_url = std::env::var("SILVA_TEST_DATABASE_URL")
+        .expect("set SILVA_TEST_DATABASE_URL; real PostgreSQL tests never silently skip");
+    let options = PgConnectOptions::from_str(&database_url).unwrap();
+    let mut admin = PgConnection::connect_with(&options).await.unwrap();
+    let database_name = format!("silva_media_{}", ids::new_id().simple());
+    sqlx::query(&format!("CREATE DATABASE \"{database_name}\""))
+        .execute(&mut admin)
+        .await
+        .unwrap();
+    let pool = PgPool::connect_with(options.database(&database_name))
+        .await
+        .unwrap();
+    // 迁移后先在任务外执行 schema 校验（返回 Result，不会 panic），再在任务中运行断言；
+    // 清理逻辑放在任务外，确保断言失败后仍会删除隔离测试库。
+    let schema = match silva_infrastructure::persistence::migrate(&pool).await {
+        Ok(()) => silva_infrastructure::persistence::check_schema(&pool).await,
+        Err(error) => Err(error),
+    };
+    let test_pool = pool.clone();
+    let result = match &schema {
+        Ok(()) => Some(tokio::spawn(async move { run(&test_pool, database_url).await }).await),
+        Err(_) => None,
+    };
+    pool.close().await;
+    sqlx::query(&format!("DROP DATABASE \"{database_name}\" WITH (FORCE)"))
+        .execute(&mut admin)
+        .await
+        .unwrap();
+    schema.expect("migrations or schema invariants failed");
+    result.unwrap().expect("media acceptance assertions failed");
+}
+
+async fn run(pool: &PgPool, database_url: String) {
+    let tokens = silva_infrastructure::TokenSettings {
+        secret: JwtSecret::new(JWT_SECRET),
+        access_ttl: Duration::from_secs(900),
+        refresh_ttl: Duration::from_secs(3600),
+    };
+    let identity = silva_infrastructure::identity_service(pool.clone(), &tokens)
+        .await
+        .unwrap();
+    for (email, role) in [
+        ("author@example.test", "author"),
+        ("other@example.test", "author"),
+        ("editor@example.test", "editor"),
+    ] {
+        identity
+            .provision_user(
+                email.into(),
+                role.into(),
+                PASSWORD.into(),
+                vec![role.into()],
+            )
+            .await
+            .unwrap();
+    }
+    let storage = Arc::new(MemoryStorage::default());
+    let app = silva_api::build_router_with_storage(
+        config(database_url.clone()),
+        pool.clone(),
+        Some(storage.clone()),
+    )
+    .await
+    .unwrap();
+    let author = login(&app, "author@example.test").await;
+    let other = login(&app, "other@example.test").await;
+    let editor = login(&app, "editor@example.test").await;
+
+    // 申请直传：201、Location、直传说明指向临时键；未上传前确认返回 409。
+    let png = encode(40, 30, image::ImageFormat::Png);
+    let (id, url, created) = create(&app, &author, " cover.png ", "image/png", png.len()).await;
+    assert_eq!(
+        created.headers[header::LOCATION],
+        format!("/api/v1/admin/media/{id}").as_str()
+    );
+    let data = &created.json["data"];
+    assert_eq!(data["media"]["status"], "pending");
+    assert_eq!(data["media"]["original_filename"], "cover.png");
+    assert_eq!(data["upload"]["method"], "PUT");
+    assert_eq!(data["upload"]["headers"]["content-type"], "image/png");
+    assert_eq!(
+        data["upload"]["expires_at"],
+        data["media"]["upload_expires_at"]
+    );
+    assert!(url.contains(&format!("uploads/{id}")));
+    assert_error(
+        &confirm(&app, &author, id).await,
+        StatusCode::CONFLICT,
+        "upload_incomplete",
+    );
+
+    // 上传合法 PNG 后确认：写入正式对象、删除临时对象，重复确认返回同一结果。
+    assert!(
+        !storage.upload(&url, &[png.as_slice(), &[0; 16]].concat()),
+        "大小与签名不符的直传被拒绝"
+    );
+    assert!(storage.upload(&url, &png));
+    let confirmed = request(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/admin/media/{id}"),
+        Some(json!({"status": "uploaded", "alt_text": "  热气球封面 "})),
+        &author,
+    )
+    .await;
+    assert_eq!(confirmed.status, StatusCode::OK, "{}", confirmed.json);
+    let media = &confirmed.json["data"];
+    assert_eq!(media["status"], "ready");
+    assert_eq!(media["mime_type"], "image/png");
+    assert_eq!(media["size_bytes"], png.len());
+    assert_eq!(
+        (media["width"].clone(), media["height"].clone()),
+        (json!(40), json!(30))
+    );
+    assert_eq!(media["alt_text"], "热气球封面");
+    assert_eq!(storage.keys(), [format!("media/{id}")]);
+    let again = confirm(&app, &author, id).await;
+    assert_eq!(again.status, StatusCode::OK);
+    assert_eq!(again.json["data"]["size_bytes"], png.len());
+
+    // 授权读取内容：原始字节、实际类型、不缓存并带沙箱 CSP。
+    let content = request(
+        &app,
+        Method::GET,
+        &format!("/api/v1/admin/media/{id}/content"),
+        None,
+        &author,
+    )
+    .await;
+    assert_eq!(content.status, StatusCode::OK);
+    assert_eq!(content.bytes, png);
+    assert_eq!(
+        content.headers[header::CONTENT_LENGTH],
+        png.len().to_string().as_str()
+    );
+    assert_eq!(content.headers[header::CONTENT_TYPE], "image/png");
+    assert_eq!(content.headers[header::CACHE_CONTROL], "no-store");
+    assert_eq!(
+        content.headers[header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; sandbox"
+    );
+
+    // 归属：其他作者看不到，编辑可以看到全部。
+    for (method, path) in [
+        (Method::GET, format!("/api/v1/admin/media/{id}")),
+        (Method::GET, format!("/api/v1/admin/media/{id}/content")),
+        (Method::DELETE, format!("/api/v1/admin/media/{id}")),
+    ] {
+        assert_error(
+            &request(&app, method, &path, None, &other).await,
+            StatusCode::NOT_FOUND,
+            "not_found",
+        );
+    }
+    let listed = request(&app, Method::GET, "/api/v1/admin/media", None, &other).await;
+    assert_eq!(listed.json["meta"]["pagination"]["total"], 0);
+    let listed = request(
+        &app,
+        Method::GET,
+        "/api/v1/admin/media?status=ready",
+        None,
+        &editor,
+    )
+    .await;
+    assert_eq!(listed.json["data"][0]["id"], id.to_string());
+
+    // 按实际字节识别类型：声明 JPEG、实际 WebP 时以 WebP 记录。
+    let webp = encode(8, 8, image::ImageFormat::WebP);
+    let (webp_id, webp_url, _) = create(&app, &other, "photo.jpg", "image/jpeg", webp.len()).await;
+    assert!(storage.upload(&webp_url, &webp));
+    let webp = confirm(&app, &other, webp_id).await;
+    assert_eq!(webp.json["data"]["mime_type"], "image/webp");
+    assert_eq!(webp.json["data"]["declared_mime_type"], "image/jpeg");
+
+    // 不合格文件：422 media_invalid，记录变为 rejected，重复确认返回同一错误，内容不可读。
+    let gif = b"GIF89a\x01\x00\x01\x00\x00\x00\x00;";
+    let (bad_id, bad_url, _) = create(&app, &author, "anim.gif", "image/png", gif.len()).await;
+    assert!(storage.upload(&bad_url, gif));
+    for _ in 0..2 {
+        let rejected = confirm(&app, &author, bad_id).await;
+        assert_error(&rejected, StatusCode::UNPROCESSABLE_ENTITY, "media_invalid");
+        assert!(
+            rejected.json["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("unsupported_format")
+        );
+    }
+    let detail = request(
+        &app,
+        Method::GET,
+        &format!("/api/v1/admin/media/{bad_id}"),
+        None,
+        &author,
+    )
+    .await;
+    assert_eq!(detail.json["data"]["status"], "rejected");
+    assert_eq!(
+        detail.json["data"]["rejection_reason"],
+        "unsupported_format"
+    );
+    assert_error(
+        &request(
+            &app,
+            Method::GET,
+            &format!("/api/v1/admin/media/{bad_id}/content"),
+            None,
+            &author,
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "media_not_ready",
+    );
+    assert!(!storage.keys().contains(&format!("uploads/{bad_id}")));
+
+    // 过期后确认返回 409 upload_expired，记录保持 pending。
+    let (late_id, late_url, _) = create(&app, &author, "late.png", "image/png", png.len()).await;
+    assert!(storage.upload(&late_url, &png));
+    sqlx::query(
+        "UPDATE media_assets SET upload_expires_at = now() - interval '1 second' WHERE id = $1",
+    )
+    .bind(late_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_error(
+        &confirm(&app, &author, late_id).await,
+        StatusCode::CONFLICT,
+        "upload_expired",
+    );
+
+    // 输入校验。
+    let invalid = request(
+        &app,
+        Method::POST,
+        "/api/v1/admin/media",
+        Some(json!({"filename": "a.svg", "declared_mime_type": "image/svg+xml", "size_bytes": 10_485_761})),
+        &author,
+    )
+    .await;
+    assert_error(
+        &invalid,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "validation_error",
+    );
+    assert_eq!(
+        invalid.json["error"]["details"].as_array().unwrap().len(),
+        2
+    );
+
+    // 被个人资料或文章修订引用时不能删除；解除引用后删除记录和正式对象。
+    sqlx::query(
+        "INSERT INTO profiles (id, display_name, avatar_media_id) VALUES ($1, 'Owner', $2)",
+    )
+    .bind(ids::new_id())
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let path = format!("/api/v1/admin/media/{id}");
+    assert_error(
+        &request(&app, Method::DELETE, &path, None, &author).await,
+        StatusCode::CONFLICT,
+        "media_in_use",
+    );
+    sqlx::query("DELETE FROM profiles")
+        .execute(pool)
+        .await
+        .unwrap();
+    let (post_id, revision_id) = (ids::new_id(), ids::new_id());
+    // 文章与首条修订互相引用，用单条语句在同一事务内写入。
+    sqlx::query(
+        "WITH post AS (INSERT INTO posts (id, slug, current_revision_id) VALUES ($1, 'media-probe', $2)) \
+         INSERT INTO post_revisions (id, post_id, revision_no, title, markdown_body, cover_media_id) \
+         VALUES ($2, $1, 1, 'Probe', '# Probe', $3)",
+    )
+    .bind(post_id)
+    .bind(revision_id)
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_error(
+        &request(&app, Method::DELETE, &path, None, &editor).await,
+        StatusCode::CONFLICT,
+        "media_in_use",
+    );
+    sqlx::query("DELETE FROM posts")
+        .execute(pool)
+        .await
+        .unwrap();
+    let deleted = request(&app, Method::DELETE, &path, None, &author).await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT);
+    assert!(!storage.keys().contains(&format!("media/{id}")));
+    assert_error(
+        &request(&app, Method::GET, &path, None, &author).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+
+    // 审计：媒体操作记录为 resource_type=media。
+    let actions: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_logs WHERE resource_type='media' AND resource_id=$1 ORDER BY created_at, id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        actions,
+        [
+            "media.create",
+            "media.ready",
+            "media.update",
+            "media.delete"
+        ]
+    );
+    let rejected: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_logs WHERE action='media.rejected' AND resource_id=$1 AND metadata->>'reason'='unsupported_format'",
+    )
+    .bind(bad_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(rejected, 1, "重复确认不重复审计");
+
+    // Worker 清理：过期 pending 在宽限期后删除记录和临时对象，ready 保留。
+    let media = silva_infrastructure::media_service(
+        pool.clone(),
+        Some(storage.clone()),
+        &config(database_url.clone()),
+    );
+    let purged = media
+        .purge_stale(chrono::Utc::now() + chrono::Duration::hours(2))
+        .await
+        .unwrap();
+    assert_eq!((purged.purged, purged.failed), (1, 0));
+    let remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM media_assets ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(!remaining.contains(&late_id));
+    assert!(remaining.contains(&webp_id) && remaining.contains(&bad_id));
+    assert!(!storage.keys().contains(&format!("uploads/{late_id}")));
+
+    // 已拒绝记录按拒绝时间计算保留期：修改替代文本刷新 updated_at，但 7 天后仍被清理。
+    let edited = request(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/admin/media/{bad_id}"),
+        Some(json!({"alt_text": "动图"})),
+        &author,
+    )
+    .await;
+    assert_eq!(edited.status, StatusCode::OK);
+    let (rejected_at, updated_at): (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) =
+        sqlx::query_as("SELECT rejected_at, updated_at FROM media_assets WHERE id = $1")
+            .bind(bad_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(updated_at > rejected_at);
+    let purged = media
+        .purge_stale(chrono::Utc::now() + chrono::Duration::days(8))
+        .await
+        .unwrap();
+    assert_eq!((purged.purged, purged.failed), (1, 0));
+    let remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM media_assets")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, [webp_id], "ready 媒体不受清理影响");
+
+    // 单条清理失败不中断整批，失败记录排到后面；仍被引用的过期记录不清理。
+    let mut expired = Vec::new();
+    for name in ["a.png", "b.png", "c.png"] {
+        let (id, _, _) = create(&app, &author, name, "image/png", png.len()).await;
+        expired.push(id);
+    }
+    sqlx::query(
+        "UPDATE media_assets SET upload_expires_at = now() - interval '2 hours' WHERE id = ANY($1)",
+    )
+    .bind(&expired)
+    .execute(pool)
+    .await
+    .unwrap();
+    let (failing, referenced, normal) = (expired[0], expired[1], expired[2]);
+    storage
+        .failing_deletes
+        .lock()
+        .unwrap()
+        .push(format!("uploads/{failing}"));
+    sqlx::query(
+        "INSERT INTO profiles (id, display_name, avatar_media_id) VALUES ($1, 'Owner', $2)",
+    )
+    .bind(ids::new_id())
+    .bind(referenced)
+    .execute(pool)
+    .await
+    .unwrap();
+    let report = media.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert_eq!((report.purged, report.failed), (1, 1));
+    let remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM media_assets")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    assert!(remaining.contains(&failing) && remaining.contains(&referenced));
+    assert!(!remaining.contains(&normal));
+    let attempted: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT purge_attempted_at FROM media_assets WHERE id = $1")
+            .bind(failing)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(attempted.is_some(), "失败的记录被标记");
+    let (later, _, _) = create(&app, &author, "d.png", "image/png", png.len()).await;
+    sqlx::query(
+        "UPDATE media_assets SET upload_expires_at = now() - interval '2 hours' WHERE id = $1",
+    )
+    .bind(later)
+    .execute(pool)
+    .await
+    .unwrap();
+    let order: Vec<Uuid> = silva_infrastructure::media::PgMediaRepository::new(pool.clone())
+        .stale(chrono::Utc::now(), chrono::Utc::now(), 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|media| media.id)
+        .collect();
+    assert_eq!(order, [later, failing], "被引用的不返回，失败过的排在后面");
+    sqlx::query("DELETE FROM profiles")
+        .execute(pool)
+        .await
+        .unwrap();
+
+    // 未配置存储：申请上传返回 503，列表仍可读取。
+    let unconfigured =
+        silva_api::build_router_with_storage(config(database_url), pool.clone(), None)
+            .await
+            .unwrap();
+    assert_error(
+        &request(
+            &unconfigured,
+            Method::POST,
+            "/api/v1/admin/media",
+            Some(json!({"filename": "a.png", "declared_mime_type": "image/png", "size_bytes": 1})),
+            &author,
+        )
+        .await,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "storage_unavailable",
+    );
+    assert_eq!(
+        request(
+            &unconfigured,
+            Method::GET,
+            "/api/v1/admin/media",
+            None,
+            &author
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+}

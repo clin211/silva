@@ -36,11 +36,11 @@ use uuid::Uuid;
 
 /// 需要校验密码的入口共用登录额度，防止借修改密码接口暴力猜测当前密码。
 const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/sessions", "/api/v1/admin/users/me/password"];
-type HttpResult<T> = Result<T, ApiError>;
+pub(crate) type HttpResult<T> = Result<T, ApiError>;
 
 /// JSON 请求体提取器：语法错误返回 400 `malformed_json`；类型、缺失或未知字段返回
 /// 422 `validation_error`，并在 `details` 中给出字段路径。
-pub(crate) struct Input<T>(T);
+pub(crate) struct Input<T>(pub T);
 impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Input<T> {
     type Rejection = ApiError;
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
@@ -129,7 +129,7 @@ fn json_field_error(path: &str, message: &str) -> FieldError {
 }
 
 /// 读取查询字符串的全部键值对；编码无效时返回 422 `invalid_format`。
-async fn query_pairs<S: Send + Sync>(
+pub(crate) async fn query_pairs<S: Send + Sync>(
     parts: &mut Parts,
     state: &S,
 ) -> HttpResult<Vec<(String, String)>> {
@@ -145,7 +145,7 @@ async fn query_pairs<S: Send + Sync>(
     Ok(pairs)
 }
 
-fn duplicate_parameter(key: &str) -> FieldError {
+pub(crate) fn duplicate_parameter(key: &str) -> FieldError {
     FieldError::new(
         key.to_owned(),
         FieldErrorCode::Duplicate,
@@ -154,7 +154,7 @@ fn duplicate_parameter(key: &str) -> FieldError {
 }
 
 /// 从查询参数中解析 `page`、`per_page`，字段错误追加到 `errors`；其他参数忽略。
-fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageRequest {
+pub(crate) fn parse_page(pairs: &[(String, String)], errors: &mut Vec<FieldError>) -> PageRequest {
     let mut page = PageRequest::default();
     let mut seen = [false; 2];
     for (key, value) in pairs {
@@ -323,7 +323,7 @@ fn parse_uuid(field: &'static str, value: &str) -> Result<Uuid, FieldError> {
 pub(crate) struct RequestId(pub Uuid);
 
 /// 审计用的请求来源：直连 peer IP、User-Agent 与请求 ID；不信任客户端提供的转发头。
-pub(crate) struct ClientMeta(RequestMeta);
+pub(crate) struct ClientMeta(pub RequestMeta);
 impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
     type Rejection = std::convert::Infallible;
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
@@ -347,7 +347,7 @@ impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
     }
 }
 
-pub(crate) struct IdPath(EntityId);
+pub(crate) struct IdPath(pub EntityId);
 impl<S: Send + Sync> FromRequestParts<S> for IdPath {
     type Rejection = ApiError;
     async fn from_request_parts(parts: &mut Parts, state: &S) -> HttpResult<Self> {
@@ -541,7 +541,7 @@ fn bearer_token(headers: &HeaderMap) -> HttpResult<&str> {
 }
 
 /// 校验 access token 并按其会话读取当前账户、角色与权限。
-async fn authorize(state: &AppState, headers: &HeaderMap) -> HttpResult<Principal> {
+pub(crate) async fn authorize(state: &AppState, headers: &HeaderMap) -> HttpResult<Principal> {
     let token = bearer_token(headers)?;
     Ok(state.identity.authenticate(token).await?)
 }

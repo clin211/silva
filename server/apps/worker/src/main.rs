@@ -1,7 +1,12 @@
 use axum::{Router, routing::get};
 use clap::Parser;
-use silva_infrastructure::persistence;
-use silva_shared::{config::Config, metrics::METRICS, shutdown_signal, telemetry};
+use silva_application::media::MediaService;
+use silva_infrastructure::{media_service, object_storage, persistence};
+use silva_shared::{
+    config::Config,
+    metrics::{METRICS, WorkerRun},
+    shutdown_signal, telemetry,
+};
 use std::{
     future::IntoFuture,
     net::SocketAddr,
@@ -10,7 +15,7 @@ use std::{
 
 #[derive(Parser)]
 struct Args {
-    /// 执行一次会话维护后退出，不启动指标监听。
+    /// 执行一次会话与媒体维护后退出，不启动指标监听。
     #[arg(long)]
     once: bool,
 }
@@ -34,11 +39,16 @@ async fn run(config: Config, once: bool) -> anyhow::Result<()> {
 
 async fn serve(pool: &sqlx::PgPool, config: &Config, once: bool) -> anyhow::Result<()> {
     persistence::ready(pool).await?;
+    let storage = object_storage(config)?;
+    if storage.is_none() {
+        tracing::warn!("object storage is not configured; stale media cleanup is skipped");
+    }
+    let media = media_service(pool.clone(), storage, config);
     METRICS
         .worker_interval
         .set(config.worker_interval.as_secs() as i64);
     if once {
-        maintain(pool).await?;
+        maintain(pool, &media).await?;
     } else {
         let bind: SocketAddr = std::env::var("SILVA_WORKER_METRICS_BIND")
             .unwrap_or_else(|_| "127.0.0.1:9091".into())
@@ -76,7 +86,7 @@ async fn serve(pool: &sqlx::PgPool, config: &Config, once: bool) -> anyhow::Resu
         let maintenance = async {
             tokio::select! {
                 () = pool.close_event() => {},
-                never = maintain_periodically(pool, config.worker_interval) => never,
+                never = maintain_periodically(pool, &media, config.worker_interval) => never,
             }
         };
         let (result, ()) = tokio::join!(serving, maintenance);
@@ -85,36 +95,63 @@ async fn serve(pool: &sqlx::PgPool, config: &Config, once: bool) -> anyhow::Resu
     Ok(())
 }
 
-async fn maintain_periodically(pool: &sqlx::PgPool, interval: Duration) -> ! {
+async fn maintain_periodically(pool: &sqlx::PgPool, media: &MediaService, interval: Duration) -> ! {
     let mut tick = tokio::time::interval(interval);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tick.tick().await;
-        if let Err(error) = maintain(pool).await {
+        if let Err(error) = maintain(pool, media).await {
             tracing::warn!(%error, "worker maintenance will retry next interval");
         }
     }
 }
 
-#[tracing::instrument(name = "worker.maintain_sessions", skip_all, fields(trace_id = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
-async fn maintain(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+/// 清理过期会话，并清理过期未确认与保留期已满的已拒绝媒体。两项任务互不阻塞，分别记录结果；
+/// 任一失败时本轮记为失败，日志和 `silva_worker_task_failures_total` 标明失败的任务。
+#[tracing::instrument(name = "worker.maintain", skip_all, fields(trace_id = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+async fn maintain(pool: &sqlx::PgPool, media: &MediaService) -> anyhow::Result<()> {
     let trace_id = telemetry::trace_id(&tracing::Span::current());
     tracing::Span::current().record("trace_id", &trace_id);
     let started = Instant::now();
-    let result = persistence::maintain_sessions(pool).await;
+    let sessions = persistence::maintain_sessions(pool).await;
+    let purged = media
+        .purge_stale(chrono::Utc::now())
+        .await
+        .map_err(anyhow::Error::from);
     METRICS.record_worker(
-        result.is_ok(),
         started.elapsed().as_secs_f64(),
-        result.as_ref().copied().unwrap_or(0),
+        &WorkerRun {
+            deleted_sessions: sessions.as_ref().ok().copied(),
+            purged_media: purged.as_ref().ok().map(|report| report.purged),
+            failed_media: purged.as_ref().map_or(0, |report| report.failed),
+        },
     );
-    match result {
-        Ok(deleted) => {
-            tracing::info!(deleted_sessions = deleted, "worker maintenance complete");
+    if let Err(error) = &sessions {
+        tracing::error!(task = "sessions", %error, "worker session maintenance failed");
+    }
+    if let Err(error) = &purged {
+        tracing::error!(task = "media", %error, "worker media cleanup failed");
+    }
+    match (sessions, purged) {
+        (Ok(deleted), Ok(report)) if report.failed == 0 => {
+            tracing::info!(
+                deleted_sessions = deleted,
+                purged_media = report.purged,
+                "worker maintenance complete"
+            );
             Ok(())
         }
-        Err(error) => {
+        // 单条媒体清理失败已逐条记录日志，这些记录排到后续批次末尾。
+        (Ok(_), Ok(report)) => {
             tracing::Span::current().record("otel.status_code", "ERROR");
-            tracing::error!(%error, "worker maintenance failed");
+            Err(anyhow::anyhow!(
+                "{} stale media records could not be cleaned up; {} purged",
+                report.failed,
+                report.purged
+            ))
+        }
+        (Err(error), _) | (_, Err(error)) => {
+            tracing::Span::current().record("otel.status_code", "ERROR");
             Err(error)
         }
     }
