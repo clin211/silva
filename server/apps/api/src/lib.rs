@@ -56,12 +56,13 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
         .route("/api/v1/admin/auth/login", post(http::login))
         .route("/api/v1/admin/auth/refresh", post(http::refresh))
         .route("/api/v1/admin/auth/logout", post(http::logout))
-        .route("/api/v1/admin/auth/me", get(http::me))
         .route("/api/v1/admin/auth/password", post(http::change_password))
         .route(
             "/api/v1/admin/users",
             get(http::users).post(http::create_user),
         )
+        // 静态路径优先于 `{id}` 参数匹配。
+        .route("/api/v1/admin/users/info", get(http::user_info))
         .route(
             "/api/v1/admin/users/{id}",
             get(http::user).patch(http::update_user),

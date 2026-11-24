@@ -51,9 +51,12 @@ pub struct User {
     pub display_name: String,
     pub status: String,
     pub roles: Vec<String>,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
     pub updated_at: DateTime<Utc>,
     /// 最近一次登录成功的时间；从未登录时为 None，序列化为 null。
+    #[serde(serialize_with = "silva_shared::time::serialize_option")]
     pub last_login_at: Option<DateTime<Utc>>,
 }
 
@@ -120,6 +123,7 @@ pub struct AuditLog {
     pub user_agent: Option<String>,
     /// 非敏感的附加信息，例如变更字段名。
     pub metadata: serde_json::Value,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
 }
 

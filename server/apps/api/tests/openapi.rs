@@ -93,10 +93,10 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/auth/login", "post"),
         ("/api/v1/admin/auth/refresh", "post"),
         ("/api/v1/admin/auth/logout", "post"),
-        ("/api/v1/admin/auth/me", "get"),
         ("/api/v1/admin/auth/password", "post"),
         ("/api/v1/admin/users", "get"),
         ("/api/v1/admin/users", "post"),
+        ("/api/v1/admin/users/info", "get"),
         ("/api/v1/admin/users/{id}", "get"),
         ("/api/v1/admin/users/{id}", "patch"),
         ("/api/v1/admin/roles", "get"),
@@ -779,41 +779,89 @@ fn request_id_is_header_only_and_session_cookie_csrf_origin_are_gone() {
     }
 }
 
-/// 登录与刷新返回的令牌字段与运行时一致。
+/// 登录与刷新只返回两个令牌及其 UTC 过期时间；账户详情由 `GET /users/info` 提供。
 #[test]
-fn token_responses_declare_every_token_field() {
+fn token_responses_declare_only_tokens_and_expiry() {
     let spec = contract();
     let schemas = &spec["components"]["schemas"];
-    let fields = serde_json::json!([
-        "access_token",
-        "refresh_token",
-        "token_type",
-        "expires_in",
-        "refresh_expires_in"
-    ]);
-    assert_eq!(schemas["TokenPair"]["required"], fields);
     assert_eq!(
-        schemas["TokenPair"]["properties"]["token_type"]["const"],
-        "Bearer"
+        schemas["TokenPair"]["required"],
+        serde_json::json!([
+            "access_token",
+            "refresh_token",
+            "access_token_expires_at",
+            "refresh_token_expires_at"
+        ])
     );
+    assert_eq!(schemas["TokenPair"]["additionalProperties"], false);
+    for field in ["access_token_expires_at", "refresh_token_expires_at"] {
+        assert_eq!(
+            schemas["TokenPair"]["properties"][field]["format"],
+            "date-time"
+        );
+    }
+    let pair = support::validator(&schemas["TokenPair"]);
+    let mut example = schemas["TokenResponse"]["examples"][0]["data"].clone();
+    assert!(pair.is_valid(&example));
+    example["user"] = serde_json::json!({});
+    assert!(!pair.is_valid(&example), "令牌响应不允许携带账户信息");
     assert_eq!(
         schemas["RefreshInput"]["required"],
         serde_json::json!(["refresh_token"])
     );
     assert_eq!(schemas["RefreshInput"]["additionalProperties"], false);
-    let login = support::validator(&schemas["LoginSession"]);
-    let mut example = schemas["LoginSession"]["examples"][0].clone();
-    assert!(login.is_valid(&example));
-    example["unexpected"] = serde_json::json!(true);
-    assert!(!login.is_valid(&example), "登录结果不允许额外字段");
-    for (path, schema) in [
-        ("/api/v1/admin/auth/login", "LoginResponse"),
-        ("/api/v1/admin/auth/refresh", "TokenResponse"),
-    ] {
+    for path in ["/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh"] {
         assert_eq!(
             spec["paths"][path]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
                 ["$ref"],
-            format!("#/components/schemas/{schema}")
+            "#/components/schemas/TokenResponse"
         );
     }
+    // 当前账户详情：账户字段加权限，任何有效会话都可读取。
+    let info = &spec["paths"]["/api/v1/admin/users/info"]["get"];
+    assert!(info.get("x-required-permission").is_none());
+    assert_eq!(
+        info["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/UserInfoResponse"
+    );
+    let required = schemas["UserInfo"]["required"].as_array().unwrap();
+    for field in ["id", "email", "roles", "last_login_at", "permissions"] {
+        assert!(required.iter().any(|value| value == field), "{field}");
+    }
+    assert!(spec["paths"].get("/api/v1/admin/auth/me").is_none());
+}
+
+/// 响应中的时间统一为北京时间并带显式偏移；契约中的响应示例必须与之一致。
+#[test]
+fn response_example_timestamps_use_beijing_offset() {
+    fn walk(value: &Value, path: &str, found: &mut Vec<String>) {
+        match value {
+            Value::String(text) => {
+                let looks_like_time = text.len() >= 20
+                    && text.as_bytes().get(10) == Some(&b'T')
+                    && chrono::DateTime::parse_from_rfc3339(text).is_ok();
+                if looks_like_time && !text.ends_with("+08:00") {
+                    found.push(format!("{path}: {text}"));
+                }
+            }
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    walk(item, &format!("{path}[{index}]"), found);
+                }
+            }
+            Value::Object(map) => {
+                for (key, item) in map {
+                    walk(item, &format!("{path}.{key}"), found);
+                }
+            }
+            _ => {}
+        }
+    }
+    let spec = contract();
+    let mut found = Vec::new();
+    // 请求参数可以使用任意偏移，只检查路径（响应示例）与 Schema 示例。
+    walk(&spec["paths"], "paths", &mut found);
+    walk(&spec["components"]["schemas"], "schemas", &mut found);
+    walk(&spec["components"]["responses"], "responses", &mut found);
+    assert!(found.is_empty(), "以下示例时间不是 +08:00：{found:#?}");
 }

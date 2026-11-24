@@ -147,20 +147,56 @@ fn assert_unauthorized(response: &Response) {
     assert_error(response, StatusCode::UNAUTHORIZED, "unauthorized");
 }
 
-/// 校验令牌对字段并返回 (access_token, refresh_token)。
-fn token_pair(data: &Value, access_ttl: u64) -> (String, String) {
-    assert_eq!(data["token_type"], "Bearer", "{data}");
-    assert_eq!(data["expires_in"], access_ttl, "{data}");
-    assert_eq!(data["refresh_expires_in"], 3600, "{data}");
+/// 解析 `*_expires_at`：必须是带 `+08:00` 偏移、精确到秒的 RFC 3339 时间。
+fn expires_at(data: &Value, field: &str) -> chrono::DateTime<chrono::Utc> {
+    let text = data[field]
+        .as_str()
+        .unwrap_or_else(|| panic!("{field} 应为字符串：{data}"));
+    assert!(text.ends_with("+08:00"), "{field} 应为北京时间：{text}");
+    let parsed = chrono::DateTime::parse_from_rfc3339(text)
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    assert_eq!(parsed.timestamp_subsec_nanos(), 0, "{field} 应精确到秒");
+    parsed
+}
+
+/// 校验令牌对字段并返回 (access_token, refresh_token)：正文只含两个令牌及其过期时间，
+/// 过期时间与令牌中的 `exp` 声明一致。
+fn token_pair(data: &Value, access_ttl: i64) -> (String, String) {
+    let mut keys: Vec<_> = data.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "access_token",
+            "access_token_expires_at",
+            "refresh_token",
+            "refresh_token_expires_at"
+        ],
+        "{data}"
+    );
+    let access_expires = expires_at(data, "access_token_expires_at");
+    let refresh_expires = expires_at(data, "refresh_token_expires_at");
+    let now = chrono::Utc::now().timestamp();
+    assert!(
+        (access_expires.timestamp() - now - access_ttl).abs() <= 2,
+        "{data}"
+    );
+    assert!(
+        (refresh_expires.timestamp() - now - 3600).abs() <= 2,
+        "{data}"
+    );
     let access = data["access_token"].as_str().unwrap().to_owned();
     let refresh = data["refresh_token"].as_str().unwrap().to_owned();
     assert_eq!(access.split('.').count(), 3, "access token 应为 JWT");
     assert_eq!(refresh.split('.').count(), 3, "refresh token 应为 JWT");
     assert_ne!(access, refresh);
+    assert_eq!(jwt_payload(&access)["exp"], access_expires.timestamp());
+    assert_eq!(jwt_payload(&refresh)["exp"], refresh_expires.timestamp());
     (access, refresh)
 }
 
-/// 登录并返回 (access_token, refresh_token, 正文 data)。
+/// 登录并返回 (access_token, refresh_token, 当前账户详情)；账户详情来自登录后的 `GET /users/info`。
 async fn login(app: &Router, email: &str) -> (String, String, Value) {
     let response = request(
         app,
@@ -173,11 +209,17 @@ async fn login(app: &Router, email: &str) -> (String, String, Value) {
     assert_eq!(response.status, StatusCode::OK, "{}", response.json);
     assert_eq!(response.headers[header::CACHE_CONTROL], "no-store");
     assert!(response.headers.get(header::SET_COOKIE).is_none());
-    let session = response.json["data"].clone();
-    let (access, refresh) = token_pair(&session, 900);
-    assert!(session["user"]["id"].is_string());
-    assert!(session["permissions"].is_array());
-    (access, refresh, session)
+    let (access, refresh) = token_pair(&response.json["data"], 900);
+    let info = me(app, &access).await;
+    assert_eq!(info.status, StatusCode::OK, "{}", info.json);
+    let info = info.json["data"].clone();
+    assert!(info["id"].is_string());
+    assert!(info["roles"].is_array());
+    assert!(info["permissions"].is_array());
+    for field in ["created_at", "updated_at", "last_login_at"] {
+        assert_timestamp(&info[field]);
+    }
+    (access, refresh, info)
 }
 
 /// 调用刷新接口。
@@ -196,7 +238,7 @@ async fn me(app: &Router, access: &str) -> Response {
     request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(access),
     )
@@ -406,7 +448,7 @@ async fn run_token_validation(app: &Router, access: &str, refresh_token: &str, c
     // 重复的 Authorization 请求头即使都有效也拒绝。
     let duplicate = Request::builder()
         .method(Method::GET)
-        .uri("/api/v1/admin/auth/me")
+        .uri("/api/v1/admin/users/info")
         .header(header::AUTHORIZATION, format!("Bearer {access}"))
         .header(header::AUTHORIZATION, format!("Bearer {access}"));
     assert_unauthorized(&send(app, duplicate, None).await);
@@ -505,7 +547,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         );
     }
     // 缺失或格式错误的 Authorization 请求头一律 401 unauthorized，并带 Bearer 质询。
-    assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/auth/me", None, None).await);
+    assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/users/info", None, None).await);
     for authorization in [
         "",
         "Bearer",
@@ -521,7 +563,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         let response = raw_request(
             app,
             Method::GET,
-            "/api/v1/admin/auth/me",
+            "/api/v1/admin/users/info",
             None,
             None,
             Some(authorization),
@@ -599,10 +641,20 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_eq!(credential_errors[0], credential_errors[1]);
 
     let (admin_access, admin_refresh, admin_login) = login(app, "admin@example.test").await;
-    let admin_id = admin_login["user"]["id"].as_str().unwrap();
+    let admin_id = admin_login["id"].as_str().unwrap();
     let me_response = me(app, &admin_access).await;
     assert_eq!(me_response.status, StatusCode::OK, "{}", me_response.json);
-    assert_eq!(me_response.json["data"]["user"]["id"], admin_id);
+    assert_eq!(me_response.json["data"]["id"], admin_id);
+    // 账户详情只由 /users/info 提供，旧的 /auth/me 已移除。
+    let removed = request(
+        app,
+        Method::GET,
+        "/api/v1/admin/auth/me",
+        None,
+        Some(&admin_access),
+    )
+    .await;
+    assert_error(&removed, StatusCode::NOT_FOUND, "not_found");
     assert_eq!(me_response.headers[header::CACHE_CONTROL], "no-store");
     assert!(me_response.headers.get("x-csrf-token").is_none());
     // access token 只含账户与会话标识，sessions 只保存 refresh token 的 SHA-256 哈希。
@@ -806,7 +858,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let kept = request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&author_access),
     )
@@ -815,7 +867,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let other = request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&author_access2),
     )
@@ -861,7 +913,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let after_reset = request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&author_access),
     )
@@ -1161,7 +1213,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let old_session = request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&author_access),
     )
@@ -1216,7 +1268,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let method = request(
         app,
         Method::DELETE,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&admin_access),
     )
@@ -1239,7 +1291,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     let after_logout = request(
         app,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         Some(&admin_access),
     )
@@ -1281,18 +1333,19 @@ fn assert_timestamp(value: &Value) {
     let text = value
         .as_str()
         .unwrap_or_else(|| panic!("应为 RFC 3339 时间：{value}"));
+    assert!(text.ends_with("+08:00"), "API 时间应为北京时间：{text}");
     chrono::DateTime::parse_from_rfc3339(text).unwrap();
 }
 
 /// 账户详情、最近登录时间、列表筛选与角色账户数。
 async fn run_account_queries(app: &Router) {
     let (admin_access, _, admin_login) = login(app, "admin@example.test").await;
-    assert_timestamp(&admin_login["user"]["last_login_at"]);
-    let me = get(app, "/api/v1/admin/auth/me", &admin_access).await;
+    assert_timestamp(&admin_login["last_login_at"]);
+    let me = get(app, "/api/v1/admin/users/info", &admin_access).await;
     assert_eq!(me.status, StatusCode::OK, "{}", me.json);
     assert_eq!(
-        me.json["data"]["user"]["last_login_at"],
-        admin_login["user"]["last_login_at"]
+        me.json["data"]["last_login_at"],
+        admin_login["last_login_at"]
     );
 
     // 依次创建：含 `_` 与 `%` 的账户、仅用于对照的近似账户、含反斜杠的账户、将被停用的多角色账户。
@@ -1342,12 +1395,12 @@ async fn run_account_queries(app: &Router) {
     assert!(before.json["data"]["last_login_at"].is_null());
     assert!(before.json["data"].get("password_hash").is_none());
     let (lead_access, _, lead_login) = login(app, "ops_lead@example.test").await;
-    assert_timestamp(&lead_login["user"]["last_login_at"]);
+    assert_timestamp(&lead_login["last_login_at"]);
     let after = get(app, &lead_path, &admin_access).await;
     assert_eq!(after.status, StatusCode::OK, "{}", after.json);
     assert_eq!(
         after.json["data"]["last_login_at"],
-        lead_login["user"]["last_login_at"]
+        lead_login["last_login_at"]
     );
     let missing = get(
         app,
@@ -1514,7 +1567,7 @@ fn total(response: &Response) -> i64 {
 async fn run_audit_logs(app: &Router, pool: &PgPool) {
     const LOGS: &str = "/api/v1/admin/audit-logs";
     let (admin_access, _, admin_session) = login(app, "admin@example.test").await;
-    let admin_id = admin_session["user"]["id"].as_str().unwrap().to_owned();
+    let admin_id = admin_session["id"].as_str().unwrap().to_owned();
 
     // 登录审计的 request_id 与登录响应头 X-Request-Id 一致，可按 request_id 精确定位。
     let login_request_id: String = sqlx::query_scalar(
@@ -1697,7 +1750,12 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     assert_eq!(no_match.json["meta"]["pagination"]["total_pages"], 0);
 
     // 时间范围：from 含、to 不含。
-    let created_at = create_log["created_at"].as_str().unwrap();
+    // API 时间带 `+08:00` 偏移；放入查询串时 `+` 必须编码为 `%2B`，否则会被解码成空格。
+    assert_timestamp(&create_log["created_at"]);
+    let created_at = create_log["created_at"]
+        .as_str()
+        .unwrap()
+        .replace('+', "%2B");
     let from = admin_get(
         app,
         &admin_access,
@@ -1805,7 +1863,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let first = request(
         &api_limited,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         None,
     )
@@ -1814,7 +1872,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let second = request(
         &api_limited,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         None,
     )
@@ -1850,7 +1908,7 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
     let me = request(
         &login_limited,
         Method::GET,
-        "/api/v1/admin/auth/me",
+        "/api/v1/admin/users/info",
         None,
         None,
     )

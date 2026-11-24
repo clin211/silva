@@ -95,10 +95,10 @@ SILVA_REFRESH_TOKEN=$(jq -er '.data.refresh_token' <<<"$SILVA_LOGIN_JSON")
 unset SILVA_LOGIN_JSON
 ```
 
-成功响应为 `{"data": {"user", "permissions", "access_token", "refresh_token", "token_type": "Bearer", "expires_in", "refresh_expires_in"}}`（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。之后的管理接口携带 access token：
+成功响应只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。之后的管理接口携带 access token；当前账户详情、角色与权限通过 `GET /users/info` 读取：
 
 ```sh
-curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \
+curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/users/info \
   -H "Authorization: Bearer $SILVA_ACCESS_TOKEN"
 ```
 

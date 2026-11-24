@@ -48,11 +48,11 @@ SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/login.json")
 SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/login.json")
 
 curl --fail-with-body --silent --show-error \
-  "$SILVA_API_BASE/api/v1/admin/auth/me" \
+  "$SILVA_API_BASE/api/v1/admin/users/info" \
   -H "Authorization: Bearer $SILVA_API_ACCESS"
 ```
 
-登录响应为 `{"data": {"user", "permissions", "access_token", "refresh_token", "token_type": "Bearer", "expires_in", "refresh_expires_in"}}`，两个 `expires_in` 均为秒数。`GET /auth/me` 返回 `{"data": {"user", "permissions"}}`。
+登录响应只含两个令牌及其过期时间：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致。`GET /users/info` 返回当前账户详情、角色与权限：`{"data": {"id", "email", "display_name", "status", "roles", "created_at", "updated_at", "last_login_at", "permissions"}}`。
 
 access token 过期后刷新令牌，并同时替换两个变量：
 
@@ -66,7 +66,7 @@ SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/refresh.json")
 SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/refresh.json")
 ```
 
-刷新响应为 `{"data": {"access_token", "refresh_token", "token_type", "expires_in", "refresh_expires_in"}}`。同一 refresh token 并发提交时只有一次成功。
+刷新响应与登录相同：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`。同一 refresh token 并发提交时只有一次成功。
 
 ## 查询列表与更新账户
 
@@ -109,7 +109,7 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | 接口 | 要求 |
 | --- | --- |
 | `POST /api/v1/admin/auth/login`、`POST /api/v1/admin/auth/refresh` | 无需 access token |
-| `GET /api/v1/admin/auth/me`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效 access token |
+| `GET /api/v1/admin/users/info`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效 access token |
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |

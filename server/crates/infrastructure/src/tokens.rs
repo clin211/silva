@@ -85,7 +85,9 @@ impl JwtTokens {
     ) -> Result<(String, DateTime<Utc>)> {
         let lifetime = chrono::Duration::from_std(ttl)
             .map_err(|_| AppError::Internal(anyhow::anyhow!("token lifetime too large")))?;
-        let expires_at = issued_at + lifetime;
+        // JWT 的 exp 以整秒表示；返回值截断到秒，保证响应中的过期时间与 exp 声明一致。
+        let expires_at = DateTime::from_timestamp((issued_at + lifetime).timestamp(), 0)
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("token expiry out of range")))?;
         let claims = Claims {
             iss: ISSUER.into(),
             aud: AUDIENCE.into(),
@@ -107,7 +109,7 @@ impl JwtTokens {
 impl TokenService for JwtTokens {
     fn issue(&self, user_id: Uuid, session_id: Uuid) -> Result<IssuedTokens> {
         let now = Utc::now();
-        let (access_token, _) =
+        let (access_token, access_expires_at) =
             self.sign(user_id, session_id, TokenKind::Access, now, self.access_ttl)?;
         let (refresh_token, refresh_expires_at) = self.sign(
             user_id,
@@ -119,8 +121,7 @@ impl TokenService for JwtTokens {
         Ok(IssuedTokens {
             access_token,
             refresh_token,
-            expires_in: self.access_ttl.as_secs(),
-            refresh_expires_in: self.refresh_ttl.as_secs(),
+            access_expires_at,
             refresh_expires_at,
         })
     }
@@ -201,10 +202,6 @@ mod tests {
         let tokens = tokens();
         let (user, session) = (ids::new_id(), ids::new_id());
         let issued = tokens.issue(user, session).unwrap();
-        assert_eq!(
-            (issued.expires_in, issued.refresh_expires_in),
-            (900, 604_800)
-        );
         assert_ne!(issued.access_token, issued.refresh_token);
         let access = payload(&issued.access_token);
         assert_eq!(access["iss"], ISSUER);
@@ -220,8 +217,17 @@ mod tests {
         assert_eq!(jti.get_version_num(), 7);
         assert_eq!(payload(&issued.refresh_token)["typ"], "refresh");
         assert_eq!(
+            issued.access_expires_at.timestamp(),
+            access["exp"].as_i64().unwrap()
+        );
+        assert_eq!(
             issued.refresh_expires_at.timestamp(),
             payload(&issued.refresh_token)["exp"].as_i64().unwrap()
+        );
+        assert_eq!(issued.access_expires_at.timestamp_subsec_nanos(), 0);
+        assert_eq!(
+            (issued.refresh_expires_at - issued.access_expires_at).num_seconds(),
+            604_800 - 900
         );
 
         let verified = tokens

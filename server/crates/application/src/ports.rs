@@ -216,11 +216,9 @@ pub enum TokenRejection {
 pub struct IssuedTokens {
     pub access_token: String,
     pub refresh_token: String,
-    /// access token 剩余有效秒数。
-    pub expires_in: u64,
-    /// refresh token 剩余有效秒数。
-    pub refresh_expires_in: u64,
-    /// refresh token 的过期时间，写入会话的 `expires_at`。
+    /// access token 的过期时间（UTC，精确到秒，与其 `exp` 声明一致）。
+    pub access_expires_at: DateTime<Utc>,
+    /// refresh token 的过期时间（UTC，精确到秒，与其 `exp` 声明一致），同时写入会话的 `expires_at`。
     pub refresh_expires_at: DateTime<Utc>,
 }
 

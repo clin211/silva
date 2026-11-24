@@ -797,10 +797,10 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 | Method      | Path                                                                                                      | 说明                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| POST        | `/auth/login`                                                                                             | 公开入口；创建会话，返回 access/refresh token  |
+| POST        | `/auth/login`                                                                                             | 公开入口；只返回两个令牌及其过期时间          |
 | POST        | `/auth/refresh`                                                                                           | 公开入口；轮换 refresh token，返回新令牌对     |
 | POST        | `/auth/logout`                                                                                            | 撤销当前会话及其全部令牌；204                  |
-| GET         | `/auth/me`                                                                                                | 当前用户、权限                                 |
+| GET         | `/users/info`                                                                                             | 当前账户详情、角色和权限                       |
 | GET, POST   | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章            |
 | GET         | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID   |
 | POST        | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                              |

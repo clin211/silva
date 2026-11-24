@@ -26,7 +26,7 @@ pub struct IdentityService {
 
 /// 一次已通过锁定检查的登录尝试结果。
 enum LoginAttempt {
-    Success(Box<LoginSession>),
+    Success(Box<IssuedTokens>),
     Failed {
         user_id: Option<Uuid>,
         reason: LoginFailure,
@@ -90,12 +90,6 @@ impl UserFilter {
     }
 }
 
-/// 登录成功的结果：当前账户视图与新会话的一对令牌。
-pub struct LoginSession {
-    pub principal: Principal,
-    pub tokens: IssuedTokens,
-}
-
 impl IdentityService {
     pub fn new(
         repository: Arc<dyn IdentityRepository>,
@@ -126,7 +120,7 @@ impl IdentityService {
         email: String,
         password: String,
         meta: &RequestMeta,
-    ) -> Result<LoginSession> {
+    ) -> Result<IssuedTokens> {
         let key = email.trim().to_lowercase();
         if key.len() > 254 {
             // 超长邮箱不可能对应账户，不进入锁定表，避免超长键占用内存。
@@ -229,11 +223,7 @@ impl IdentityService {
             }
             Err(error) => return Err(error),
         }
-        let principal = self.repository.principal(session_id, user_id).await?;
-        Ok(LoginAttempt::Success(Box::new(LoginSession {
-            principal,
-            tokens,
-        })))
+        Ok(LoginAttempt::Success(Box::new(tokens)))
     }
 
     /// 校验 access token，再按其中的会话与账户 ID 读取当前状态、角色和权限。

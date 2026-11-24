@@ -19,7 +19,7 @@
 
 1. **HTTP 状态码是请求结果的唯一依据。** 2xx 表示成功，4xx 表示调用方需要修正请求，5xx 表示服务端问题。正文不出现 `success`、`status`、`code: 0` 之类的字段。
 2. **顶层只有一个键表示结果。** 成功正文必有 `data`，失败正文必有 `error`，两者不会同时出现。成功正文可以另带 `meta`，除此之外没有其他顶层键。
-3. **JSON 约定：** `Content-Type: application/json`，UTF-8；字段名用 `snake_case`；时间为 RFC 3339 UTC 字符串（如 `2026-11-21T08:00:00Z`）；实体 ID 为带连字符的 UUIDv7 字符串；枚举值用小写 `snake_case` 字符串。
+3. **JSON 约定：** `Content-Type: application/json`，UTF-8；字段名用 `snake_case`；响应中的时间为北京时间（UTC+08:00）的 RFC 3339 字符串，带显式偏移（如 `2026-11-21T16:00:00+08:00`），由 `silva_shared::time` 统一格式化，服务端与数据库内部仍按 UTC 存储；请求中的时间参数接受任意合法 RFC 3339 偏移，放进查询串时 `+` 必须编码为 `%2B`；实体 ID 为带连字符的 UUIDv7 字符串；枚举值用小写 `snake_case` 字符串。
 4. **字段稳定存在。** 资源 Schema 中声明的字段总是出现，没有值时返回 `null`，不省略。数组没有元素时返回 `[]`，不返回 `null`。
 5. **不泄露内部细节。** 响应中不出现 SQL、堆栈、内部主机名、密码哈希或令牌原文；500 的细节只写入日志，用响应头 `X-Request-Id` 关联。
 6. **客户端必须容忍新增内容。** 客户端忽略未知字段；遇到未知错误码时按 HTTP 状态兜底处理。
@@ -47,14 +47,14 @@
     "display_name": "示例作者",
     "status": "active",
     "roles": ["author"],
-    "created_at": "2026-11-21T08:00:00Z",
-    "updated_at": "2026-11-21T08:00:00Z",
+    "created_at": "2026-11-21T16:00:00+08:00",
+    "updated_at": "2026-11-21T16:00:00+08:00",
     "last_login_at": null
   }
 }
 ```
 
-动作结果也是对象，例如登录返回 `{"data": {"user": {...}, "permissions": [...], "access_token": "...", "refresh_token": "...", "token_type": "Bearer", "expires_in": 900, "refresh_expires_in": 604800}}`。
+动作结果也是对象，例如登录返回 `{"data": {"access_token": "...", "refresh_token": "...", "access_token_expires_at": "2026-11-24T16:15:00+08:00", "refresh_token_expires_at": "2026-12-01T16:00:00+08:00"}}`。
 
 ### 3.3 集合
 

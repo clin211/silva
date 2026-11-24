@@ -554,21 +554,23 @@ pub(crate) struct LoginInput {
     password: String,
 }
 
-/// `GET /auth/me` 返回的当前账户视图。
+/// `GET /users/info` 返回的当前账户详情：账户字段加当前权限。
 #[derive(Serialize)]
-struct AuthSession {
+struct UserInfo {
+    #[serde(flatten)]
     user: User,
     permissions: Vec<String>,
 }
 
-/// 令牌对的响应字段；两个有效期均为秒数。
+/// 登录与刷新的响应：一对令牌及各自的过期时间（北京时间 RFC 3339，带 `+08:00` 偏移）。
 #[derive(Serialize)]
 struct TokenPair {
     access_token: String,
     refresh_token: String,
-    token_type: &'static str,
-    expires_in: u64,
-    refresh_expires_in: u64,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
+    access_token_expires_at: DateTime<Utc>,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
+    refresh_token_expires_at: DateTime<Utc>,
 }
 
 impl From<IssuedTokens> for TokenPair {
@@ -576,20 +578,10 @@ impl From<IssuedTokens> for TokenPair {
         Self {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
-            token_type: "Bearer",
-            expires_in: tokens.expires_in,
-            refresh_expires_in: tokens.refresh_expires_in,
+            access_token_expires_at: tokens.access_expires_at,
+            refresh_token_expires_at: tokens.refresh_expires_at,
         }
     }
-}
-
-/// 登录响应：当前账户视图与新会话的令牌对。
-#[derive(Serialize)]
-struct LoginOutput {
-    user: User,
-    permissions: Vec<String>,
-    #[serde(flatten)]
-    tokens: TokenPair,
 }
 
 pub(crate) async fn login(
@@ -597,15 +589,11 @@ pub(crate) async fn login(
     ClientMeta(meta): ClientMeta,
     Input(input): Input<LoginInput>,
 ) -> HttpResult<Response> {
-    let session = state
+    let tokens = state
         .identity
         .login(input.email, input.password, &meta)
         .await?;
-    Ok(response::ok(LoginOutput {
-        user: session.principal.user,
-        permissions: session.principal.permissions,
-        tokens: session.tokens.into(),
-    }))
+    Ok(response::ok(TokenPair::from(tokens)))
 }
 
 #[derive(Deserialize)]
@@ -624,9 +612,13 @@ pub(crate) async fn refresh(
     Ok(response::ok(TokenPair::from(tokens)))
 }
 
-pub(crate) async fn me(State(state): State<AppState>, headers: HeaderMap) -> HttpResult<Response> {
+/// 当前登录账户的详情、角色与权限；任何有效会话均可读取，不需要额外权限。
+pub(crate) async fn user_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> HttpResult<Response> {
     let principal = authorize(&state, &headers).await?;
-    Ok(response::ok(AuthSession {
+    Ok(response::ok(UserInfo {
         user: principal.user,
         permissions: principal.permissions,
     }))

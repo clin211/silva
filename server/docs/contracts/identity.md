@@ -11,7 +11,7 @@
 - 每个鉴权请求：取唯一的 Bearer 令牌 → 验签与声明 → 按 `sid` 读取会话，会话不存在、已过期或 `user_id` 与 `sub` 不符返回 401 → 读取账户当前状态、角色和权限，停用账户返回 401。因此退出登录、停用、管理员重置密码、修改密码撤销其他会话都会让对应 access token 立即失效，角色变更立即生效。
 - `POST /api/v1/admin/auth/refresh` 校验 refresh token 后按 `sid` 锁定会话行：哈希一致则轮换（新 access token + 新 refresh token，更新 `token_hash` 与 `expires_at`，旧 refresh token 立即失效）；哈希不一致视为重放，删除该会话（其全部令牌失效），写入 `auth.refresh_reuse` 审计并返回 401。同一 refresh token 并发提交只有一次成功，落败的一次同样按重放处理。正常刷新不写审计。
 - `POST /api/v1/admin/auth/logout` 删除当前会话，成功 204，无响应体；之后该会话的 access token 与 refresh token 均返回 401。
-- `GET /api/v1/admin/auth/me` 在 `data` 中返回当前用户、当前权限。
+- `GET /api/v1/admin/users/info` 返回当前登录账户的详情、角色与权限；任何有效会话均可调用。登录与刷新只返回令牌及其过期时间。
 - 令牌缺失、格式错误、重复的 Authorization 头、签名或声明无效、会话已撤销返回 401 `unauthorized`；access token 签名有效但已过期返回 401 `token_expired`。所有 401 带 `WWW-Authenticate: Bearer`（过期时为 `Bearer error="invalid_token", ...`）。无权限返回 403 `forbidden`。
 - 停用账户立即撤销其全部会话；每次授权使用当前账户状态与当前角色，不能依赖登录时权限快照。
 - 认证响应与非公开预览使用 `Cache-Control: no-store`。登录和 API 均需限流，管理操作需审计，不记录密码、access token、refresh token 原文或其他敏感凭据。
@@ -40,7 +40,7 @@
 | POST | `/auth/login` | JSON，无需令牌；创建会话，返回用户、权限、access token 与 refresh token。 |
 | POST | `/auth/refresh` | JSON，无需 Bearer 头；轮换 refresh token，返回新令牌对。 |
 | POST | `/auth/logout` | Bearer access token；删除当前会话，204。 |
-| GET | `/auth/me` | Bearer access token；用户、权限。 |
+| GET | `/users/info` | Bearer access token，无需额外权限；当前账户详情、角色、权限。 |
 | POST | `/auth/password` | Bearer access token；校验当前密码后修改，204；保留当前会话并撤销其他会话。 |
 | GET, POST | `/users` | Admin；分页列表（支持关键字、角色、状态筛选）、创建账户。 |
 | GET | `/users/{id}` | Admin；账户详情。 |
@@ -52,8 +52,8 @@
 
 以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
 
-- 登录输入：`{email,password}`；登录返回 `{"data":{user,permissions,access_token,refresh_token,token_type:"Bearer",expires_in,refresh_expires_in}}`，两个有效期为秒数整数；`auth/me` 返回 `{"data":{user,permissions}}`。
-- 刷新输入：`{refresh_token}`；返回 `{"data":{access_token,refresh_token,token_type:"Bearer",expires_in,refresh_expires_in}}`。
+- 登录输入：`{email,password}`；登录返回 `{"data":{access_token,refresh_token,access_token_expires_at,refresh_token_expires_at}}`，两个 `*_expires_at` 为北京时间（UTC+08:00）RFC 3339 时间，带显式偏移（如 `2026-11-24T16:15:00+08:00`），精确到秒，与令牌 `exp` 声明一致；`GET /users/info` 返回 `{"data":{id,email,display_name,status,roles,created_at,updated_at,last_login_at,permissions}}`。原 `GET /auth/me` 已移除。
+- 刷新输入：`{refresh_token}`；返回结构与登录相同：`{"data":{access_token,refresh_token,access_token_expires_at,refresh_token_expires_at}}`。
 - 令牌有效期：access token `SILVA_ACCESS_TOKEN_TTL_SECONDS`（默认 900）；refresh token 与会话 `SILVA_REFRESH_TOKEN_TTL_SECONDS`（默认 604800），每次刷新从刷新时刻重新计算。
 - 重放审计：`action = "auth.refresh_reuse"`，`actor_user_id = null`，`resource_type = "user"`，`resource_id` 为令牌所属账户，`metadata = {}`，不含任何令牌或哈希。
 - 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
@@ -73,7 +73,7 @@
   - `action`：精确匹配，或以 `.*` 结尾表示前缀匹配（如 `auth.*` 匹配 `auth.login`）；只允许 `[a-z0-9_.]` 加末尾 `.*`，长度 1..64，否则 422 `invalid_value`。前缀按字面匹配，转义 LIKE 通配符。
   - `resource_type`：精确匹配，`[a-z0-9_]`，长度 1..64，否则 422 `invalid_value`。
 - 审计详情 `GET /audit-logs/{id}`：需要 `audit.read`，返回 `{"data": AuditLog}`；不存在 404 `not_found`；非法 UUID 422 `invalid_format`。
-- User 为 `{id,email,display_name,status,roles,created_at,updated_at,last_login_at}`，不含 password/hash。`last_login_at` 为最近一次登录成功的 RFC 3339 时间，从未登录时为 `null`，字段总是存在；登录、`auth/me`、账户列表、详情、创建和修改返回的 User 均包含该字段。
+- User 为 `{id,email,display_name,status,roles,created_at,updated_at,last_login_at}`，不含 password/hash。`last_login_at` 为最近一次登录成功的 RFC 3339 时间，从未登录时为 `null`，字段总是存在；`/users/info`、账户列表、详情、创建和修改返回的 User 均包含该字段。
 - 账户详情：`GET /users/{id}` 需要 `users.manage`，返回 `{"data": User}`；账户不存在返回 404 `not_found`；`id` 不是 UUIDv7 返回 422 `validation_error`（`id`/`invalid_format`）。
 - 账户列表筛选：`GET /users` 在 `page`、`per_page` 之外接受可选查询参数，多个条件按 AND 组合，`meta.pagination.total` 为筛选后的数量，排序保持 `created_at DESC, id DESC`。
   - `q`：去首尾空白后按 email 或 display_name 做不区分大小写的子串匹配；LIKE 特殊字符 `%`、`_`、`\` 按字面匹配。去空白后为空视为未提供；去空白后超过 100 字节返回 422（`q`/`out_of_range`）。
@@ -97,7 +97,7 @@
 
 使用真实临时 PostgreSQL 执行全部迁移后测试：
 
-1. 登录返回 access token、refresh token、`token_type`、`expires_in`、`refresh_expires_in`，Bearer 访问 `auth/me`；令牌声明含 `iss`、`aud`、`sub`、`sid`、`typ`；DB 只含 refresh token 的 SHA-256 哈希，`sessions` 与审计中都没有令牌原文。
+1. 登录只返回 access token、refresh token 及两者的过期时间（北京时间 `+08:00`，与 `exp` 一致），Bearer 访问 `users/info` 取得账户详情与权限；令牌声明含 `iss`、`aud`、`sub`、`sid`、`typ`；DB 只含 refresh token 的 SHA-256 哈希，`sessions` 与审计中都没有令牌原文。
 2. 缺失、格式错误或重复的 Authorization 头，篡改签名或载荷、其他密钥、错误 `iss`/`aud`、`alg` 为 `none` 或 HS512、refresh token 当 access token、不存在的会话或 `sub` 不符均返回 401 `unauthorized` 并带 `WWW-Authenticate: Bearer`；签名有效的过期 access token 返回 401 `token_expired`；非 JSON 登录被拒绝；错误响应统一，响应头 `X-Request-Id` 为合法 UUIDv7，正文不含 `request_id`。
 3. 不存在用户、错误密码、无效/过期会话不获得登录或授权；密码不能明文保存。
 4. Author 无法读取账户/角色/审计/系统信息或创建账户；当前角色变更立即影响授权。

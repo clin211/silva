@@ -4,7 +4,7 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "当前提供健康检查、身份认证（JWT access token + refresh token）、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。生产环境须通过 HTTPS 入口访问。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。先调用 POST /auth/login 取得 access_token 与 refresh_token，其他管理接口在请求头 Authorization: Bearer <access_token> 中携带 access token；access token 过期（401 token_expired）后调用 POST /auth/refresh 换取新令牌对。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
+        "description": "当前提供健康检查、身份认证（JWT access token + refresh token）、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。生产环境须通过 HTTPS 入口访问。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。先调用 POST /auth/login 取得 access_token 与 refresh_token，其他管理接口在请求头 Authorization: Bearer <access_token> 中携带 access token；access token 过期（401 token_expired）后调用 POST /auth/refresh 换取新令牌对。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。响应中的时间统一为北京时间（UTC+08:00）的 RFC 3339 字符串，带显式偏移；请求中的时间参数接受任意合法 RFC 3339 偏移，查询串中的 + 需编码为 %2B。完整规范见 server/docs/contracts/api-response.md。"
     },
     "servers": [
         {
@@ -204,35 +204,14 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/LoginResponse"
+                                    "$ref": "#/components/schemas/TokenResponse"
                                 },
                                 "example": {
                                     "data": {
-                                        "user": {
-                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                            "email": "author@example.com",
-                                            "display_name": "示例作者",
-                                            "status": "active",
-                                            "roles": [
-                                                "author"
-                                            ],
-                                            "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z",
-                                            "last_login_at": "2026-11-22T09:30:00Z"
-                                        },
-                                        "permissions": [
-                                            "posts.create",
-                                            "posts.read_own",
-                                            "posts.edit_own",
-                                            "posts.submit_own",
-                                            "media.manage_own",
-                                            "jobs.read_own"
-                                        ],
                                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
                                         "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                                        "token_type": "Bearer",
-                                        "expires_in": 900,
-                                        "refresh_expires_in": 604800
+                                        "access_token_expires_at": "2026-11-24T16:15:00+08:00",
+                                        "refresh_token_expires_at": "2026-12-01T16:00:00+08:00"
                                     }
                                 }
                             }
@@ -417,7 +396,7 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON，无需认证。成功后创建一条服务端会话，返回 access_token、refresh_token、token_type、expires_in 与 refresh_expires_in；服务端只保存 refresh token 的哈希。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
+                "description": "仅接受 JSON，无需认证。成功后创建一条服务端会话，只返回 access_token、refresh_token 及两者的过期时间 access_token_expires_at、refresh_token_expires_at（UTC）；账户详情、角色与权限通过 GET /users/info 读取；服务端只保存 refresh token 的哈希。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
             }
         },
         "/api/v1/admin/auth/refresh": {
@@ -454,9 +433,8 @@
                                     "data": {
                                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
                                         "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                                        "token_type": "Bearer",
-                                        "expires_in": 900,
-                                        "refresh_expires_in": 604800
+                                        "access_token_expires_at": "2026-11-24T16:15:00+08:00",
+                                        "refresh_token_expires_at": "2026-12-01T16:00:00+08:00"
                                     }
                                 }
                             }
@@ -649,75 +627,6 @@
                 "description": "要求有效的 access token。删除该令牌所属的服务端会话并写入 auth.logout 审计；之后该会话的 access token 与 refresh token 均返回 401。无需请求正文。"
             }
         },
-        "/api/v1/admin/auth/me": {
-            "get": {
-                "operationId": "me",
-                "summary": "读取当前账户和权限",
-                "tags": [
-                    "身份认证"
-                ],
-                "responses": {
-                    "200": {
-                        "description": "返回当前账户状态与当前角色权限，每次读取最新数据。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
-                                "schema": {
-                                    "type": "string",
-                                    "const": "no-store"
-                                }
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/AuthResponse"
-                                },
-                                "example": {
-                                    "data": {
-                                        "user": {
-                                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                            "email": "author@example.com",
-                                            "display_name": "示例作者",
-                                            "status": "active",
-                                            "roles": [
-                                                "author"
-                                            ],
-                                            "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z",
-                                            "last_login_at": "2026-11-22T09:30:00Z"
-                                        },
-                                        "permissions": [
-                                            "posts.create",
-                                            "posts.read_own",
-                                            "posts.edit_own",
-                                            "posts.submit_own",
-                                            "media.manage_own",
-                                            "jobs.read_own"
-                                        ]
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "429": {
-                        "$ref": "#/components/responses/RateLimited"
-                    },
-                    "default": {
-                        "$ref": "#/components/responses/Error"
-                    },
-                    "401": {
-                        "$ref": "#/components/responses/Unauthorized"
-                    }
-                }
-            }
-        },
         "/api/v1/admin/auth/password": {
             "post": {
                 "operationId": "changePassword",
@@ -897,9 +806,9 @@
                                             "roles": [
                                                 "author"
                                             ],
-                                            "created_at": "2026-11-21T08:00:00Z",
-                                            "updated_at": "2026-11-21T08:00:00Z",
-                                            "last_login_at": "2026-11-22T09:30:00Z"
+                                            "created_at": "2026-11-21T16:00:00+08:00",
+                                            "updated_at": "2026-11-21T16:00:00+08:00",
+                                            "last_login_at": "2026-11-22T17:30:00+08:00"
                                         }
                                     ],
                                     "meta": {
@@ -1017,9 +926,9 @@
                                         "roles": [
                                             "author"
                                         ],
-                                        "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z",
-                                        "last_login_at": "2026-11-22T09:30:00Z"
+                                        "created_at": "2026-11-21T16:00:00+08:00",
+                                        "updated_at": "2026-11-21T16:00:00+08:00",
+                                        "last_login_at": "2026-11-22T17:30:00+08:00"
                                     }
                                 }
                             }
@@ -1181,6 +1090,74 @@
                 "description": " 需要权限 `users.manage`。"
             }
         },
+        "/api/v1/admin/users/info": {
+            "get": {
+                "operationId": "getCurrentUser",
+                "summary": "读取当前账户详情、角色与权限",
+                "tags": [
+                    "账户管理"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前账户详情、角色与权限。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
+                                }
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserInfoResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                        "email": "author@example.com",
+                                        "display_name": "示例作者",
+                                        "status": "active",
+                                        "roles": [
+                                            "author"
+                                        ],
+                                        "created_at": "2026-11-21T16:00:00+08:00",
+                                        "updated_at": "2026-11-21T16:00:00+08:00",
+                                        "last_login_at": "2026-11-22T17:30:00+08:00",
+                                        "permissions": [
+                                            "posts.create",
+                                            "posts.read_own",
+                                            "posts.edit_own",
+                                            "posts.submit_own",
+                                            "media.manage_own",
+                                            "jobs.read_own"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    }
+                },
+                "description": "任何有效会话均可调用，不需要 users.manage。返回当前账户字段（含 roles、last_login_at）与当前角色授予的权限，每次按会话从数据库读取最新状态；角色变更立即生效。"
+            }
+        },
         "/api/v1/admin/users/{id}": {
             "get": {
                 "operationId": "getUser",
@@ -1213,9 +1190,9 @@
                                         "roles": [
                                             "author"
                                         ],
-                                        "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z",
-                                        "last_login_at": "2026-11-22T09:30:00Z"
+                                        "created_at": "2026-11-21T16:00:00+08:00",
+                                        "updated_at": "2026-11-21T16:00:00+08:00",
+                                        "last_login_at": "2026-11-22T17:30:00+08:00"
                                     }
                                 }
                             }
@@ -1335,9 +1312,9 @@
                                         "roles": [
                                             "author"
                                         ],
-                                        "created_at": "2026-11-21T08:00:00Z",
-                                        "updated_at": "2026-11-21T08:00:00Z",
-                                        "last_login_at": "2026-11-22T09:30:00Z"
+                                        "created_at": "2026-11-21T16:00:00+08:00",
+                                        "updated_at": "2026-11-21T16:00:00+08:00",
+                                        "last_login_at": "2026-11-22T17:30:00+08:00"
                                     }
                                 }
                             }
@@ -1632,7 +1609,7 @@
                                             "ip_address": "203.0.113.10",
                                             "user_agent": "Mozilla/5.0",
                                             "metadata": {},
-                                            "created_at": "2026-11-21T08:00:00Z"
+                                            "created_at": "2026-11-21T16:00:00+08:00"
                                         }
                                     ],
                                     "meta": {
@@ -1766,7 +1743,7 @@
                                         "ip_address": "203.0.113.10",
                                         "user_agent": "Mozilla/5.0",
                                         "metadata": {},
-                                        "created_at": "2026-11-21T08:00:00Z"
+                                        "created_at": "2026-11-21T16:00:00+08:00"
                                     }
                                 }
                             }
@@ -2533,12 +2510,12 @@
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "创建时间，RFC 3339 格式。"
+                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
                     },
                     "updated_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "最后更新时间，RFC 3339 格式。"
+                        "description": "最后更新时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
                     },
                     "last_login_at": {
                         "anyOf": [
@@ -2550,7 +2527,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "最近一次登录成功的时间，RFC 3339 格式；从未登录时为 null。字段总是存在。"
+                        "description": "最近一次登录成功的时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00；从未登录时为 null。字段总是存在。"
                     }
                 },
                 "required": [
@@ -2572,9 +2549,9 @@
                         "roles": [
                             "author"
                         ],
-                        "created_at": "2026-11-21T08:00:00Z",
-                        "updated_at": "2026-11-21T08:00:00Z",
-                        "last_login_at": "2026-11-22T09:30:00Z"
+                        "created_at": "2026-11-21T16:00:00+08:00",
+                        "updated_at": "2026-11-21T16:00:00+08:00",
+                        "last_login_at": "2026-11-22T17:30:00+08:00"
                     }
                 ]
             },
@@ -2722,7 +2699,7 @@
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "创建时间，RFC 3339 格式。"
+                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
                     }
                 },
                 "required": [
@@ -2754,7 +2731,7 @@
                         "ip_address": "203.0.113.10",
                         "user_agent": "Mozilla/5.0",
                         "metadata": {},
-                        "created_at": "2026-11-21T08:00:00Z"
+                        "created_at": "2026-11-21T16:00:00+08:00"
                     }
                 ]
             },
@@ -2829,9 +2806,9 @@
                                 "roles": [
                                     "author"
                                 ],
-                                "created_at": "2026-11-21T08:00:00Z",
-                                "updated_at": "2026-11-21T08:00:00Z",
-                                "last_login_at": "2026-11-22T09:30:00Z"
+                                "created_at": "2026-11-21T16:00:00+08:00",
+                                "updated_at": "2026-11-21T16:00:00+08:00",
+                                "last_login_at": "2026-11-22T17:30:00+08:00"
                             }
                         ],
                         "meta": {
@@ -2882,7 +2859,7 @@
                                 "ip_address": "203.0.113.10",
                                 "user_agent": "Mozilla/5.0",
                                 "metadata": {},
-                                "created_at": "2026-11-21T08:00:00Z"
+                                "created_at": "2026-11-21T16:00:00+08:00"
                             }
                         ],
                         "meta": {
@@ -2925,7 +2902,7 @@
                             "ip_address": "203.0.113.10",
                             "user_agent": "Mozilla/5.0",
                             "metadata": {},
-                            "created_at": "2026-11-21T08:00:00Z"
+                            "created_at": "2026-11-21T16:00:00+08:00"
                         }
                     }
                 ]
@@ -3089,90 +3066,6 @@
                     }
                 ]
             },
-            "AuthSession": {
-                "type": "object",
-                "properties": {
-                    "user": {
-                        "$ref": "#/components/schemas/User",
-                        "description": "当前登录账户。"
-                    },
-                    "permissions": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/Permission"
-                        },
-                        "description": "当前角色授予的权限键。"
-                    }
-                },
-                "required": [
-                    "user",
-                    "permissions"
-                ],
-                "examples": [
-                    {
-                        "user": {
-                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                            "email": "author@example.com",
-                            "display_name": "示例作者",
-                            "status": "active",
-                            "roles": [
-                                "author"
-                            ],
-                            "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z",
-                            "last_login_at": "2026-11-22T09:30:00Z"
-                        },
-                        "permissions": [
-                            "posts.create",
-                            "posts.read_own",
-                            "posts.edit_own",
-                            "posts.submit_own",
-                            "media.manage_own",
-                            "jobs.read_own"
-                        ]
-                    }
-                ],
-                "description": "当前账户视图：账户与当前角色授予的权限，每次请求按会话重新读取。"
-            },
-            "AuthResponse": {
-                "type": "object",
-                "additionalProperties": false,
-                "description": "读取当前账户的响应。",
-                "properties": {
-                    "data": {
-                        "$ref": "#/components/schemas/AuthSession"
-                    }
-                },
-                "required": [
-                    "data"
-                ],
-                "examples": [
-                    {
-                        "data": {
-                            "user": {
-                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                "email": "author@example.com",
-                                "display_name": "示例作者",
-                                "status": "active",
-                                "roles": [
-                                    "author"
-                                ],
-                                "created_at": "2026-11-21T08:00:00Z",
-                                "updated_at": "2026-11-21T08:00:00Z",
-                                "last_login_at": "2026-11-22T09:30:00Z"
-                            },
-                            "permissions": [
-                                "posts.create",
-                                "posts.read_own",
-                                "posts.edit_own",
-                                "posts.submit_own",
-                                "media.manage_own",
-                                "jobs.read_own"
-                            ]
-                        }
-                    }
-                ]
-            },
             "UserResponse": {
                 "type": "object",
                 "additionalProperties": false,
@@ -3195,9 +3088,9 @@
                             "roles": [
                                 "author"
                             ],
-                            "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z",
-                            "last_login_at": "2026-11-22T09:30:00Z"
+                            "created_at": "2026-11-21T16:00:00+08:00",
+                            "updated_at": "2026-11-21T16:00:00+08:00",
+                            "last_login_at": "2026-11-22T17:30:00+08:00"
                         }
                     }
                 ]
@@ -3294,128 +3187,37 @@
                         "type": "string",
                         "description": "HS256 签名的 JWT refresh token，只用于 POST /auth/refresh，不能访问其他接口。服务端只保存其 SHA-256 哈希。"
                     },
-                    "token_type": {
+                    "access_token_expires_at": {
                         "type": "string",
-                        "const": "Bearer",
-                        "description": "固定为 Bearer。"
+                        "format": "date-time",
+                        "description": "access token 过期时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00，精确到秒，与令牌 exp 声明一致；有效期由 SILVA_ACCESS_TOKEN_TTL_SECONDS 决定（默认 900 秒）。"
                     },
-                    "expires_in": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "access token 有效秒数，由 SILVA_ACCESS_TOKEN_TTL_SECONDS 决定（默认 900）。"
-                    },
-                    "refresh_expires_in": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "description": "refresh token 有效秒数，由 SILVA_REFRESH_TOKEN_TTL_SECONDS 决定（默认 604800），每次刷新重新计算。"
+                    "refresh_token_expires_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "refresh token 过期时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00，精确到秒，与令牌 exp 声明一致；有效期由 SILVA_REFRESH_TOKEN_TTL_SECONDS 决定（默认 604800 秒），每次刷新重新计算。"
                     }
                 },
                 "required": [
                     "access_token",
                     "refresh_token",
-                    "token_type",
-                    "expires_in",
-                    "refresh_expires_in"
+                    "access_token_expires_at",
+                    "refresh_token_expires_at"
                 ],
                 "examples": [
                     {
                         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
                         "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                        "token_type": "Bearer",
-                        "expires_in": 900,
-                        "refresh_expires_in": 604800
-                    }
-                ]
-            },
-            "LoginSession": {
-                "description": "登录结果：当前账户视图与新会话的令牌对。",
-                "allOf": [
-                    {
-                        "$ref": "#/components/schemas/AuthSession"
-                    },
-                    {
-                        "$ref": "#/components/schemas/TokenPair"
+                        "access_token_expires_at": "2026-11-24T16:15:00+08:00",
+                        "refresh_token_expires_at": "2026-12-01T16:00:00+08:00"
                     }
                 ],
-                "unevaluatedProperties": false,
-                "examples": [
-                    {
-                        "user": {
-                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                            "email": "author@example.com",
-                            "display_name": "示例作者",
-                            "status": "active",
-                            "roles": [
-                                "author"
-                            ],
-                            "created_at": "2026-11-21T08:00:00Z",
-                            "updated_at": "2026-11-21T08:00:00Z",
-                            "last_login_at": "2026-11-22T09:30:00Z"
-                        },
-                        "permissions": [
-                            "posts.create",
-                            "posts.read_own",
-                            "posts.edit_own",
-                            "posts.submit_own",
-                            "media.manage_own",
-                            "jobs.read_own"
-                        ],
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
-                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                        "token_type": "Bearer",
-                        "expires_in": 900,
-                        "refresh_expires_in": 604800
-                    }
-                ]
-            },
-            "LoginResponse": {
-                "type": "object",
-                "additionalProperties": false,
-                "description": "登录响应。",
-                "properties": {
-                    "data": {
-                        "$ref": "#/components/schemas/LoginSession"
-                    }
-                },
-                "required": [
-                    "data"
-                ],
-                "examples": [
-                    {
-                        "data": {
-                            "user": {
-                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                                "email": "author@example.com",
-                                "display_name": "示例作者",
-                                "status": "active",
-                                "roles": [
-                                    "author"
-                                ],
-                                "created_at": "2026-11-21T08:00:00Z",
-                                "updated_at": "2026-11-21T08:00:00Z",
-                                "last_login_at": "2026-11-22T09:30:00Z"
-                            },
-                            "permissions": [
-                                "posts.create",
-                                "posts.read_own",
-                                "posts.edit_own",
-                                "posts.submit_own",
-                                "media.manage_own",
-                                "jobs.read_own"
-                            ],
-                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
-                            "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                            "token_type": "Bearer",
-                            "expires_in": 900,
-                            "refresh_expires_in": 604800
-                        }
-                    }
-                ]
+                "additionalProperties": false
             },
             "TokenResponse": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "刷新令牌响应。",
+                "description": "登录与刷新令牌的响应：只含两个令牌及其过期时间。",
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/TokenPair"
@@ -3429,9 +3231,8 @@
                         "data": {
                             "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
                             "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
-                            "token_type": "Bearer",
-                            "expires_in": 900,
-                            "refresh_expires_in": 604800
+                            "access_token_expires_at": "2026-11-24T16:15:00+08:00",
+                            "refresh_token_expires_at": "2026-12-01T16:00:00+08:00"
                         }
                     }
                 ]
@@ -3452,6 +3253,135 @@
                 "examples": [
                     {
                         "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature"
+                    }
+                ]
+            },
+            "UserInfo": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "当前登录账户的详情：账户字段、内置角色与当前角色授予的权限，每次请求按会话重新读取。",
+                "properties": {
+                    "id": {
+                        "$ref": "#/components/schemas/UuidV7",
+                        "description": "服务端分配的 UUIDv7 标识。"
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "账户邮箱。"
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "description": "账户显示名称。"
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AccountStatus",
+                        "description": "账户状态：active 为启用，disabled 为停用。"
+                    },
+                    "roles": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RoleKey"
+                        },
+                        "description": "账户的内置角色键。"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "最后更新时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                    },
+                    "last_login_at": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "最近一次登录成功的时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00；从未登录时为 null。字段总是存在。"
+                    },
+                    "permissions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Permission"
+                        },
+                        "description": "当前角色授予的权限键。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "display_name",
+                    "status",
+                    "roles",
+                    "created_at",
+                    "updated_at",
+                    "last_login_at",
+                    "permissions"
+                ],
+                "examples": [
+                    {
+                        "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                        "email": "author@example.com",
+                        "display_name": "示例作者",
+                        "status": "active",
+                        "roles": [
+                            "author"
+                        ],
+                        "created_at": "2026-11-21T16:00:00+08:00",
+                        "updated_at": "2026-11-21T16:00:00+08:00",
+                        "last_login_at": "2026-11-22T17:30:00+08:00",
+                        "permissions": [
+                            "posts.create",
+                            "posts.read_own",
+                            "posts.edit_own",
+                            "posts.submit_own",
+                            "media.manage_own",
+                            "jobs.read_own"
+                        ]
+                    }
+                ]
+            },
+            "UserInfoResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "读取当前账户详情的响应。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/UserInfo"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "author@example.com",
+                            "display_name": "示例作者",
+                            "status": "active",
+                            "roles": [
+                                "author"
+                            ],
+                            "created_at": "2026-11-21T16:00:00+08:00",
+                            "updated_at": "2026-11-21T16:00:00+08:00",
+                            "last_login_at": "2026-11-22T17:30:00+08:00",
+                            "permissions": [
+                                "posts.create",
+                                "posts.read_own",
+                                "posts.edit_own",
+                                "posts.submit_own",
+                                "media.manage_own",
+                                "jobs.read_own"
+                            ]
+                        }
                     }
                 ]
             }

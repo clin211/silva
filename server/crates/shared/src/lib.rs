@@ -4,6 +4,7 @@ pub mod ids;
 pub mod metrics;
 pub mod pagination;
 pub mod telemetry;
+pub mod time;
 
 pub async fn shutdown_signal() {
     match wait_for_shutdown().await {
