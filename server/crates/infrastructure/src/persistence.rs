@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use silva_application::ports::{
-    IdentityRepository, LoginFailure, LoginRecord, NewUser, RequestMeta, UserChanges, UserFilter,
+    IdentityRepository, LoginFailure, LoginRecord, NewSession, NewUser, RequestMeta,
+    RotationOutcome, SessionRotation, UserChanges, UserFilter,
 };
 use silva_domain::identity::{
     AuditActionFilter, AuditActor, AuditLog, AuditLogFilter, Principal, ROLE_KEYS, Role, User,
@@ -400,14 +400,9 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.create_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn create_session(
-        &self,
-        user_id: Uuid,
-        token_hash: &str,
-        expires_at: DateTime<Utc>,
-        meta: &RequestMeta,
-    ) -> Result<()> {
+    async fn create_session(&self, session: &NewSession<'_>, meta: &RequestMeta) -> Result<()> {
         let _timer = METRICS.db_operation("create_session");
+        let user_id = session.user_id;
         let mut tx = begin(&self.pool).await.map_err(db)?;
         let active: Option<String> =
             sqlx::query_scalar("SELECT status FROM users WHERE id=$1 FOR UPDATE")
@@ -419,7 +414,7 @@ impl IdentityRepository for PgIdentityRepository {
             return Err(AppError::InvalidCredentials);
         }
         sqlx::query("INSERT INTO sessions (id,user_id,token_hash,expires_at,last_seen_at) VALUES ($1,$2,$3,$4,now())")
-            .bind(ids::new_id()).bind(user_id).bind(token_hash).bind(expires_at).execute(&mut *tx).await.map_err(db)?;
+            .bind(session.id).bind(user_id).bind(session.token_hash).bind(session.expires_at).execute(&mut *tx).await.map_err(db)?;
         sqlx::query("UPDATE users SET last_login_at=now() WHERE id=$1")
             .bind(user_id)
             .execute(&mut *tx)
@@ -439,13 +434,14 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.principal", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn principal(&self, token_hash: &str) -> Result<Principal> {
+    async fn principal(&self, session_id: Uuid, user_id: Uuid) -> Result<Principal> {
         let _timer = METRICS.db_operation("principal");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let row = sqlx::query("SELECT s.id,s.user_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE token_hash=$1 AND s.expires_at>now() AND u.status='active'")
-            .bind(token_hash).fetch_optional(&mut *tx).await.map_err(db)?.ok_or(AppError::Unauthorized)?;
-        let session_id = row.try_get("id").map_err(db)?;
-        let user_id = row.try_get("user_id").map_err(db)?;
+        let live: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>now() AND u.status='active')")
+            .bind(session_id).bind(user_id).fetch_one(&mut *tx).await.map_err(db)?;
+        if !live {
+            return Err(AppError::Unauthorized);
+        }
         let user = user(&mut tx, user_id).await?;
         if user.status != "active" {
             return Err(AppError::Unauthorized);
@@ -459,6 +455,64 @@ impl IdentityRepository for PgIdentityRepository {
             user,
             permissions,
         })
+    }
+
+    #[tracing::instrument(name = "db.rotate_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn rotate_session(
+        &self,
+        rotation: &SessionRotation<'_>,
+        meta: &RequestMeta,
+    ) -> Result<RotationOutcome> {
+        let _timer = METRICS.db_operation("rotate_session");
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        // 行锁使同一会话的并发刷新串行执行：后到的请求读到已轮换的哈希，按重放处理。
+        let row = sqlx::query("SELECT s.token_hash, s.expires_at>now() AS live, u.status='active' AS active FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 FOR UPDATE OF s")
+            .bind(rotation.session_id)
+            .bind(rotation.user_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(db)?;
+        let Some(row) = row else {
+            return Ok(RotationOutcome::Rejected);
+        };
+        let stored: String = row.try_get("token_hash").map_err(db)?;
+        if stored != rotation.presented_hash {
+            sqlx::query("DELETE FROM sessions WHERE id=$1")
+                .bind(rotation.session_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+            // 不记录任何令牌或哈希，只记录发生了重放。
+            audit(
+                &mut tx,
+                None,
+                "auth.refresh_reuse",
+                rotation.user_id,
+                meta,
+                serde_json::json!({}),
+            )
+            .await?;
+            tx.commit().await.map_err(db)?;
+            return Ok(RotationOutcome::Reused);
+        }
+        let live: bool = row.try_get("live").map_err(db)?;
+        let active: bool = row.try_get("active").map_err(db)?;
+        if !live || !active {
+            return Ok(RotationOutcome::Rejected);
+        }
+        let updated = sqlx::query("UPDATE sessions SET token_hash=$3, expires_at=$4, last_seen_at=now() WHERE id=$1 AND token_hash=$2")
+            .bind(rotation.session_id)
+            .bind(rotation.presented_hash)
+            .bind(rotation.new_hash)
+            .bind(rotation.expires_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        if updated.rows_affected() != 1 {
+            return Ok(RotationOutcome::Rejected);
+        }
+        tx.commit().await.map_err(db)?;
+        Ok(RotationOutcome::Rotated)
     }
 
     #[tracing::instrument(name = "db.revoke_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]

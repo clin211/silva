@@ -3,7 +3,6 @@ use argon2::{
     password_hash::{Error as PasswordError, SaltString, rand_core::OsRng},
 };
 use async_trait::async_trait;
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 use silva_application::ports::Credentials;
 use silva_shared::error::{AppError, Result};
@@ -96,22 +95,8 @@ impl Credentials for CryptoCredentials {
         .map_err(|error| AppError::Internal(error.into()))
     }
 
-    fn new_session_token(&self) -> String {
-        let mut bytes = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
-        hex::encode(bytes)
-    }
-
     fn token_hash(&self, token: &str) -> String {
         hex::encode(Sha256::digest(token.as_bytes()))
-    }
-
-    fn csrf_token(&self, token: &str) -> String {
-        // 使用独立的派生前缀，将 CSRF 令牌绑定到保密的 HttpOnly 会话令牌。
-        let mut hasher = Sha256::new();
-        hasher.update(b"silva-csrf-v1:");
-        hasher.update(token.as_bytes());
-        hex::encode(hasher.finalize())
     }
 }
 

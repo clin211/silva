@@ -17,9 +17,11 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
     let config = Config {
         database_url: url.into(),
         bind: "127.0.0.1:0".parse().unwrap(),
-        admin_origin: "http://localhost:5173".into(),
+        production: false,
+        jwt_secret: None,
         db_max_connections: 1,
-        session_ttl: Duration::from_secs(3600),
+        access_token_ttl: Duration::from_secs(900),
+        refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
         api_rate_per_minute: 1000,
         login_rate_per_minute: 100,

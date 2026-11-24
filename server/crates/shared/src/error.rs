@@ -7,6 +7,9 @@ use std::{borrow::Cow, fmt};
 pub enum AppError {
     #[error("Authentication required")]
     Unauthorized,
+    /// access token 签名与声明有效，但已过期；客户端应使用 refresh token 换取新令牌。
+    #[error("Access token has expired")]
+    TokenExpired,
     #[error("Invalid email or password")]
     InvalidCredentials,
     /// 同一登录邮箱连续失败次数过多，锁定期内拒绝登录；`retry_after` 为剩余锁定时长。

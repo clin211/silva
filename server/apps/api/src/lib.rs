@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
 };
 use silva_application::{identity::IdentityService, login_lockout::LoginLockout};
-use silva_infrastructure::identity_service;
+use silva_infrastructure::{TokenSettings, identity_service};
 use silva_shared::config::Config;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -28,8 +28,13 @@ pub(crate) struct AppState {
 }
 
 pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router> {
+    let tokens = TokenSettings {
+        secret: config.resolve_jwt_secret()?,
+        access_ttl: config.access_token_ttl,
+        refresh_ttl: config.refresh_token_ttl,
+    };
     let identity = Arc::new(
-        identity_service(pool.clone(), config.session_ttl)
+        identity_service(pool.clone(), &tokens)
             .await?
             .with_login_lockout(LoginLockout::new(
                 config.login_lockout_threshold,
@@ -49,6 +54,7 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
         .route("/openapi.json", get(http::openapi))
         .route("/metrics", get(metrics::endpoint))
         .route("/api/v1/admin/auth/login", post(http::login))
+        .route("/api/v1/admin/auth/refresh", post(http::refresh))
         .route("/api/v1/admin/auth/logout", post(http::logout))
         .route("/api/v1/admin/auth/me", get(http::me))
         .route("/api/v1/admin/auth/password", post(http::change_password))

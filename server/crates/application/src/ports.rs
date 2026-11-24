@@ -85,15 +85,18 @@ pub trait IdentityRepository: Send + Sync {
         meta: &RequestMeta,
     ) -> Result<()>;
     /// 锁定有效账户，在同一事务中创建会话、更新登录时间并写入审计。
-    async fn create_session(
+    /// `token_hash` 为当前有效 refresh token 的哈希，`expires_at` 为其过期时间。
+    async fn create_session(&self, session: &NewSession<'_>, meta: &RequestMeta) -> Result<()>;
+    /// 按会话 ID 读取未过期、属于该账户且账户仍启用的会话，并重新读取账户状态和角色权限，
+    /// 不缓存登录时的授权结果；不满足任一条件返回 `Unauthorized`。
+    async fn principal(&self, session_id: Uuid, user_id: Uuid) -> Result<Principal>;
+    /// 轮换会话的 refresh token：在同一事务中锁定会话行，哈希一致时替换为新哈希与过期时间；
+    /// 哈希不一致视为重放，删除该会话并写入 `auth.refresh_reuse` 审计。
+    async fn rotate_session(
         &self,
-        user_id: Uuid,
-        token_hash: &str,
-        expires_at: DateTime<Utc>,
+        rotation: &SessionRotation<'_>,
         meta: &RequestMeta,
-    ) -> Result<()>;
-    /// 重新读取账户状态和角色权限，不缓存登录时的授权结果。
-    async fn principal(&self, token_hash: &str) -> Result<Principal>;
+    ) -> Result<RotationOutcome>;
     async fn revoke_session(&self, principal: &Principal, meta: &RequestMeta) -> Result<()>;
     /// 读取启用账户的密码哈希，用于修改密码前校验当前密码。
     async fn password_hash(&self, user_id: Uuid) -> Result<Option<String>>;
@@ -142,7 +145,93 @@ pub trait Credentials: Send + Sync {
         password: String,
         password_hash: Option<String>,
     ) -> Result<bool>;
-    fn new_session_token(&self) -> String;
+    /// 计算令牌的不可逆哈希；数据库只保存哈希，不保存令牌原文。
     fn token_hash(&self, token: &str) -> String;
-    fn csrf_token(&self, token: &str) -> String;
+}
+
+/// 新建会话的持久化数据。
+pub struct NewSession<'a> {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    /// 当前有效 refresh token 的哈希。
+    pub token_hash: &'a str,
+    /// refresh token 的过期时间，即会话失效时间。
+    pub expires_at: DateTime<Utc>,
+}
+
+/// 一次 refresh token 轮换请求。
+pub struct SessionRotation<'a> {
+    pub session_id: Uuid,
+    pub user_id: Uuid,
+    /// 客户端提交的 refresh token 哈希。
+    pub presented_hash: &'a str,
+    /// 新签发 refresh token 的哈希。
+    pub new_hash: &'a str,
+    pub expires_at: DateTime<Utc>,
+}
+
+/// refresh token 轮换结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationOutcome {
+    /// 已替换为新 refresh token。
+    Rotated,
+    /// 提交的 refresh token 已被轮换过，判定为重放；会话已删除并写入审计。
+    Reused,
+    /// 会话不存在、已过期、不属于该账户或账户已停用。
+    Rejected,
+}
+
+/// 令牌种类，对应 JWT 声明 `typ`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenKind {
+    Access,
+    Refresh,
+}
+
+impl TokenKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Access => "access",
+            Self::Refresh => "refresh",
+        }
+    }
+}
+
+/// 验证通过的令牌声明。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenClaims {
+    pub user_id: Uuid,
+    pub session_id: Uuid,
+    pub kind: TokenKind,
+}
+
+/// 令牌验证失败的原因；只有签名与声明均有效、仅时间过期时才是 `Expired`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenRejection {
+    Expired,
+    Invalid,
+}
+
+/// 一次签发的 access token 与 refresh token。
+pub struct IssuedTokens {
+    pub access_token: String,
+    pub refresh_token: String,
+    /// access token 剩余有效秒数。
+    pub expires_in: u64,
+    /// refresh token 剩余有效秒数。
+    pub refresh_expires_in: u64,
+    /// refresh token 的过期时间，写入会话的 `expires_at`。
+    pub refresh_expires_at: DateTime<Utc>,
+}
+
+/// 令牌的签发与验证。实现必须固定签名算法，拒绝其他算法和未签名令牌。
+pub trait TokenService: Send + Sync {
+    /// 为指定会话签发一对新令牌，每个令牌带独立的 `jti`。
+    fn issue(&self, user_id: Uuid, session_id: Uuid) -> Result<IssuedTokens>;
+    /// 校验签名、签发方、受众、种类与过期时间。
+    fn verify(
+        &self,
+        token: &str,
+        kind: TokenKind,
+    ) -> std::result::Result<TokenClaims, TokenRejection>;
 }

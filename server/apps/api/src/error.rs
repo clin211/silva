@@ -16,10 +16,9 @@ use silva_shared::error::{AppError, Conflict, FieldError};
 pub enum ErrorCode {
     MalformedJson,
     Unauthorized,
+    TokenExpired,
     InvalidCredentials,
     Forbidden,
-    OriginRejected,
-    CsrfRejected,
     NotFound,
     MethodNotAllowed,
     EmailInUse,
@@ -33,13 +32,12 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 15] = [
         Self::MalformedJson,
         Self::Unauthorized,
+        Self::TokenExpired,
         Self::InvalidCredentials,
         Self::Forbidden,
-        Self::OriginRejected,
-        Self::CsrfRejected,
         Self::NotFound,
         Self::MethodNotAllowed,
         Self::EmailInUse,
@@ -55,8 +53,10 @@ impl ErrorCode {
     pub fn status(self) -> StatusCode {
         match self {
             Self::MalformedJson => StatusCode::BAD_REQUEST,
-            Self::Unauthorized | Self::InvalidCredentials => StatusCode::UNAUTHORIZED,
-            Self::Forbidden | Self::OriginRejected | Self::CsrfRejected => StatusCode::FORBIDDEN,
+            Self::Unauthorized | Self::TokenExpired | Self::InvalidCredentials => {
+                StatusCode::UNAUTHORIZED
+            }
+            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::EmailInUse | Self::LastAdminRequired => StatusCode::CONFLICT,
@@ -126,6 +126,7 @@ impl From<AppError> for ApiError {
                 };
             }
             AppError::Unauthorized => ErrorCode::Unauthorized,
+            AppError::TokenExpired => ErrorCode::TokenExpired,
             AppError::InvalidCredentials => ErrorCode::InvalidCredentials,
             AppError::Forbidden => ErrorCode::Forbidden,
             AppError::NotFound => ErrorCode::NotFound,
@@ -158,6 +159,19 @@ impl IntoResponse for ApiError {
             },
         };
         let mut response = (self.code.status(), Json(body)).into_response();
+        // RFC 6750：所有 401 声明 Bearer 认证方式；access token 过期时附带 invalid_token。
+        if self.code.status() == StatusCode::UNAUTHORIZED {
+            let challenge = if self.code == ErrorCode::TokenExpired {
+                HeaderValue::from_static(
+                    r#"Bearer error="invalid_token", error_description="The access token expired""#,
+                )
+            } else {
+                HeaderValue::from_static("Bearer")
+            };
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, challenge);
+        }
         if let Some(seconds) = self.retry_after {
             response
                 .headers_mut()

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use silva_infrastructure::{identity_service, persistence};
+use silva_infrastructure::{TokenSettings, identity_service, persistence};
+use silva_shared::config::JwtSecret;
 use silva_shared::{config::Config, telemetry};
 
 #[derive(Parser)]
@@ -83,7 +84,7 @@ async fn execute(pool: &sqlx::PgPool, config: &Config, command: Command) -> anyh
         } => {
             let password = std::env::var("SILVA_ADMIN_PASSWORD")
                 .map_err(|_| anyhow::anyhow!("SILVA_ADMIN_PASSWORD is required"))?;
-            let service = identity_service(pool.clone(), config.session_ttl).await?;
+            let service = identity_service(pool.clone(), &token_settings(config)).await?;
             let user = created(service.seed_admin(email, display_name, password).await)?;
             tracing::info!(user_id = %user.id, "administrator created");
         }
@@ -95,7 +96,7 @@ async fn execute(pool: &sqlx::PgPool, config: &Config, command: Command) -> anyh
             let password = std::env::var("SILVA_USER_PASSWORD")
                 .map_err(|_| anyhow::anyhow!("SILVA_USER_PASSWORD is required"))?;
             let roles = roles.iter().map(|role| role.key().to_owned()).collect();
-            let service = identity_service(pool.clone(), config.session_ttl).await?;
+            let service = identity_service(pool.clone(), &token_settings(config)).await?;
             let user = created(
                 service
                     .provision_user(email, display_name, password, roles)
@@ -105,6 +106,18 @@ async fn execute(pool: &sqlx::PgPool, config: &Config, command: Command) -> anyh
         }
     }
     Ok(())
+}
+
+/// CLI 只创建账户、不签发令牌，因此不要求配置 `SILVA_JWT_SECRET`；未配置时使用一次性随机密钥。
+fn token_settings(config: &Config) -> TokenSettings {
+    TokenSettings {
+        secret: config
+            .jwt_secret
+            .clone()
+            .unwrap_or_else(JwtSecret::generate),
+        access_ttl: config.access_token_ttl,
+        refresh_ttl: config.refresh_token_ttl,
+    }
 }
 
 /// 邮箱已存在时给出明确提示，且保证未改动已有账户。

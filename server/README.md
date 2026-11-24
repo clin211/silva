@@ -2,7 +2,7 @@
 
 Rust + Axum + Tokio + SQLx + PostgreSQL 的模块化单体。API、Worker 和运维 CLI 共用领域与用例，分别运行。
 
-当前交付后端技术方案的第一里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、服务端会话、CSRF、内置角色和账户管理。数据库已预建后续领域的 schema；媒体、CMS、站点构建与切换、资源目录和 GitHub 采集在后续里程碑实现。Worker 当前执行会话维护，不消费尚未实现的发布或采集任务。
+当前交付后端技术方案的第一里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理。数据库已预建后续领域的 schema；媒体、CMS、站点构建与切换、资源目录和 GitHub 采集在后续里程碑实现。Worker 当前执行会话维护，不消费尚未实现的发布或采集任务。
 
 ## 本地启动
 
@@ -55,7 +55,7 @@ make api
 make worker
 ```
 
-API 默认监听 `127.0.0.1:8088`。浏览器后台 Origin 默认是 `http://localhost:5173`，浏览器应通过后台同源 `/api/v1/admin` 代理访问 API。
+API 默认监听 `127.0.0.1:8088`。管理接口使用 `Authorization: Bearer <access_token>` 认证，生产环境通过 HTTPS 入口访问。
 
 ```sh
 curl --fail http://127.0.0.1:8088/health/live
@@ -67,7 +67,7 @@ curl --fail http://127.0.0.1:8088/openapi.json
 
 ## API 文档
 
-API 文档交付为 [OpenAPI 3.1 JSON](apps/api/openapi.json)，导入 Apifox 进行在线预览和调试。运行时 `/openapi.json` 返回同一份契约。[中文接入指南](docs/api/README.md) 说明导入、登录、Cookie、CSRF、分页、权限和错误处理。
+API 文档交付为 [OpenAPI 3.1 JSON](apps/api/openapi.json)，导入 Apifox 进行在线预览和调试。运行时 `/openapi.json` 返回同一份契约。[中文接入指南](docs/api/README.md) 说明导入、登录与令牌刷新、分页、权限和错误处理。
 
 ## 可观测性
 
@@ -75,9 +75,9 @@ API 文档交付为 [OpenAPI 3.1 JSON](apps/api/openapi.json)，导入 Apifox �
 
 `make observability-check` 校验配置及告警行为，`make observability-smoke` 验证真实日志、链路与抓取状态。数据库故障时 `/metrics` 仍然可用，业务队列旧值通过采集状态和最后成功时间识别。每个 API 响应同时返回 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`。
 
-## 登录与会话
+## 登录与令牌
 
-登录只接受 JSON 和精确匹配 `SILVA_ADMIN_ORIGIN` 的 `Origin`。示例需要 `jq`，使用交互输入密码，经标准输入传给 curl，避免写入命令历史：
+登录只接受 JSON，返回 access token 与 refresh token。示例需要 `jq`，使用交互输入密码，经标准输入传给 curl，避免写入命令历史：
 
 ```sh
 export SILVA_ADMIN_EMAIL=admin@example.com
@@ -85,22 +85,44 @@ printf '登录密码: '
 read -r -s SILVA_LOGIN_PASSWORD
 printf '\n'
 export SILVA_LOGIN_PASSWORD
-jq --null-input --compact-output '{email: env.SILVA_ADMIN_EMAIL, password: env.SILVA_LOGIN_PASSWORD}' \
-  | curl --fail-with-body -i http://127.0.0.1:8088/api/v1/admin/auth/login \
+SILVA_LOGIN_JSON=$(jq --null-input --compact-output '{email: env.SILVA_ADMIN_EMAIL, password: env.SILVA_LOGIN_PASSWORD}' \
+  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/auth/login \
       -H 'Content-Type: application/json' \
-      -H 'Origin: http://localhost:5173' \
-      --data-binary @-
+      --data-binary @-)
 unset SILVA_LOGIN_PASSWORD
+SILVA_ACCESS_TOKEN=$(jq -er '.data.access_token' <<<"$SILVA_LOGIN_JSON")
+SILVA_REFRESH_TOKEN=$(jq -er '.data.refresh_token' <<<"$SILVA_LOGIN_JSON")
+unset SILVA_LOGIN_JSON
 ```
 
-成功响应的 `Set-Cookie` 提供会话，JSON 的 `data.csrf_token` 提供 CSRF Token（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。会话 Cookie 始终为 HttpOnly、Secure、SameSite=Lax、Path=/、host-only；数据库只保存令牌哈希。使用 HTTPS 代理进行浏览器联调。HTTP curl 冒烟若客户端不回传 Secure Cookie，可手动把响应 Cookie 的名称和值填入后续 `Cookie` 头：
+成功响应为 `{"data": {"user", "permissions", "access_token", "refresh_token", "token_type": "Bearer", "expires_in", "refresh_expires_in"}}`（响应结构见 [API 响应结构规范](docs/contracts/api-response.md)）。之后的管理接口携带 access token：
 
 ```sh
 curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \
-  -H 'Cookie: <Set-Cookie 中的名称>=<令牌>'
+  -H "Authorization: Bearer $SILVA_ACCESS_TOKEN"
 ```
 
-管理写操作还必须携带精确 Origin 和对应会话的 `X-CSRF-Token`；`auth/me` 可重新取得 CSRF token。登录之外的管理接口执行会话和 RBAC 检查，账户停用或管理员重置密码会撤销该账户全部会话；`POST /api/v1/admin/auth/password` 修改自己的密码，保留当前会话并撤销其他会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
+access token 默认 15 分钟过期，过期返回 401 `token_expired`。用 refresh token 换取新的令牌对；refresh token 每次使用都会轮换，旧值立即失效，必须保存新值：
+
+```sh
+SILVA_REFRESH_JSON=$(jq --null-input --compact-output --arg token "$SILVA_REFRESH_TOKEN" '{refresh_token: $token}' \
+  | curl --fail-with-body --silent --show-error http://127.0.0.1:8088/api/v1/admin/auth/refresh \
+      -H 'Content-Type: application/json' \
+      --data-binary @-)
+SILVA_ACCESS_TOKEN=$(jq -er '.data.access_token' <<<"$SILVA_REFRESH_JSON")
+SILVA_REFRESH_TOKEN=$(jq -er '.data.refresh_token' <<<"$SILVA_REFRESH_JSON")
+unset SILVA_REFRESH_JSON
+```
+
+退出登录删除当前会话，该会话的 access token 和 refresh token 随即失效：
+
+```sh
+curl --fail-with-body -X POST http://127.0.0.1:8088/api/v1/admin/auth/logout \
+  -H "Authorization: Bearer $SILVA_ACCESS_TOKEN"
+unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
+```
+
+两种令牌都是 HS256 签名的 JWT，只携带账户 ID 与会话 ID；服务端每次请求都按会话读取账户当前状态、角色和权限，数据库只保存当前 refresh token 的 SHA-256 哈希。已轮换的 refresh token 再次提交视为重放：整个会话被撤销并写入 `auth.refresh_reuse` 审计。登录与刷新之外的管理接口执行令牌和 RBAC 检查，账户停用或管理员重置密码会撤销该账户全部会话；`POST /api/v1/admin/auth/password` 修改自己的密码，保留当前会话并撤销其他会话。内置 Author、Editor、Admin 权限来自产品文档 §3；账户管理、内置角色读取与审计属于 Admin 权限。
 
 ## 配置
 
@@ -110,10 +132,11 @@ curl --fail-with-body http://127.0.0.1:8088/api/v1/admin/auth/me \
 | --- | --- |
 | `DATABASE_URL` | 必填 PostgreSQL URL；本机示例在 `.env.example` |
 | `SILVA_BIND` | `127.0.0.1:8088` |
-| `SILVA_ADMIN_ORIGIN` | `http://localhost:5173`；精确 Origin，无尾部 `/` |
-| `SILVA_ENV` | `development`；可选 `test`、`production`，生产 Origin 必须 HTTPS |
+| `SILVA_ENV` | `development`；可选 `test`、`production` |
 | `SILVA_DB_MAX_CONNECTIONS` | `10`，正整数 |
-| `SILVA_SESSION_TTL_SECONDS` | `43200`，正整数秒 |
+| `SILVA_JWT_SECRET` | JWT（HS256）签名密钥，至少 32 字节；生产环境必填，否则 API 启动失败。开发/测试未设置时 API 随机生成并告警，重启后令牌失效。CLI、Worker 不需要 |
+| `SILVA_ACCESS_TOKEN_TTL_SECONDS` | `900`，正整数秒；access token 有效期 |
+| `SILVA_REFRESH_TOKEN_TTL_SECONDS` | `604800`，正整数秒；refresh token 与会话有效期，每次刷新重新计算 |
 | `SILVA_WORKER_INTERVAL_SECONDS` | `60`，正整数秒 |
 | `SILVA_API_RATE_PER_MINUTE` | `600`，正整数 |
 | `SILVA_LOGIN_RATE_PER_MINUTE` | `10`，正整数 |
@@ -139,7 +162,7 @@ make worker-once
 
 `make check` 执行格式、Clippy（警告视为错误）、Workspace 构建和普通测试，其中包括 Rust OpenAPI 契约、Schema 及示例校验。`make api-docs-check` 可单独运行契约测试。`make test-db` 显式执行数据库集成测试，并按契约校验真实接口的状态、媒体类型、响应头和 JSON Schema：连接角色需有 `CREATEDB`，测试创建独立临时数据库并在结束后清理。缺少测试 URL 或数据库不可用会失败，不把数据库测试静默当作成功。
 
-`check-schema` 在迁移后的真实数据库检查业务表/字段非空注释及 UUIDv7 约束；测试覆盖 UUIDv7 写入、v4/错误变体拒绝和 API 非 v7 ID 拒绝，以及登录、CSRF、RBAC、账户停用和会话撤销。GitHub Actions 使用临时 PostgreSQL 执行相同门禁。
+`check-schema` 在迁移后的真实数据库检查业务表/字段非空注释及 UUIDv7 约束；测试覆盖 UUIDv7 写入、v4/错误变体拒绝和 API 非 v7 ID 拒绝，以及登录、JWT 校验与刷新轮换、RBAC、账户停用和会话撤销。GitHub Actions 使用临时 PostgreSQL 执行相同门禁。
 
 所有业务实体、事件、审计和 request ID 都通过 `silva_shared::ids` 生成 UUIDv7。新增或变更数据库字段时，在同一次迁移维护 `COMMENT ON TABLE/COLUMN`；已执行的迁移不修改，追加新迁移。
 

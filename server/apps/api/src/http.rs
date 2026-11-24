@@ -7,7 +7,7 @@ use axum::{
     Json,
     body::Bytes,
     extract::{ConnectInfo, FromRequest, FromRequestParts, Path, Query, Request, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode, header, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use silva_application::{
     identity::UserUpdate,
-    ports::{RequestMeta, UserFilter},
+    ports::{IssuedTokens, RequestMeta, UserFilter},
 };
 use silva_domain::identity::{
     AuditLogFilter, Principal, User, parse_audit_action, parse_audit_resource_type,
@@ -33,10 +33,8 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
-use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-const SESSION_COOKIE: &str = "__Host-silva_session";
 /// 需要校验密码的入口共用登录额度，防止借修改密码接口暴力猜测当前密码。
 const PASSWORD_PATHS: [&str; 2] = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/password"];
 type HttpResult<T> = Result<T, ApiError>;
@@ -473,8 +471,6 @@ pub(crate) async fn context(
             .map(|value| value.0.ip())
             .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
         let path = req.uri().path();
-        let admin_write = path.starts_with("/api/v1/admin/")
-            && ![Method::GET, Method::HEAD, Method::OPTIONS].contains(&method);
         let rate_ok = !path.starts_with("/api/")
             || (state
                 .limiter
@@ -483,8 +479,6 @@ pub(crate) async fn context(
                     || state
                         .limiter
                         .allow(ip, true, state.config.login_rate_per_minute)));
-        let origin_ok =
-            !admin_write || exact_header(req.headers(), "origin", &state.config.admin_origin);
         let mut response = if !rate_ok {
             let mut response =
                 ApiError::new(ErrorCode::RateLimited, "Request limit exceeded").into_response();
@@ -492,12 +486,6 @@ pub(crate) async fn context(
                 .headers_mut()
                 .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
             response
-        } else if !origin_ok {
-            ApiError::new(
-                ErrorCode::OriginRejected,
-                "Origin must match the configured admin origin",
-            )
-            .into_response()
         } else {
             next.run(req).await
         };
@@ -535,54 +523,28 @@ pub(crate) async fn context(
     response.instrument(span).await
 }
 
-fn exact_header(headers: &HeaderMap, name: &str, expected: &str) -> bool {
-    let mut values = headers.get_all(name).iter();
-    values.next().and_then(|v| v.to_str().ok()) == Some(expected) && values.next().is_none()
+/// 从唯一的 `Authorization: Bearer <token>` 请求头取出令牌；缺失、重复、方案不符或格式错误均返回 401。
+fn bearer_token(headers: &HeaderMap) -> HttpResult<&str> {
+    let unauthorized = || ApiError::from(AppError::Unauthorized);
+    let mut values = headers.get_all(header::AUTHORIZATION).iter();
+    let (Some(value), None) = (values.next(), values.next()) else {
+        return Err(unauthorized());
+    };
+    let value = value.to_str().map_err(|_| unauthorized())?;
+    let (scheme, token) = value.split_once(' ').ok_or_else(unauthorized)?;
+    if !scheme.eq_ignore_ascii_case("bearer")
+        || token.is_empty()
+        || !token.bytes().all(|b| b.is_ascii_graphic())
+    {
+        return Err(unauthorized());
+    }
+    Ok(token)
 }
 
-fn session_token(headers: &HeaderMap) -> HttpResult<String> {
-    let mut found = None;
-    for value in headers.get_all(header::COOKIE) {
-        let value = value
-            .to_str()
-            .map_err(|_| ApiError::from(AppError::Unauthorized))?;
-        for pair in value.split(';') {
-            if let Some((name, token)) = pair.trim().split_once('=')
-                && name == SESSION_COOKIE
-            {
-                if found.is_some() {
-                    return Err(AppError::Unauthorized.into());
-                }
-                found = Some(token.to_owned());
-            }
-        }
-    }
-    found.ok_or_else(|| AppError::Unauthorized.into())
-}
-
-async fn authorize(
-    state: &AppState,
-    headers: &HeaderMap,
-    write: bool,
-) -> HttpResult<(Principal, String)> {
-    let token = session_token(headers)?;
-    let principal = state.identity.authenticate(&token).await?;
-    let csrf = state.identity.csrf_token(&token);
-    if write {
-        let candidate = headers
-            .get(CSRF_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        if !bool::from(candidate.as_bytes().ct_eq(csrf.as_bytes()))
-            || headers.get_all(CSRF_HEADER).iter().count() != 1
-        {
-            return Err(ApiError::new(
-                ErrorCode::CsrfRejected,
-                "CSRF token does not match session",
-            ));
-        }
-    }
-    Ok((principal, csrf))
+/// 校验 access token 并按其会话读取当前账户、角色与权限。
+async fn authorize(state: &AppState, headers: &HeaderMap) -> HttpResult<Principal> {
+    let token = bearer_token(headers)?;
+    Ok(state.identity.authenticate(token).await?)
 }
 
 #[derive(Deserialize)]
@@ -591,21 +553,43 @@ pub(crate) struct LoginInput {
     email: String,
     password: String,
 }
-/// 登录与读取会话共用的会话视图，作为 `data` 返回；CSRF token 通过响应头 `X-CSRF-Token` 返回。
+
+/// `GET /auth/me` 返回的当前账户视图。
 #[derive(Serialize)]
 struct AuthSession {
     user: User,
     permissions: Vec<String>,
 }
 
-/// 当前会话的 CSRF token 响应头，后续管理写请求原样放入请求头 `X-CSRF-Token`。
-const CSRF_HEADER: &str = "x-csrf-token";
+/// 令牌对的响应字段；两个有效期均为秒数。
+#[derive(Serialize)]
+struct TokenPair {
+    access_token: String,
+    refresh_token: String,
+    token_type: &'static str,
+    expires_in: u64,
+    refresh_expires_in: u64,
+}
 
-fn with_csrf_header(mut response: Response, csrf_token: &str) -> HttpResult<Response> {
-    let value = HeaderValue::from_str(csrf_token)
-        .map_err(|_| ApiError::from(AppError::Internal(anyhow::anyhow!("invalid CSRF token"))))?;
-    response.headers_mut().insert(CSRF_HEADER, value);
-    Ok(response)
+impl From<IssuedTokens> for TokenPair {
+    fn from(tokens: IssuedTokens) -> Self {
+        Self {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            token_type: "Bearer",
+            expires_in: tokens.expires_in,
+            refresh_expires_in: tokens.refresh_expires_in,
+        }
+    }
+}
+
+/// 登录响应：当前账户视图与新会话的令牌对。
+#[derive(Serialize)]
+struct LoginOutput {
+    user: User,
+    permissions: Vec<String>,
+    #[serde(flatten)]
+    tokens: TokenPair,
 }
 
 pub(crate) async fn login(
@@ -617,55 +601,46 @@ pub(crate) async fn login(
         .identity
         .login(input.email, input.password, &meta)
         .await?;
-    let cookie = format!(
-        "{SESSION_COOKIE}={}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
-        session.token,
-        state.config.session_ttl.as_secs()
-    );
-    let mut response = with_csrf_header(
-        response::ok(AuthSession {
-            user: session.principal.user,
-            permissions: session.principal.permissions,
-        }),
-        &session.csrf_token,
-    )?;
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&cookie).map_err(|_| {
-            ApiError::from(AppError::Internal(anyhow::anyhow!(
-                "invalid session cookie"
-            )))
-        })?,
-    );
-    Ok(response)
+    Ok(response::ok(LoginOutput {
+        user: session.principal.user,
+        permissions: session.principal.permissions,
+        tokens: session.tokens.into(),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RefreshInput {
+    refresh_token: String,
+}
+
+/// 用 refresh token 换取新的令牌对；无需 Bearer 请求头。
+pub(crate) async fn refresh(
+    State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
+    Input(input): Input<RefreshInput>,
+) -> HttpResult<Response> {
+    let tokens = state.identity.refresh(&input.refresh_token, &meta).await?;
+    Ok(response::ok(TokenPair::from(tokens)))
 }
 
 pub(crate) async fn me(State(state): State<AppState>, headers: HeaderMap) -> HttpResult<Response> {
-    let (principal, csrf_token) = authorize(&state, &headers, false).await?;
-    with_csrf_header(
-        response::ok(AuthSession {
-            user: principal.user,
-            permissions: principal.permissions,
-        }),
-        &csrf_token,
-    )
+    let principal = authorize(&state, &headers).await?;
+    Ok(response::ok(AuthSession {
+        user: principal.user,
+        permissions: principal.permissions,
+    }))
 }
 
+/// 删除当前会话，使该会话的 access token 与 refresh token 立即失效。
 pub(crate) async fn logout(
     State(state): State<AppState>,
     ClientMeta(meta): ClientMeta,
     headers: HeaderMap,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, true).await?;
+    let principal = authorize(&state, &headers).await?;
     state.identity.logout(&principal, &meta).await?;
-    let mut response = response::no_content();
-    response.headers_mut().insert(
-        header::SET_COOKIE,
-        HeaderValue::from_static(
-            "__Host-silva_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
-        ),
-    );
-    Ok(response)
+    Ok(response::no_content())
 }
 
 #[derive(Deserialize)]
@@ -680,7 +655,7 @@ pub(crate) async fn change_password(
     headers: HeaderMap,
     Input(input): Input<ChangePasswordInput>,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, true).await?;
+    let principal = authorize(&state, &headers).await?;
     state
         .identity
         .change_password(
@@ -698,7 +673,7 @@ pub(crate) async fn users(
     headers: HeaderMap,
     UserListInput(page, filter): UserListInput,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     Ok(response::page(
         state.identity.users(&principal, &page, &filter).await?,
     ))
@@ -709,7 +684,7 @@ pub(crate) async fn user(
     headers: HeaderMap,
     IdPath(id): IdPath,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     Ok(response::ok(
         state.identity.user(&principal, id.as_uuid()).await?,
     ))
@@ -729,7 +704,7 @@ pub(crate) async fn create_user(
     headers: HeaderMap,
     Input(input): Input<CreateUserInput>,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, true).await?;
+    let principal = authorize(&state, &headers).await?;
     let user = state
         .identity
         .create_user(
@@ -759,7 +734,7 @@ pub(crate) async fn update_user(
     IdPath(id): IdPath,
     Input(input): Input<UpdateUserInput>,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, true).await?;
+    let principal = authorize(&state, &headers).await?;
     let user = state
         .identity
         .update_user(
@@ -781,7 +756,7 @@ pub(crate) async fn roles(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     Ok(response::ok(state.identity.roles(&principal).await?))
 }
 
@@ -790,7 +765,7 @@ pub(crate) async fn audit_logs(
     headers: HeaderMap,
     query: AuditLogQuery,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     Ok(response::page(
         state
             .identity
@@ -804,7 +779,7 @@ pub(crate) async fn audit_log(
     headers: HeaderMap,
     IdPath(id): IdPath,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     Ok(response::ok(
         state.identity.audit_log(&principal, id.as_uuid()).await?,
     ))
@@ -814,7 +789,7 @@ pub(crate) async fn system_health(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> HttpResult<Response> {
-    let (principal, _) = authorize(&state, &headers, false).await?;
+    let principal = authorize(&state, &headers).await?;
     principal.require("system.read")?;
     Ok(response::ok(dependency_health(&state).await?))
 }
@@ -985,6 +960,35 @@ mod tests {
                 detail_codes(error).contains(&(field.to_owned(), code)),
                 "{uri}: 缺少 {field}/{code:?}"
             );
+        }
+    }
+
+    #[test]
+    fn bearer_token_requires_single_well_formed_authorization_header() {
+        let headers = |values: &[&str]| {
+            let mut headers = HeaderMap::new();
+            for value in values {
+                headers.append(header::AUTHORIZATION, HeaderValue::from_str(value).unwrap());
+            }
+            headers
+        };
+        assert_eq!(
+            bearer_token(&headers(&["Bearer abc.def.ghi"])).unwrap(),
+            "abc.def.ghi"
+        );
+        assert_eq!(bearer_token(&headers(&["bearer abc"])).unwrap(), "abc");
+        for invalid in [
+            &[][..],
+            &["Bearer"],
+            &["Bearer "],
+            &["Bearer a b"],
+            &["Bearer  abc"],
+            &["Basic YWRtaW46c2VjcmV0"],
+            &["abc.def.ghi"],
+            &["Bearer abc", "Bearer abc"],
+        ] {
+            let error = bearer_token(&headers(invalid)).unwrap_err();
+            assert_eq!(error.code, ErrorCode::Unauthorized, "{invalid:?}");
         }
     }
 

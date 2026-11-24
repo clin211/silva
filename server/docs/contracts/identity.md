@@ -5,14 +5,17 @@
 ## 会话和输入边界
 
 - 密码使用 Argon2id；数据库不保存明文密码。
-- Session Cookie 固定要求 `HttpOnly; Secure; SameSite=Lax; Path=/`，host-only，不设置 `Domain`。数据库只保存会话 token hash。
-- `POST /api/v1/admin/auth/login` 是无需既有会话的入口，只接受 JSON 和配置的**精确同源 Origin**。缺失、不匹配 Origin 均拒绝；不启用管理 API 跨域凭证。
-- 其他管理写请求必须同时校验精确 Origin 和当前会话绑定的 `X-CSRF-Token`。CSRF token 由登录和 `GET /api/v1/admin/auth/me` 通过响应头 `X-CSRF-Token` 返回，正文不携带；另一个会话的 token 不可复用。
-- `POST /api/v1/admin/auth/logout` 撤销当前会话，成功 204，无响应体。
-- `GET /api/v1/admin/auth/me` 在 `data` 中返回当前用户、当前权限，CSRF token 在响应头 `X-CSRF-Token` 中。
-- 无有效会话返回 401；无权限或 CSRF 检查失败返回 403。
+- 认证采用 JWT access token + refresh token。`POST /api/v1/admin/auth/login` 与 `POST /api/v1/admin/auth/refresh` 是无需 access token 的入口，只接受 JSON；其他管理接口只接受 `Authorization: Bearer <access_token>`。不使用 Cookie、CSRF token 或 Origin 校验（Bearer 令牌不会被浏览器自动携带），不启用管理 API 跨域凭证。
+- 两种令牌都是 HS256 签名的 JWT，验证时只接受 HS256，拒绝 `none` 与其他算法。声明：`iss = "silva"`、`aud = "silva-admin"`、`sub` 为账户 ID、`sid` 为会话 ID（`sessions.id`）、`jti` 为新 UUIDv7、`iat`、`exp`、`typ = "access" | "refresh"`。校验签名、`exp`、`iss`、`aud` 与 `typ`；refresh token 不能当 access token 使用，反之亦然。令牌不携带角色或权限。
+- 服务端会话是撤销依据：每次登录在 `sessions` 中创建一行，`token_hash` 只保存当前有效 refresh token 的 SHA-256 哈希，`expires_at` 为该 refresh token 的过期时间。
+- 每个鉴权请求：取唯一的 Bearer 令牌 → 验签与声明 → 按 `sid` 读取会话，会话不存在、已过期或 `user_id` 与 `sub` 不符返回 401 → 读取账户当前状态、角色和权限，停用账户返回 401。因此退出登录、停用、管理员重置密码、修改密码撤销其他会话都会让对应 access token 立即失效，角色变更立即生效。
+- `POST /api/v1/admin/auth/refresh` 校验 refresh token 后按 `sid` 锁定会话行：哈希一致则轮换（新 access token + 新 refresh token，更新 `token_hash` 与 `expires_at`，旧 refresh token 立即失效）；哈希不一致视为重放，删除该会话（其全部令牌失效），写入 `auth.refresh_reuse` 审计并返回 401。同一 refresh token 并发提交只有一次成功，落败的一次同样按重放处理。正常刷新不写审计。
+- `POST /api/v1/admin/auth/logout` 删除当前会话，成功 204，无响应体；之后该会话的 access token 与 refresh token 均返回 401。
+- `GET /api/v1/admin/auth/me` 在 `data` 中返回当前用户、当前权限。
+- 令牌缺失、格式错误、重复的 Authorization 头、签名或声明无效、会话已撤销返回 401 `unauthorized`；access token 签名有效但已过期返回 401 `token_expired`。所有 401 带 `WWW-Authenticate: Bearer`（过期时为 `Bearer error="invalid_token", ...`）。无权限返回 403 `forbidden`。
 - 停用账户立即撤销其全部会话；每次授权使用当前账户状态与当前角色，不能依赖登录时权限快照。
-- 认证响应与非公开预览使用 `Cache-Control: no-store`。登录和 API 均需限流，管理操作需审计，不记录密码、原始 session token 或敏感凭据。
+- 认证响应与非公开预览使用 `Cache-Control: no-store`。登录和 API 均需限流，管理操作需审计，不记录密码、access token、refresh token 原文或其他敏感凭据。
+- 签名密钥 `SILVA_JWT_SECRET`：生产环境必须设置且至少 32 字节，否则 API 启动失败；开发与测试环境未设置时 API 启动随机生成并告警，重启后已签发的令牌全部失效。CLI 与 Worker 不签发令牌，不要求该变量。密钥不写入日志。
 
 ## 角色与归属
 
@@ -34,10 +37,11 @@
 
 | 方法 | 路径 | 授权及结果 |
 | --- | --- | --- |
-| POST | `/auth/login` | JSON + 精确 Origin；返回会话 Cookie 与 CSRF token。 |
-| POST | `/auth/logout` | 有效会话 + Origin + CSRF；204。 |
-| GET | `/auth/me` | 有效会话；用户、权限、CSRF token。 |
-| POST | `/auth/password` | 有效会话 + Origin + CSRF；校验当前密码后修改，204；保留当前会话并撤销其他会话。 |
+| POST | `/auth/login` | JSON，无需令牌；创建会话，返回用户、权限、access token 与 refresh token。 |
+| POST | `/auth/refresh` | JSON，无需 Bearer 头；轮换 refresh token，返回新令牌对。 |
+| POST | `/auth/logout` | Bearer access token；删除当前会话，204。 |
+| GET | `/auth/me` | Bearer access token；用户、权限。 |
+| POST | `/auth/password` | Bearer access token；校验当前密码后修改，204；保留当前会话并撤销其他会话。 |
 | GET, POST | `/users` | Admin；分页列表（支持关键字、角色、状态筛选）、创建账户。 |
 | GET | `/users/{id}` | Admin；账户详情。 |
 | PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
@@ -48,17 +52,19 @@
 
 以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
 
-- Cookie 名称：`__Host-silva_session`。
-- 登录输入：`{email,password}`；登录和 `auth/me` 返回 `{"data":{user,permissions}}`，并带响应头 `X-CSRF-Token`。
+- 登录输入：`{email,password}`；登录返回 `{"data":{user,permissions,access_token,refresh_token,token_type:"Bearer",expires_in,refresh_expires_in}}`，两个有效期为秒数整数；`auth/me` 返回 `{"data":{user,permissions}}`。
+- 刷新输入：`{refresh_token}`；返回 `{"data":{access_token,refresh_token,token_type:"Bearer",expires_in,refresh_expires_in}}`。
+- 令牌有效期：access token `SILVA_ACCESS_TOKEN_TTL_SECONDS`（默认 900）；refresh token 与会话 `SILVA_REFRESH_TOKEN_TTL_SECONDS`（默认 604800），每次刷新从刷新时刻重新计算。
+- 重放审计：`action = "auth.refresh_reuse"`，`actor_user_id = null`，`resource_type = "user"`，`resource_id` 为令牌所属账户，`metadata = {}`，不含任何令牌或哈希。
 - 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
 - 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...],password?}`，200 直接返回 User。`password` 为管理员重置，设置后撤销该账户全部会话。
 - 修改自己的密码：`{current_password,new_password}`；当前密码错误、新密码不符合 12..1024 字节或与当前密码相同时返回 422 `validation_error`，`details` 分别指向 `current_password`（`incorrect`）或 `new_password`（`out_of_range`、`unchanged`）；与登录共用每 IP 登录限流额度。角色必须是非空、无重复的内置键数组。
 - 新账户密码为 12..1024 UTF-8 字节；用户邮箱去首尾空白后转小写，最大 254 字节；显示名去空白后非空，最大 100 字节。
-- Origin 失败：403 `origin_rejected`；CSRF 失败：403 `csrf_rejected`；凭据失败：401 `invalid_credentials`；无会话：401 `unauthorized`；无权限：403 `forbidden`。
+- 凭据失败：401 `invalid_credentials`；令牌缺失、无效、已撤销或 refresh 失败：401 `unauthorized`；access token 过期：401 `token_expired`；无权限：403 `forbidden`。
 - 非 JSON：415 `unsupported_media_type`；JSON 语法错误：400 `malformed_json`；字段缺失、未知、类型或约束不符：422 `validation_error`；64 KiB 请求体上限，超出返回 413 `payload_too_large`。
 - 账户邮箱重复：409 `email_in_use`（仅 users 邮箱唯一约束映射为该码，其他唯一冲突按 500 记录）。停用或改角色后若不再有启用状态的 admin：409 `last_admin_required`，整笔修改回滚。未知路由：404 `not_found`；方法不允许：405 `method_not_allowed`。
 - API 默认每 IP（IPv6 按 /64 前缀合并）每分钟 600 次，登录额外每 IP 每分钟 10 次，可通过环境变量配置；超额返回 429 `rate_limited` 及 `Retry-After: 60`。
-- 登录按账户锁定：以规范化邮箱（去首尾空白后转小写）为键，不论账户是否存在都同样计数和锁定，响应不区分两者。15 分钟窗口内连续凭据失败（`invalid_credentials`，含停用账户）达到 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）。锁定期内即使密码正确也拒绝，且不校验密码，返回 429 `rate_limited`，`Retry-After` 为剩余锁定秒数（向上取整，至少 1）。成功登录清零；锁定到期后重新计数。Origin、JSON 与字段校验失败及服务端故障不计入。`POST /auth/password` 只共用每 IP 登录额度，不纳入账户锁定。计数保存在单个 API 进程内存中（最多跟踪 10000 个邮箱，满时淘汰最早的未锁定记录），多副本各自计数，重启清空。
+- 登录按账户锁定：以规范化邮箱（去首尾空白后转小写）为键，不论账户是否存在都同样计数和锁定，响应不区分两者。15 分钟窗口内连续凭据失败（`invalid_credentials`，含停用账户）达到 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）。锁定期内即使密码正确也拒绝，且不校验密码，返回 429 `rate_limited`，`Retry-After` 为剩余锁定秒数（向上取整，至少 1）。成功登录清零；锁定到期后重新计数。JSON 与字段校验失败及服务端故障不计入。`POST /auth/password` 只共用每 IP 登录额度，不纳入账户锁定。计数保存在单个 API 进程内存中（最多跟踪 10000 个邮箱，满时淘汰最早的未锁定记录），多副本各自计数，重启清空。
 - 失败登录审计：`action = "auth.login_failed"`，`actor_user_id = null`，`resource_type = "user"`，账户存在时 `resource_id` 为其 ID，否则为 null；`metadata` 仅含 `{"reason": "invalid_credentials" | "account_disabled" | "locked"}`，不记录尝试的邮箱或密码。`account_disabled` 表示密码正确但账户已停用；`locked` 在同一轮锁定中只于首次被拒时记录一次。审计写入失败时与其他管理操作一致返回 500 `internal_error`，不会放行登录。
 - 审计记录 `{id,actor_user_id,actor,action,resource_type,resource_id,request_id,ip_address,user_agent,metadata,created_at}`：`actor` 为操作账户摘要 `{id,email,display_name}`，系统/CLI 操作为 null；`request_id` 为产生该记录的 HTTP 请求 UUIDv7，与该请求响应头 `X-Request-Id` 一致，CLI 等非 HTTP 操作为 null；`ip_address` 为直连 peer IP（不信任 `X-Forwarded-For`，CLI 操作为 null），`user_agent` 截断到 512 字节，`metadata` 只含变更字段名、状态、角色键等非敏感信息。
 - 审计列表 `GET /audit-logs` 可选查询参数以 AND 组合，分页 `total` 反映过滤后结果，排序固定 `created_at DESC, id DESC`；同一参数重复返回 `duplicate`：
@@ -91,14 +97,15 @@
 
 使用真实临时 PostgreSQL 执行全部迁移后测试：
 
-1. 登录成功 Cookie 属性、CSRF token、`auth/me`、登出 204 和登出后 401；DB 只含 token hash。
-2. 缺失/错误 Origin、非 JSON 登录、缺失/错误/其他会话 CSRF token 均被拒绝，错误响应统一，响应头 `X-Request-Id` 为合法 UUIDv7，正文不含 `request_id`。
+1. 登录返回 access token、refresh token、`token_type`、`expires_in`、`refresh_expires_in`，Bearer 访问 `auth/me`；令牌声明含 `iss`、`aud`、`sub`、`sid`、`typ`；DB 只含 refresh token 的 SHA-256 哈希，`sessions` 与审计中都没有令牌原文。
+2. 缺失、格式错误或重复的 Authorization 头，篡改签名或载荷、其他密钥、错误 `iss`/`aud`、`alg` 为 `none` 或 HS512、refresh token 当 access token、不存在的会话或 `sub` 不符均返回 401 `unauthorized` 并带 `WWW-Authenticate: Bearer`；签名有效的过期 access token 返回 401 `token_expired`；非 JSON 登录被拒绝；错误响应统一，响应头 `X-Request-Id` 为合法 UUIDv7，正文不含 `request_id`。
 3. 不存在用户、错误密码、无效/过期会话不获得登录或授权；密码不能明文保存。
 4. Author 无法读取账户/角色/审计/系统信息或创建账户；当前角色变更立即影响授权。
-5. Admin 创建账户、内置角色分配、停用账户后所有既有会话立即失效；审计可查且不含凭据。
+5. Admin 创建账户、内置角色分配、停用账户或重置密码后所有既有 access/refresh token 立即失效；修改自己的密码后其他会话令牌失效、当前会话仍可用；审计可查且不含凭据。
 6. API 对 UUIDv4、错误变体、非连字符 UUID 返回 422 `validation_error`，字段错误为 `id`/`invalid_format`；真实 UUIDv7 可进入资源查询。
 7. 账户/审计列表默认分页、分页上限、无效分页与无效 JSON，路由不存在、方法不允许等错误保持统一错误结构。
 8. 账户 `last_login_at` 登录前为 null、登录后为时间；账户详情 200/404/422；列表按 `q`、`role`、`status` 单独及组合筛选，`total` 反映筛选结果，LIKE 特殊字符按字面匹配，非法取值返回字段错误；角色 `user_count` 包含停用账户。
 9. 审计记录的 `request_id` 与写操作响应头 `X-Request-Id` 一致，CLI 初始化管理员的记录 `request_id`、`actor` 为 null；各筛选条件、非法筛选值、详情 200/404/422 及 Author 无权访问均有覆盖。
 10. 同一邮箱连续登录失败达到阈值后返回 429 与剩余 `Retry-After`，锁定期内正确密码也被拒绝；不存在的账户同样锁定；失败审计按原因记录且不含邮箱、密码；锁定到期或成功登录后计数清零。
 11. CI 另验证 UUIDv7 可写入 DB、UUIDv4/错误变体被 DB 拒绝，以及每张业务表/字段拥有非空数据库注释。
+12. 刷新轮换后新令牌可用；重放旧 refresh token 返回 401，整个会话（含新令牌）失效并写入 `auth.refresh_reuse` 审计；同一 refresh token 并发提交只有一次成功；退出登录后 access 与 refresh token 均返回 401；服务端会话过期后两种令牌均失效。

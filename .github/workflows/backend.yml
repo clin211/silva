@@ -29,7 +29,6 @@ jobs:
       DATABASE_URL: postgres://silva:silva@localhost:5432/silva_test
       SILVA_TEST_DATABASE_URL: postgres://silva:silva@localhost:5432/silva_test
       SILVA_ENV: test
-      SILVA_ADMIN_ORIGIN: http://localhost:5173
       RUST_LOG: info
       CARGO_TERM_COLOR: always
     services:

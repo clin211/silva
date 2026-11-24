@@ -4,23 +4,23 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再把登录或 GET /auth/me 响应头 X-CSRF-Token 的值放入写请求的同名请求头。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
+        "description": "当前提供健康检查、身份认证（JWT access token + refresh token）、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。生产环境须通过 HTTPS 入口访问。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。先调用 POST /auth/login 取得 access_token 与 refresh_token，其他管理接口在请求头 Authorization: Bearer <access_token> 中携带 access token；access token 过期（401 token_expired）后调用 POST /auth/refresh 换取新令牌对。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
     },
     "servers": [
         {
             "url": "/",
-            "description": "浏览器使用当前同源入口；写操作的 Origin 必须与 SILVA_ADMIN_ORIGIN 精确一致。"
+            "description": "当前入口；管理接口使用 Authorization: Bearer <access_token> 认证。"
         }
     ],
     "security": [
         {
-            "SessionCookie": []
+            "BearerAuth": []
         }
     ],
     "tags": [
         {
             "name": "身份认证",
-            "description": "身份认证、会话和当前权限"
+            "description": "登录、令牌刷新、退出和当前权限"
         },
         {
             "name": "账户管理",
@@ -179,19 +179,16 @@
         "/api/v1/admin/auth/login": {
             "post": {
                 "operationId": "login",
-                "summary": "登录并创建后台会话",
+                "summary": "登录并签发令牌",
                 "tags": [
                     "身份认证"
                 ],
                 "responses": {
                     "200": {
-                        "description": "认证成功；响应正文包含与当前会话绑定的 CSRF Token。",
+                        "description": "认证成功；创建服务端会话并返回 access token 与 refresh token。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-CSRF-Token": {
-                                "$ref": "#/components/headers/CsrfToken"
                             },
                             "Cache-Control": {
                                 "description": "认证及管理接口响应不缓存。",
@@ -200,13 +197,6 @@
                                     "const": "no-store"
                                 }
                             },
-                            "Set-Cookie": {
-                                "description": "会话 Cookie 名为 __Host-silva_session，固定为 HttpOnly、Secure、SameSite=Lax、Path=/，没有 Domain。数据库仅保存令牌哈希；有效期由 SILVA_SESSION_TTL_SECONDS 决定。",
-                                "schema": {
-                                    "type": "string"
-                                },
-                                "example": "__Host-silva_session=<opaque-token>; Path=/; HttpOnly; Secure; SameSite=Lax"
-                            },
                             "X-Trace-Id": {
                                 "$ref": "#/components/headers/TraceId"
                             }
@@ -214,7 +204,7 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AuthResponse"
+                                    "$ref": "#/components/schemas/LoginResponse"
                                 },
                                 "example": {
                                     "data": {
@@ -237,7 +227,12 @@
                                             "posts.submit_own",
                                             "media.manage_own",
                                             "jobs.read_own"
-                                        ]
+                                        ],
+                                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                                        "token_type": "Bearer",
+                                        "expires_in": 900,
+                                        "refresh_expires_in": 604800
                                     }
                                 }
                             }
@@ -350,6 +345,9 @@
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
+                            "WWW-Authenticate": {
+                                "$ref": "#/components/headers/WwwAuthenticate"
+                            },
                             "X-Trace-Id": {
                                 "$ref": "#/components/headers/TraceId"
                             }
@@ -370,34 +368,6 @@
                         },
                         "x-error-codes": [
                             "invalid_credentials"
-                        ]
-                    },
-                    "403": {
-                        "description": "缺少 Origin 或与 SILVA_ADMIN_ORIGIN 不完全一致。",
-                        "headers": {
-                            "X-Request-Id": {
-                                "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-Trace-Id": {
-                                "$ref": "#/components/headers/TraceId"
-                            }
-                        },
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                },
-                                "example": {
-                                    "error": {
-                                        "code": "origin_rejected",
-                                        "message": "Origin must match the configured admin origin",
-                                        "details": []
-                                    }
-                                }
-                            }
-                        },
-                        "x-error-codes": [
-                            "origin_rejected"
                         ]
                     },
                     "413": {
@@ -433,11 +403,6 @@
                     }
                 },
                 "security": [],
-                "parameters": [
-                    {
-                        "$ref": "#/components/parameters/Origin"
-                    }
-                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -452,19 +417,19 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从响应头 X-CSRF-Token 读取 CSRF token。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
+                "description": "仅接受 JSON，无需认证。成功后创建一条服务端会话，返回 access_token、refresh_token、token_type、expires_in 与 refresh_expires_in；服务端只保存 refresh token 的哈希。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
             }
         },
-        "/api/v1/admin/auth/logout": {
+        "/api/v1/admin/auth/refresh": {
             "post": {
-                "operationId": "logout",
-                "summary": "退出并撤销当前会话",
+                "operationId": "refreshTokens",
+                "summary": "刷新令牌",
                 "tags": [
                     "身份认证"
                 ],
                 "responses": {
-                    "204": {
-                        "description": "会话已撤销，无响应正文。",
+                    "200": {
+                        "description": "轮换成功；返回新的 access token 与 refresh token，旧 refresh token 立即失效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -476,10 +441,194 @@
                                     "const": "no-store"
                                 }
                             },
-                            "Set-Cookie": {
-                                "description": "使用相同安全属性使 __Host-silva_session Cookie 过期。",
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
                                 "schema": {
-                                    "type": "string"
+                                    "$ref": "#/components/schemas/TokenResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                                        "token_type": "Bearer",
+                                        "expires_in": 900,
+                                        "refresh_expires_in": 604800
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    },
+                    "401": {
+                        "description": "refresh token 缺失、签名或声明无效、已过期、不是 refresh 种类，会话已撤销或过期，或账户已停用。提交已被轮换过的 refresh token 视为重放：整个会话被撤销（其全部令牌失效）并写入 auth.refresh_reuse 审计。客户端收到该错误后应重新登录。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "WWW-Authenticate": {
+                                "$ref": "#/components/headers/WwwAuthenticate"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unauthorized",
+                                        "message": "Authentication required",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unauthorized"
+                        ]
+                    },
+                    "415": {
+                        "description": "Content-Type 必须为 application/json。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
+                    },
+                    "422": {
+                        "description": "字段缺失、未知字段或类型不符。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "refresh_token",
+                                                "code": "required",
+                                                "message": "field is required"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body exceeds 64 KiB",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
+                    }
+                },
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RefreshInput"
+                            },
+                            "example": {
+                                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature"
+                            }
+                        }
+                    }
+                },
+                "description": "仅接受 JSON，无需 Authorization 请求头。校验 refresh token 后按其会话轮换：生成新的 access token 与 refresh token，会话有效期按 SILVA_REFRESH_TOKEN_TTL_SECONDS 从刷新时刻重新计算。同一 refresh token 只能成功使用一次，并发提交时至多一次成功；重复提交视为重放并撤销整个会话。正常刷新不写审计。"
+            }
+        },
+        "/api/v1/admin/auth/logout": {
+            "post": {
+                "operationId": "logout",
+                "summary": "退出并注销当前会话的令牌",
+                "tags": [
+                    "身份认证"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "会话已删除；该会话的 access token 与 refresh token 立即失效。无响应正文。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "Cache-Control": {
+                                "description": "认证及管理接口响应不缓存。",
+                                "schema": {
+                                    "type": "string",
+                                    "const": "no-store"
                                 }
                             },
                             "X-Trace-Id": {
@@ -495,26 +644,15 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/Unauthorized"
-                    },
-                    "403": {
-                        "$ref": "#/components/responses/Forbidden"
                     }
                 },
-                "parameters": [
-                    {
-                        "$ref": "#/components/parameters/Origin"
-                    },
-                    {
-                        "$ref": "#/components/parameters/CsrfToken"
-                    }
-                ],
-                "description": "要求当前会话 Cookie、精确匹配的 Origin 及该会话绑定的 CSRF Token。无需请求正文。"
+                "description": "要求有效的 access token。删除该令牌所属的服务端会话并写入 auth.logout 审计；之后该会话的 access token 与 refresh token 均返回 401。无需请求正文。"
             }
         },
         "/api/v1/admin/auth/me": {
             "get": {
                 "operationId": "me",
-                "summary": "读取当前账户、权限和 CSRF Token",
+                "summary": "读取当前账户和权限",
                 "tags": [
                     "身份认证"
                 ],
@@ -524,9 +662,6 @@
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
-                            },
-                            "X-CSRF-Token": {
-                                "$ref": "#/components/headers/CsrfToken"
                             },
                             "Cache-Control": {
                                 "description": "认证及管理接口响应不缓存。",
@@ -579,9 +714,6 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/Unauthorized"
-                    },
-                    "403": {
-                        "$ref": "#/components/responses/Forbidden"
                     }
                 }
             }
@@ -595,7 +727,7 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "密码已更新；当前会话保留，该账户的其他会话全部撤销。无响应正文。",
+                        "description": "密码已更新；当前会话保留，该账户的其他会话全部撤销，其令牌立即失效。无响应正文。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -620,9 +752,6 @@
                     },
                     "401": {
                         "$ref": "#/components/responses/Unauthorized"
-                    },
-                    "403": {
-                        "$ref": "#/components/responses/Forbidden"
                     },
                     "415": {
                         "description": "Content-Type 必须为 application/json。",
@@ -718,14 +847,6 @@
                         "$ref": "#/components/responses/MalformedJson"
                     }
                 },
-                "parameters": [
-                    {
-                        "$ref": "#/components/parameters/Origin"
-                    },
-                    {
-                        "$ref": "#/components/parameters/CsrfToken"
-                    }
-                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -740,7 +861,7 @@
                         }
                     }
                 },
-                "description": "要求当前会话 Cookie、精确匹配的 Origin 及该会话绑定的 CSRF Token。与登录共用每 IP 登录限流额度。"
+                "description": "要求有效的 access token。与登录共用每 IP 登录限流额度。成功后保留当前会话及其令牌，撤销该账户其他会话的全部令牌。"
             }
         },
         "/api/v1/admin/users": {
@@ -1039,14 +1160,6 @@
                     }
                 },
                 "x-required-permission": "users.manage",
-                "parameters": [
-                    {
-                        "$ref": "#/components/parameters/Origin"
-                    },
-                    {
-                        "$ref": "#/components/parameters/CsrfToken"
-                    }
-                ],
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -1199,7 +1312,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回更新后的账户。停用账户会原子撤销其全部会话。",
+                        "description": "返回更新后的账户。停用账户或重置密码会原子撤销其全部会话，其令牌立即失效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1396,12 +1509,6 @@
                 "parameters": [
                     {
                         "$ref": "#/components/parameters/UserId"
-                    },
-                    {
-                        "$ref": "#/components/parameters/Origin"
-                    },
-                    {
-                        "$ref": "#/components/parameters/CsrfToken"
                     }
                 ],
                 "requestBody": {
@@ -1804,11 +1911,11 @@
     },
     "components": {
         "securitySchemes": {
-            "SessionCookie": {
-                "type": "apiKey",
-                "in": "cookie",
-                "name": "__Host-silva_session",
-                "description": "使用 HttpOnly、Secure、SameSite=Lax、Path=/ 且无 Domain 的会话 Cookie。服务端仅保存令牌哈希，不接受 Authorization Bearer 认证。浏览器自动管理 Cookie，无需在文档认证面板手工填写。"
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "在请求头 Authorization: Bearer <access_token> 中携带登录或刷新接口返回的 access token。令牌为 HS256 签名的 JWT，只含账户 ID 与会话 ID；每次请求都按会话读取账户当前状态、角色与权限，退出登录、停用账户、重置或修改密码撤销会话后令牌立即失效。access token 默认 900 秒过期，过期返回 401 token_expired，此时用 refresh token 调用 POST /api/v1/admin/auth/refresh。refresh token 不能用作 access token。"
             }
         },
         "headers": {
@@ -1826,35 +1933,16 @@
                 },
                 "example": "12345678901234567890123456789012"
             },
-            "CsrfToken": {
-                "description": "绑定当前会话的不透明 CSRF token。登录与读取当前会话时返回；后续管理写请求原样放入请求头 X-CSRF-Token。另一个会话的 token 不可复用。",
+            "WwwAuthenticate": {
+                "description": "Bearer 认证质询。access token 过期时为 Bearer error=\"invalid_token\", error_description=\"The access token expired\"，其他 401 为 Bearer。",
                 "schema": {
-                    "type": "string"
+                    "type": "string",
+                    "pattern": "^Bearer"
                 },
-                "example": "example-session-bound-csrf-token"
+                "example": "Bearer"
             }
         },
         "parameters": {
-            "Origin": {
-                "name": "Origin",
-                "in": "header",
-                "required": true,
-                "description": "登录及所有管理写操作必填。必须与 SILVA_ADMIN_ORIGIN 的协议、主机和端口精确一致；缺失、尾部斜杠或其他 Origin 均拒绝。浏览器自动设置，手工修改请求头不能绕过同源要求。",
-                "schema": {
-                    "type": "string"
-                },
-                "example": "http://localhost:5173"
-            },
-            "CsrfToken": {
-                "name": "X-CSRF-Token",
-                "in": "header",
-                "required": true,
-                "description": "从当前会话的登录或 auth/me 响应取得。登录以外的管理写操作必填，不接受其他会话的 Token。",
-                "schema": {
-                    "type": "string"
-                },
-                "example": "example-session-bound-csrf-token"
-            },
             "UserId": {
                 "name": "id",
                 "in": "path",
@@ -2046,10 +2134,13 @@
                 }
             },
             "Unauthorized": {
-                "description": "会话缺失、无效、过期、已撤销或账户已停用。",
+                "description": "缺少 Authorization 请求头或格式不是 Bearer <token>、令牌签名或声明无效、令牌种类不是 access、会话已撤销或过期、账户已停用时返回 unauthorized；access token 签名有效但已过期时返回 token_expired，客户端应调用 POST /auth/refresh 后重试。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
+                    },
+                    "WWW-Authenticate": {
+                        "$ref": "#/components/headers/WwwAuthenticate"
                     },
                     "X-Trace-Id": {
                         "$ref": "#/components/headers/TraceId"
@@ -2070,11 +2161,12 @@
                     }
                 },
                 "x-error-codes": [
-                    "unauthorized"
+                    "unauthorized",
+                    "token_expired"
                 ]
             },
             "Forbidden": {
-                "description": "当前权限不足、Origin 被拒绝，或会话绑定的 CSRF Token 缺失或无效。",
+                "description": "已认证，但当前角色缺少所需权限。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
@@ -2098,9 +2190,7 @@
                     }
                 },
                 "x-error-codes": [
-                    "forbidden",
-                    "origin_rejected",
-                    "csrf_rejected"
+                    "forbidden"
                 ]
             },
             "RateLimited": {
@@ -2932,10 +3022,9 @@
                 "enum": [
                     "malformed_json",
                     "unauthorized",
+                    "token_expired",
                     "invalid_credentials",
                     "forbidden",
-                    "origin_rejected",
-                    "csrf_rejected",
                     "not_found",
                     "method_not_allowed",
                     "email_in_use",
@@ -2947,7 +3036,7 @@
                     "internal_error",
                     "service_unavailable"
                 ],
-                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。客户端按错误码分支，不解析 message。新增错误码属于向后兼容变更，客户端须把未知错误码按 HTTP 状态兜底处理。\n\n- `malformed_json`：400：请求体不是合法 JSON。\n- `unauthorized`：401：会话缺失、无效、过期、已撤销或账户已停用。\n- `invalid_credentials`：401：登录邮箱或密码错误。\n- `forbidden`：403：当前账户缺少所需权限。\n- `origin_rejected`：403：写操作的 Origin 与 SILVA_ADMIN_ORIGIN 不一致。\n- `csrf_rejected`：403：X-CSRF-Token 缺失或与当前会话不匹配。\n- `not_found`：404：路径或资源不存在。\n- `method_not_allowed`：405：路径存在但不支持该方法。\n- `email_in_use`：409：规范化后的邮箱已被占用。\n- `last_admin_required`：409：操作会导致系统没有启用状态的管理员。\n- `payload_too_large`：413：请求体超过 64 KiB。\n- `unsupported_media_type`：415：Content-Type 不是 application/json。\n- `validation_error`：422：输入不满足约束，details 列出每个字段错误。\n- `rate_limited`：429：超过请求限额，按 Retry-After 等待。\n- `internal_error`：500：服务端内部错误，细节只记录在日志中。\n- `service_unavailable`：503：必要的服务依赖不可用。",
+                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。客户端按错误码分支，不解析 message。新增错误码属于向后兼容变更，客户端须把未知错误码按 HTTP 状态兜底处理。\n\n- `malformed_json`：400：请求体不是合法 JSON。\n- `unauthorized`：401：令牌缺失、无效、已撤销，refresh token 重放，或账户已停用。\n- `token_expired`：401：access token 已过期，应使用 refresh token 刷新后重试。\n- `invalid_credentials`：401：登录邮箱或密码错误。\n- `forbidden`：403：当前账户缺少所需权限。\n- `not_found`：404：路径或资源不存在。\n- `method_not_allowed`：405：路径存在但不支持该方法。\n- `email_in_use`：409：规范化后的邮箱已被占用。\n- `last_admin_required`：409：操作会导致系统没有启用状态的管理员。\n- `payload_too_large`：413：请求体超过 64 KiB。\n- `unsupported_media_type`：415：Content-Type 不是 application/json。\n- `validation_error`：422：输入不满足约束，details 列出每个字段错误。\n- `rate_limited`：429：超过请求限额，按 Retry-After 等待。\n- `internal_error`：500：服务端内部错误，细节只记录在日志中。\n- `service_unavailable`：503：必要的服务依赖不可用。",
                 "examples": [
                     "validation_error"
                 ]
@@ -3043,12 +3132,12 @@
                         ]
                     }
                 ],
-                "description": "当前会话视图。"
+                "description": "当前账户视图：账户与当前角色授予的权限，每次请求按会话重新读取。"
             },
             "AuthResponse": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "登录或读取会话的响应。",
+                "description": "读取当前账户的响应。",
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/AuthSession"
@@ -3190,6 +3279,179 @@
                                 "user_count": 1
                             }
                         ]
+                    }
+                ]
+            },
+            "TokenPair": {
+                "type": "object",
+                "description": "一对新令牌。refresh token 每次刷新都会轮换，旧 refresh token 立即失效；已轮换的 refresh token 再次提交会撤销整个会话。",
+                "properties": {
+                    "access_token": {
+                        "type": "string",
+                        "description": "HS256 签名的 JWT access token，放入 Authorization: Bearer 请求头。"
+                    },
+                    "refresh_token": {
+                        "type": "string",
+                        "description": "HS256 签名的 JWT refresh token，只用于 POST /auth/refresh，不能访问其他接口。服务端只保存其 SHA-256 哈希。"
+                    },
+                    "token_type": {
+                        "type": "string",
+                        "const": "Bearer",
+                        "description": "固定为 Bearer。"
+                    },
+                    "expires_in": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "access token 有效秒数，由 SILVA_ACCESS_TOKEN_TTL_SECONDS 决定（默认 900）。"
+                    },
+                    "refresh_expires_in": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "refresh token 有效秒数，由 SILVA_REFRESH_TOKEN_TTL_SECONDS 决定（默认 604800），每次刷新重新计算。"
+                    }
+                },
+                "required": [
+                    "access_token",
+                    "refresh_token",
+                    "token_type",
+                    "expires_in",
+                    "refresh_expires_in"
+                ],
+                "examples": [
+                    {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                        "token_type": "Bearer",
+                        "expires_in": 900,
+                        "refresh_expires_in": 604800
+                    }
+                ]
+            },
+            "LoginSession": {
+                "description": "登录结果：当前账户视图与新会话的令牌对。",
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/AuthSession"
+                    },
+                    {
+                        "$ref": "#/components/schemas/TokenPair"
+                    }
+                ],
+                "unevaluatedProperties": false,
+                "examples": [
+                    {
+                        "user": {
+                            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                            "email": "author@example.com",
+                            "display_name": "示例作者",
+                            "status": "active",
+                            "roles": [
+                                "author"
+                            ],
+                            "created_at": "2026-11-21T08:00:00Z",
+                            "updated_at": "2026-11-21T08:00:00Z",
+                            "last_login_at": "2026-11-22T09:30:00Z"
+                        },
+                        "permissions": [
+                            "posts.create",
+                            "posts.read_own",
+                            "posts.edit_own",
+                            "posts.submit_own",
+                            "media.manage_own",
+                            "jobs.read_own"
+                        ],
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                        "token_type": "Bearer",
+                        "expires_in": 900,
+                        "refresh_expires_in": 604800
+                    }
+                ]
+            },
+            "LoginResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "登录响应。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/LoginSession"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "user": {
+                                "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                                "email": "author@example.com",
+                                "display_name": "示例作者",
+                                "status": "active",
+                                "roles": [
+                                    "author"
+                                ],
+                                "created_at": "2026-11-21T08:00:00Z",
+                                "updated_at": "2026-11-21T08:00:00Z",
+                                "last_login_at": "2026-11-22T09:30:00Z"
+                            },
+                            "permissions": [
+                                "posts.create",
+                                "posts.read_own",
+                                "posts.edit_own",
+                                "posts.submit_own",
+                                "media.manage_own",
+                                "jobs.read_own"
+                            ],
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                            "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                            "token_type": "Bearer",
+                            "expires_in": 900,
+                            "refresh_expires_in": 604800
+                        }
+                    }
+                ]
+            },
+            "TokenResponse": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "刷新令牌响应。",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/TokenPair"
+                    }
+                },
+                "required": [
+                    "data"
+                ],
+                "examples": [
+                    {
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoiYWNjZXNzIn0.example-access-signature",
+                            "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature",
+                            "token_type": "Bearer",
+                            "expires_in": 900,
+                            "refresh_expires_in": 604800
+                        }
+                    }
+                ]
+            },
+            "RefreshInput": {
+                "type": "object",
+                "properties": {
+                    "refresh_token": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "description": "登录或上次刷新返回的 refresh token。"
+                    }
+                },
+                "required": [
+                    "refresh_token"
+                ],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzaWx2YSIsImF1ZCI6InNpbHZhLWFkbWluIiwidHlwIjoicmVmcmVzaCJ9.example-refresh-signature"
                     }
                 ]
             }

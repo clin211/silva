@@ -1,11 +1,11 @@
 use crate::{
     login_lockout::{Admission, LoginLockout},
     ports::{
-        Credentials, IdentityRepository, LoginFailure, NewUser, RequestMeta, UserChanges,
-        UserFilter,
+        Credentials, IdentityRepository, IssuedTokens, LoginFailure, NewSession, NewUser,
+        RequestMeta, RotationOutcome, SessionRotation, TokenKind, TokenRejection, TokenService,
+        UserChanges, UserFilter,
     },
 };
-use chrono::Utc;
 use silva_domain::identity::{
     AuditLog, AuditLogFilter, Principal, ROLE_KEYS, Role, USER_STATUSES, User, validate_roles,
 };
@@ -14,16 +14,13 @@ use silva_shared::{
     ids,
     pagination::{Page, PageRequest},
 };
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Instant};
 use uuid::Uuid;
 
 pub struct IdentityService {
     repository: Arc<dyn IdentityRepository>,
     credentials: Arc<dyn Credentials>,
-    session_ttl: Duration,
+    tokens: Arc<dyn TokenService>,
     lockout: LoginLockout,
 }
 
@@ -93,22 +90,22 @@ impl UserFilter {
     }
 }
 
+/// 登录成功的结果：当前账户视图与新会话的一对令牌。
 pub struct LoginSession {
-    pub token: String,
-    pub csrf_token: String,
     pub principal: Principal,
+    pub tokens: IssuedTokens,
 }
 
 impl IdentityService {
     pub fn new(
         repository: Arc<dyn IdentityRepository>,
         credentials: Arc<dyn Credentials>,
-        session_ttl: Duration,
+        tokens: Arc<dyn TokenService>,
     ) -> Self {
         Self {
             repository,
             credentials,
-            session_ttl,
+            tokens,
             lockout: LoginLockout::default(),
         }
     }
@@ -212,15 +209,16 @@ impl IdentityService {
             }
             Some((id, true)) => id,
         };
-        let token = self.credentials.new_session_token();
-        let hash = self.credentials.token_hash(&token);
-        let lifetime = chrono::Duration::from_std(self.session_ttl)
-            .map_err(|_| AppError::Internal(anyhow::anyhow!("session lifetime too large")))?;
-        match self
-            .repository
-            .create_session(user_id, &hash, Utc::now() + lifetime, meta)
-            .await
-        {
+        let session_id = ids::new_id();
+        let tokens = self.tokens.issue(user_id, session_id)?;
+        let hash = self.credentials.token_hash(&tokens.refresh_token);
+        let session = NewSession {
+            id: session_id,
+            user_id,
+            token_hash: &hash,
+            expires_at: tokens.refresh_expires_at,
+        };
+        match self.repository.create_session(&session, meta).await {
             Ok(()) => {}
             // 校验密码后账户被并发停用。
             Err(AppError::InvalidCredentials) => {
@@ -231,26 +229,56 @@ impl IdentityService {
             }
             Err(error) => return Err(error),
         }
-        let principal = self.repository.principal(&hash).await?;
+        let principal = self.repository.principal(session_id, user_id).await?;
         Ok(LoginAttempt::Success(Box::new(LoginSession {
-            csrf_token: self.credentials.csrf_token(&token),
-            token,
             principal,
+            tokens,
         })))
     }
 
+    /// 校验 access token，再按其中的会话与账户 ID 读取当前状态、角色和权限。
+    /// 已过期返回 `TokenExpired`；其他无效令牌、已撤销会话或停用账户返回 `Unauthorized`。
     #[tracing::instrument(name = "identity.authenticate", skip_all)]
-    pub async fn authenticate(&self, token: &str) -> Result<Principal> {
-        if token.len() != 64 || !token.bytes().all(|c| c.is_ascii_hexdigit()) {
-            return Err(AppError::Unauthorized);
-        }
+    pub async fn authenticate(&self, access_token: &str) -> Result<Principal> {
+        let claims = self
+            .tokens
+            .verify(access_token, TokenKind::Access)
+            .map_err(|rejection| match rejection {
+                TokenRejection::Expired => AppError::TokenExpired,
+                TokenRejection::Invalid => AppError::Unauthorized,
+            })?;
         self.repository
-            .principal(&self.credentials.token_hash(token))
+            .principal(claims.session_id, claims.user_id)
             .await
     }
 
-    pub fn csrf_token(&self, token: &str) -> String {
-        self.credentials.csrf_token(token)
+    /// 用 refresh token 轮换出一对新令牌，旧 refresh token 立即失效。
+    /// 已轮换过的 refresh token 再次提交视为重放：撤销整个会话并返回 `Unauthorized`。
+    /// refresh token 过期或无效、会话不存在或账户停用时均返回 `Unauthorized`。
+    #[tracing::instrument(name = "identity.refresh", skip_all)]
+    pub async fn refresh(&self, refresh_token: &str, meta: &RequestMeta) -> Result<IssuedTokens> {
+        let claims = self
+            .tokens
+            .verify(refresh_token, TokenKind::Refresh)
+            .map_err(|_| AppError::Unauthorized)?;
+        let tokens = self.tokens.issue(claims.user_id, claims.session_id)?;
+        let presented_hash = self.credentials.token_hash(refresh_token);
+        let new_hash = self.credentials.token_hash(&tokens.refresh_token);
+        let rotation = SessionRotation {
+            session_id: claims.session_id,
+            user_id: claims.user_id,
+            presented_hash: &presented_hash,
+            new_hash: &new_hash,
+            expires_at: tokens.refresh_expires_at,
+        };
+        match self.repository.rotate_session(&rotation, meta).await? {
+            RotationOutcome::Rotated => Ok(tokens),
+            RotationOutcome::Reused => {
+                tracing::warn!("refresh token reuse detected; session revoked");
+                Err(AppError::Unauthorized)
+            }
+            RotationOutcome::Rejected => Err(AppError::Unauthorized),
+        }
     }
 
     #[tracing::instrument(name = "identity.logout", skip_all)]

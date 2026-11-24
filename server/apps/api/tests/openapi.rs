@@ -91,6 +91,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/metrics", "get"),
         ("/openapi.json", "get"),
         ("/api/v1/admin/auth/login", "post"),
+        ("/api/v1/admin/auth/refresh", "post"),
         ("/api/v1/admin/auth/logout", "post"),
         ("/api/v1/admin/auth/me", "get"),
         ("/api/v1/admin/auth/password", "post"),
@@ -176,35 +177,36 @@ fn all_entity_and_request_ids_constrain_uuid_version_and_variant() {
 }
 
 #[test]
-fn session_csrf_origin_and_rbac_requirements_are_explicit() {
+fn bearer_jwt_and_rbac_requirements_are_explicit() {
     let spec = contract();
-    assert_eq!(spec["security"][0]["SessionCookie"], serde_json::json!([]));
-    let cookie = &spec["components"]["securitySchemes"]["SessionCookie"];
-    assert_eq!(cookie["type"], "apiKey");
-    assert_eq!(cookie["in"], "cookie");
-    assert_eq!(cookie["name"], "__Host-silva_session");
+    assert_eq!(spec["security"], serde_json::json!([{"BearerAuth": []}]));
+    let schemes = spec["components"]["securitySchemes"].as_object().unwrap();
+    assert_eq!(schemes.len(), 1, "只允许 Bearer 认证");
+    let bearer = &schemes["BearerAuth"];
+    assert_eq!(bearer["type"], "http");
+    assert_eq!(bearer["scheme"], "bearer");
+    assert_eq!(bearer["bearerFormat"], "JWT");
 
+    let public = ["/api/v1/admin/auth/login", "/api/v1/admin/auth/refresh"];
     for (path, methods) in spec["paths"].as_object().unwrap() {
         for (method, operation) in methods.as_object().unwrap() {
-            if !path.starts_with("/api/") || path.ends_with("/auth/login") {
-                assert_eq!(operation["security"], serde_json::json!([]));
+            if !path.starts_with("/api/") || public.contains(&path.as_str()) {
+                assert_eq!(
+                    operation["security"],
+                    serde_json::json!([]),
+                    "{method} {path}"
+                );
+                continue;
             }
-            if method == "post" || method == "patch" {
-                let parameters: Vec<_> = operation["parameters"]
-                    .as_array()
-                    .expect("write headers documented")
-                    .iter()
-                    .map(|parameter| resolve(&spec, parameter))
-                    .collect();
-                assert!(parameters.iter().any(|parameter| {
-                    parameter["name"] == "Origin" && parameter["required"] == true
-                }));
-                if !path.ends_with("/auth/login") {
-                    assert!(parameters.iter().any(|parameter| {
-                        parameter["name"] == "X-CSRF-Token" && parameter["required"] == true
-                    }));
-                }
-            }
+            // 受保护接口沿用全局 Bearer 认证，并声明含 token_expired 的 401。
+            assert!(operation.get("security").is_none(), "{method} {path}");
+            let unauthorized = resolve(&spec, &operation["responses"]["401"]);
+            assert_eq!(
+                unauthorized["x-error-codes"],
+                serde_json::json!(["unauthorized", "token_expired"]),
+                "{method} {path}"
+            );
+            assert!(unauthorized["headers"].get("WWW-Authenticate").is_some());
         }
     }
     for (path, method, permission) in [
@@ -490,9 +492,11 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
     let config = Config {
         database_url: database_url.into(),
         bind: "127.0.0.1:0".parse().unwrap(),
-        admin_origin: "https://admin.example.test".into(),
+        production: false,
+        jwt_secret: None,
         db_max_connections: 1,
-        session_ttl: Duration::from_secs(3600),
+        access_token_ttl: Duration::from_secs(900),
+        refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
         api_rate_per_minute: 1000,
         login_rate_per_minute: 100,
@@ -511,7 +515,6 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
                     Request::builder()
                         .method(method.clone())
                         .uri(&path)
-                        .header("origin", "https://admin.example.test")
                         .body(Body::empty())
                         .unwrap(),
                 )
@@ -718,10 +721,7 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
     } in cases
     {
         let method: Method = method.parse().unwrap();
-        let mut builder = Request::builder()
-            .method(method.clone())
-            .uri(path)
-            .header("origin", "https://admin.example.test");
+        let mut builder = Request::builder().method(method.clone()).uri(path);
         if let Some(content_type) = content_type {
             builder = builder.header("content-type", content_type);
         }
@@ -753,9 +753,9 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
     telemetry.shutdown().await;
 }
 
-/// 请求 ID 与 CSRF token 只通过响应头返回：错误正文和会话视图不得再声明对应字段。
+/// 请求 ID 只通过响应头返回；认证只使用 Bearer 令牌，契约中不再出现 Cookie、CSRF 或 Origin 校验。
 #[test]
-fn request_id_and_csrf_token_are_response_headers_only() {
+fn request_id_is_header_only_and_session_cookie_csrf_origin_are_gone() {
     let spec = contract();
     let schemas = &spec["components"]["schemas"];
     let error = &schemas["ErrorResponse"]["properties"]["error"];
@@ -767,24 +767,53 @@ fn request_id_and_csrf_token_are_response_headers_only() {
             .iter()
             .any(|field| field == "request_id")
     );
-    assert!(
-        schemas["AuthSession"]["properties"]
-            .get("csrf_token")
-            .is_none()
-    );
     let text = spec.to_string();
-    assert!(
-        !text.contains("\"csrf_token\""),
-        "OpenAPI 中不应再出现 csrf_token 字段"
-    );
-    for (path, method) in [
-        ("/api/v1/admin/auth/login", "post"),
-        ("/api/v1/admin/auth/me", "get"),
+    for removed in [
+        "csrf",
+        "CSRF",
+        "Cookie",
+        "origin_rejected",
+        "SILVA_ADMIN_ORIGIN",
     ] {
-        let headers = &spec["paths"][path][method]["responses"]["200"]["headers"];
+        assert!(!text.contains(removed), "OpenAPI 中不应再出现 {removed}");
+    }
+}
+
+/// 登录与刷新返回的令牌字段与运行时一致。
+#[test]
+fn token_responses_declare_every_token_field() {
+    let spec = contract();
+    let schemas = &spec["components"]["schemas"];
+    let fields = serde_json::json!([
+        "access_token",
+        "refresh_token",
+        "token_type",
+        "expires_in",
+        "refresh_expires_in"
+    ]);
+    assert_eq!(schemas["TokenPair"]["required"], fields);
+    assert_eq!(
+        schemas["TokenPair"]["properties"]["token_type"]["const"],
+        "Bearer"
+    );
+    assert_eq!(
+        schemas["RefreshInput"]["required"],
+        serde_json::json!(["refresh_token"])
+    );
+    assert_eq!(schemas["RefreshInput"]["additionalProperties"], false);
+    let login = support::validator(&schemas["LoginSession"]);
+    let mut example = schemas["LoginSession"]["examples"][0].clone();
+    assert!(login.is_valid(&example));
+    example["unexpected"] = serde_json::json!(true);
+    assert!(!login.is_valid(&example), "登录结果不允许额外字段");
+    for (path, schema) in [
+        ("/api/v1/admin/auth/login", "LoginResponse"),
+        ("/api/v1/admin/auth/refresh", "TokenResponse"),
+    ] {
         assert_eq!(
-            headers["X-CSRF-Token"]["$ref"], "#/components/headers/CsrfToken",
-            "{method} {path}"
+            spec["paths"][path]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+                ["$ref"],
+            format!("#/components/schemas/{schema}")
         );
     }
 }

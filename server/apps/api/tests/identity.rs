@@ -8,16 +8,20 @@ use axum::{
     http::{HeaderMap, Method, Request, StatusCode, header},
 };
 use serde_json::{Value, json};
-use silva_shared::{config::Config, ids};
+use silva_shared::{
+    config::{Config, JwtSecret},
+    ids,
+};
 use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tower::ServiceExt;
 use uuid::{Uuid, Variant};
 
-const ORIGIN: &str = "https://admin.example.test";
 const PASSWORD: &str = "acceptance-password-2026";
 const TEST_USER_AGENT: &str = "silva-acceptance/1.0";
 const TEST_PEER: &str = "[2001:db8::7]:40000";
+/// 测试使用固定签名密钥，使同一数据库上构建的多个路由互认令牌，并能构造伪造令牌。
+const JWT_SECRET: &[u8] = b"acceptance-jwt-secret-0123456789abcdef";
 
 struct Response {
     status: StatusCode,
@@ -25,55 +29,51 @@ struct Response {
     json: Value,
 }
 
+/// 发送 JSON 请求；`token` 为 access token，按 `Authorization: Bearer <token>` 发送。
 async fn request(
     app: &Router,
     method: Method,
     path: &str,
     body: Option<Value>,
-    cookie: Option<&str>,
-    csrf: Option<&str>,
-    origin: Option<&str>,
+    token: Option<&str>,
 ) -> Response {
     let body = body.map(|value| value.to_string());
+    let authorization = token.map(|token| format!("Bearer {token}"));
     raw_request(
         app,
         method,
         path,
         body.as_deref(),
         Some("application/json"),
-        cookie,
-        csrf,
-        origin,
+        authorization.as_deref(),
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+/// 发送原始请求；`authorization` 为完整的 Authorization 请求头值，便于构造格式错误的请求头。
 async fn raw_request(
     app: &Router,
     method: Method,
     path: &str,
     body: Option<&str>,
     content_type: Option<&str>,
-    cookie: Option<&str>,
-    csrf: Option<&str>,
-    origin: Option<&str>,
+    authorization: Option<&str>,
 ) -> Response {
     let mut builder = Request::builder().method(method.clone()).uri(path);
     if let Some(value) = content_type {
         builder = builder.header(header::CONTENT_TYPE, value);
     }
-    if let Some(value) = cookie {
-        builder = builder.header(header::COOKIE, value);
+    if let Some(value) = authorization {
+        builder = builder.header(header::AUTHORIZATION, value);
     }
-    if let Some(value) = csrf {
-        builder = builder.header("x-csrf-token", value);
-    }
-    if let Some(value) = origin {
-        builder = builder.header(header::ORIGIN, value);
-    }
+    send(app, builder, body).await
+}
+
+async fn send(app: &Router, builder: axum::http::request::Builder, body: Option<&str>) -> Response {
+    let method = builder.method_ref().unwrap().clone();
+    let path = builder.uri_ref().unwrap().to_string();
     // 模拟真实连接的 peer 地址和浏览器 UA，验证审计来源信息。
-    builder = builder
+    let builder = builder
         .header(header::USER_AGENT, TEST_USER_AGENT)
         .extension(ConnectInfo(TEST_PEER.parse::<SocketAddr>().unwrap()));
     let response = app
@@ -90,7 +90,7 @@ async fn raw_request(
     let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
         .await
         .unwrap();
-    support::assert_response(&method, path, status, &headers, &bytes);
+    support::assert_response(&method, &path, status, &headers, &bytes);
     let json = if bytes.is_empty() {
         Value::Null
     } else {
@@ -136,8 +136,31 @@ fn assert_error(response: &Response, status: StatusCode, code: &str) {
     let id = Uuid::parse_str(request_id).unwrap();
     assert_eq!(id.get_version_num(), 7);
     assert_eq!(id.get_variant(), Variant::RFC4122);
+    if status == StatusCode::UNAUTHORIZED {
+        let challenge = response.headers[header::WWW_AUTHENTICATE].to_str().unwrap();
+        assert!(challenge.starts_with("Bearer"), "{challenge}");
+    }
 }
 
+/// 断言 401 `unauthorized`。
+fn assert_unauthorized(response: &Response) {
+    assert_error(response, StatusCode::UNAUTHORIZED, "unauthorized");
+}
+
+/// 校验令牌对字段并返回 (access_token, refresh_token)。
+fn token_pair(data: &Value, access_ttl: u64) -> (String, String) {
+    assert_eq!(data["token_type"], "Bearer", "{data}");
+    assert_eq!(data["expires_in"], access_ttl, "{data}");
+    assert_eq!(data["refresh_expires_in"], 3600, "{data}");
+    let access = data["access_token"].as_str().unwrap().to_owned();
+    let refresh = data["refresh_token"].as_str().unwrap().to_owned();
+    assert_eq!(access.split('.').count(), 3, "access token 应为 JWT");
+    assert_eq!(refresh.split('.').count(), 3, "refresh token 应为 JWT");
+    assert_ne!(access, refresh);
+    (access, refresh)
+}
+
+/// 登录并返回 (access_token, refresh_token, 正文 data)。
 async fn login(app: &Router, email: &str) -> (String, String, Value) {
     let response = request(
         app,
@@ -145,44 +168,260 @@ async fn login(app: &Router, email: &str) -> (String, String, Value) {
         "/api/v1/admin/auth/login",
         Some(json!({"email": email, "password": PASSWORD})),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_eq!(response.status, StatusCode::OK, "{}", response.json);
     assert_eq!(response.headers[header::CACHE_CONTROL], "no-store");
-    let cookie_header = response.headers[header::SET_COOKIE].to_str().unwrap();
-    let attributes = cookie_header.to_ascii_lowercase();
-    for required in [
-        "__host-silva_session=",
-        "httponly",
-        "secure",
-        "samesite=lax",
-        "path=/",
-    ] {
-        assert!(attributes.contains(required), "{cookie_header}");
-    }
-    assert!(!attributes.contains("domain="), "{cookie_header}");
-    let cookie = cookie_header.split(';').next().unwrap().to_owned();
+    assert!(response.headers.get(header::SET_COOKIE).is_none());
     let session = response.json["data"].clone();
-    // CSRF token 只在响应头中返回，正文不携带。
-    assert!(session.get("csrf_token").is_none());
-    let csrf = response.headers["x-csrf-token"]
-        .to_str()
-        .unwrap()
-        .to_owned();
-    assert!(!csrf.is_empty());
+    let (access, refresh) = token_pair(&session, 900);
+    assert!(session["user"]["id"].is_string());
     assert!(session["permissions"].is_array());
-    (cookie, csrf, session)
+    (access, refresh, session)
+}
+
+/// 调用刷新接口。
+async fn refresh(app: &Router, refresh_token: &str) -> Response {
+    request(
+        app,
+        Method::POST,
+        "/api/v1/admin/auth/refresh",
+        Some(json!({"refresh_token": refresh_token})),
+        None,
+    )
+    .await
+}
+
+async fn me(app: &Router, access: &str) -> Response {
+    request(
+        app,
+        Method::GET,
+        "/api/v1/admin/auth/me",
+        None,
+        Some(access),
+    )
+    .await
+}
+
+/// 解码 JWT 载荷（不校验签名），用于检查声明与构造伪造令牌。
+fn jwt_payload(token: &str) -> Value {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let part = token.split('.').nth(1).unwrap();
+    serde_json::from_slice(&URL_SAFE_NO_PAD.decode(part).unwrap()).unwrap()
+}
+
+/// 用指定密钥与算法签发任意声明的令牌。
+fn forge(claims: &Value, secret: &[u8], algorithm: jsonwebtoken::Algorithm) -> String {
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(algorithm),
+        claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret),
+    )
+    .unwrap()
+}
+
+/// 由数据库计算令牌的 SHA-256 十六进制哈希，与服务端保存方式一致。
+async fn sha256_hex(pool: &PgPool, token: &str) -> String {
+    sqlx::query_scalar("SELECT encode(sha256(convert_to($1, 'UTF8')), 'hex')")
+        .bind(token)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// 断言令牌原文不出现在会话表与审计表的任何列中。
+async fn assert_tokens_not_stored(pool: &PgPool, tokens: &[&str]) {
+    for token in tokens {
+        let found: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM sessions s WHERE row_to_json(s)::text LIKE '%' || $1 || '%') + (SELECT count(*) FROM audit_logs a WHERE row_to_json(a)::text LIKE '%' || $1 || '%')",
+        )
+        .bind(token)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(found, 0, "数据库不得保存令牌原文");
+    }
+}
+
+/// 同时提交两次相同的 refresh token。
+async fn futures_join(app: &Router, refresh_token: &str) -> [Response; 2] {
+    let (first, second) = tokio::join!(refresh(app, refresh_token), refresh(app, refresh_token));
+    [first, second]
+}
+
+/// 伪造、篡改、错用与过期令牌的拒绝规则。
+async fn run_token_validation(app: &Router, access: &str, refresh_token: &str, claims: &Value) {
+    use jsonwebtoken::Algorithm;
+    let now = chrono::Utc::now().timestamp();
+    let fresh = |changes: Value| {
+        let mut claims = claims.clone();
+        claims["jti"] = json!(ids::new_id());
+        claims["iat"] = json!(now);
+        claims["exp"] = json!(now + 900);
+        for (key, value) in changes.as_object().unwrap() {
+            claims[key] = value.clone();
+        }
+        claims
+    };
+    // 正确密钥与声明签发的令牌可用，说明以下拒绝来自被修改的那一项。
+    let control = forge(&fresh(json!({})), JWT_SECRET, Algorithm::HS256);
+    assert_eq!(me(app, &control).await.status, StatusCode::OK);
+
+    let parts: Vec<&str> = access.split('.').collect();
+    let flipped = {
+        let mut signature = parts[2].to_owned();
+        let first = signature.remove(0);
+        signature.insert(0, if first == 'A' { 'B' } else { 'A' });
+        signature
+    };
+    let tampered_signature = format!("{}.{}.{flipped}", parts[0], parts[1]);
+    let tampered_payload = {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        let mut body = claims.clone();
+        body["sub"] = json!(ids::new_id());
+        format!(
+            "{}.{}.{}",
+            parts[0],
+            URL_SAFE_NO_PAD.encode(body.to_string()),
+            parts[2]
+        )
+    };
+    let alg_none = {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        format!(
+            "{}.{}.",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#),
+            URL_SAFE_NO_PAD.encode(fresh(json!({})).to_string())
+        )
+    };
+    let rejected = [
+        ("篡改签名", tampered_signature),
+        ("篡改载荷", tampered_payload),
+        (
+            "其他密钥",
+            forge(
+                &fresh(json!({})),
+                b"another-secret-0123456789abcdefghij",
+                Algorithm::HS256,
+            ),
+        ),
+        (
+            "错误 iss",
+            forge(
+                &fresh(json!({"iss": "someone-else"})),
+                JWT_SECRET,
+                Algorithm::HS256,
+            ),
+        ),
+        (
+            "错误 aud",
+            forge(
+                &fresh(json!({"aud": "silva-public"})),
+                JWT_SECRET,
+                Algorithm::HS256,
+            ),
+        ),
+        ("alg none", alg_none),
+        (
+            "HS512",
+            forge(&fresh(json!({})), JWT_SECRET, Algorithm::HS512),
+        ),
+        ("refresh 当 access", refresh_token.to_owned()),
+        (
+            "不存在的会话",
+            forge(
+                &fresh(json!({"sid": ids::new_id()})),
+                JWT_SECRET,
+                Algorithm::HS256,
+            ),
+        ),
+        (
+            "会话与账户不符",
+            forge(
+                &fresh(json!({"sub": ids::new_id()})),
+                JWT_SECRET,
+                Algorithm::HS256,
+            ),
+        ),
+        (
+            "缺少 typ",
+            forge(
+                &{
+                    let mut claims = fresh(json!({}));
+                    claims.as_object_mut().unwrap().remove("typ");
+                    claims
+                },
+                JWT_SECRET,
+                Algorithm::HS256,
+            ),
+        ),
+    ];
+    for (case, token) in &rejected {
+        let response = me(app, token).await;
+        assert_eq!(response.status, StatusCode::UNAUTHORIZED, "{case}");
+        assert_unauthorized(&response);
+    }
+
+    // 签名有效但已过期的 access token 返回 token_expired，提示客户端刷新。
+    let expired = forge(
+        &fresh(json!({"iat": now - 901, "exp": now - 1})),
+        JWT_SECRET,
+        Algorithm::HS256,
+    );
+    let response = me(app, &expired).await;
+    assert_error(&response, StatusCode::UNAUTHORIZED, "token_expired");
+    let challenge = response.headers[header::WWW_AUTHENTICATE].to_str().unwrap();
+    assert!(
+        challenge.contains(r#"error="invalid_token""#),
+        "{challenge}"
+    );
+    // 过期但签名错误的令牌仍按无效处理，不泄露过期信息。
+    let forged_expired = forge(
+        &fresh(json!({"iat": now - 901, "exp": now - 1})),
+        b"another-secret-0123456789abcdefghij",
+        Algorithm::HS256,
+    );
+    assert_unauthorized(&me(app, &forged_expired).await);
+
+    // 刷新接口只接受 refresh token。
+    for token in [access, "not-a-jwt", control.as_str()] {
+        assert_unauthorized(&refresh(app, token).await);
+    }
+    let expired_refresh = forge(
+        &fresh(json!({"typ": "refresh", "iat": now - 3601, "exp": now - 1})),
+        JWT_SECRET,
+        Algorithm::HS256,
+    );
+    assert_unauthorized(&refresh(app, &expired_refresh).await);
+    let missing = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/auth/refresh",
+        Some(json!({})),
+        None,
+    )
+    .await;
+    assert_field_error(&missing, "refresh_token", "required");
+
+    // 重复的 Authorization 请求头即使都有效也拒绝。
+    let duplicate = Request::builder()
+        .method(Method::GET)
+        .uri("/api/v1/admin/auth/me")
+        .header(header::AUTHORIZATION, format!("Bearer {access}"))
+        .header(header::AUTHORIZATION, format!("Bearer {access}"));
+    assert_unauthorized(&send(app, duplicate, None).await);
+    assert_eq!(me(app, access).await.status, StatusCode::OK);
 }
 
 fn config(database_url: String) -> Config {
     Config {
         database_url,
         bind: "127.0.0.1:0".parse().unwrap(),
-        admin_origin: ORIGIN.into(),
+        production: false,
+        jwt_secret: Some(JwtSecret::new(JWT_SECRET)),
         db_max_connections: 5,
-        session_ttl: Duration::from_secs(3600),
+        access_token_ttl: Duration::from_secs(900),
+        refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
         api_rate_per_minute: 10_000,
         login_rate_per_minute: 1000,
@@ -212,10 +451,14 @@ async fn identity_security_and_account_lifecycle() {
         silva_infrastructure::persistence::migrate(&test_pool)
             .await
             .unwrap();
-        let service =
-            silva_infrastructure::identity_service(test_pool.clone(), Duration::from_secs(3600))
-                .await
-                .unwrap();
+        let tokens = silva_infrastructure::TokenSettings {
+            secret: JwtSecret::new(JWT_SECRET),
+            access_ttl: Duration::from_secs(900),
+            refresh_ttl: Duration::from_secs(3600),
+        };
+        let service = silva_infrastructure::identity_service(test_pool.clone(), &tokens)
+            .await
+            .unwrap();
         service
             .seed_admin(
                 "admin@example.test".into(),
@@ -244,11 +487,11 @@ async fn identity_security_and_account_lifecycle() {
 
 async fn run_acceptance(app: &Router, pool: &PgPool) {
     for path in ["/health/live", "/health/ready"] {
-        let response = request(app, Method::GET, path, None, None, None, None).await;
+        let response = request(app, Method::GET, path, None, None).await;
         assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.json);
         assert_eq!(response.json["status"], "ok");
     }
-    let openapi = request(app, Method::GET, "/openapi.json", None, None, None, None).await;
+    let openapi = request(app, Method::GET, "/openapi.json", None, None).await;
     assert_eq!(openapi.status, StatusCode::OK);
     assert_eq!(openapi.json["openapi"], "3.1.0");
     for path in [
@@ -261,46 +504,32 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             "missing OpenAPI path: {path}"
         );
     }
-    let unauthorized = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/auth/me",
-        None,
-        None,
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(unauthorized.status, StatusCode::UNAUTHORIZED);
-    let invalid_cookie = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/auth/me",
-        None,
-        Some("__Host-silva_session=not-a-session"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(invalid_cookie.status, StatusCode::UNAUTHORIZED);
-
-    for origin in [
-        None,
-        Some("https://evil.example.test"),
-        Some("https://admin.example.test/"),
+    // 缺失或格式错误的 Authorization 请求头一律 401 unauthorized，并带 Bearer 质询。
+    assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/auth/me", None, None).await);
+    for authorization in [
+        "",
+        "Bearer",
+        "Bearer ",
+        "Bearer  x.y.z",
+        "Bearer a b",
+        "Basic YWRtaW46c2VjcmV0",
+        "Token x.y.z",
+        "x.y.z",
+        "Bearer not-a-jwt",
+        "Bearer a.b.c",
     ] {
-        let response = request(
+        let response = raw_request(
             app,
-            Method::POST,
-            "/api/v1/admin/auth/login",
-            Some(json!({"email":"admin@example.test","password":PASSWORD})),
+            Method::GET,
+            "/api/v1/admin/auth/me",
             None,
             None,
-            origin,
+            Some(authorization),
         )
         .await;
-        assert_error(&response, StatusCode::FORBIDDEN, "origin_rejected");
+        assert_unauthorized(&response);
     }
+
     let not_json = raw_request(
         app,
         Method::POST,
@@ -308,8 +537,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some("email=admin@example.test"),
         Some("text/plain"),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_error(
@@ -324,8 +551,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some("{"),
         Some("application/json"),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_error(&malformed, StatusCode::BAD_REQUEST, "malformed_json");
@@ -338,8 +563,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Some(&oversized_body),
         Some("application/json"),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_error(
@@ -360,8 +583,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             "/api/v1/admin/auth/login",
             Some(json!({"email":email,"password":password})),
             None,
-            None,
-            Some(ORIGIN),
         )
         .await;
         assert_eq!(
@@ -377,64 +598,113 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     }
     assert_eq!(credential_errors[0], credential_errors[1]);
 
-    let (admin_cookie, admin_csrf, admin_login) = login(app, "admin@example.test").await;
+    let (admin_access, admin_refresh, admin_login) = login(app, "admin@example.test").await;
     let admin_id = admin_login["user"]["id"].as_str().unwrap();
-    let me = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/auth/me",
-        None,
-        Some(&admin_cookie),
-        None,
-        None,
+    let me_response = me(app, &admin_access).await;
+    assert_eq!(me_response.status, StatusCode::OK, "{}", me_response.json);
+    assert_eq!(me_response.json["data"]["user"]["id"], admin_id);
+    assert_eq!(me_response.headers[header::CACHE_CONTROL], "no-store");
+    assert!(me_response.headers.get("x-csrf-token").is_none());
+    // access token 只含账户与会话标识，sessions 只保存 refresh token 的 SHA-256 哈希。
+    let claims = jwt_payload(&admin_access);
+    assert_eq!(claims["sub"], admin_id);
+    assert_eq!(claims["iss"], "silva");
+    assert_eq!(claims["aud"], "silva-admin");
+    assert_eq!(claims["typ"], "access");
+    let (admin_session, admin_hash, password_hash): (Uuid, String, String) = sqlx::query_as(
+        "SELECT s.id, s.token_hash, u.password_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.id = $1 ORDER BY s.created_at DESC LIMIT 1",
     )
-    .await;
-    assert_eq!(me.status, StatusCode::OK, "{}", me.json);
-    assert_eq!(me.headers["x-csrf-token"], admin_csrf.as_str());
-    assert!(me.json["data"].get("csrf_token").is_none());
-    assert_eq!(me.json["data"]["user"]["id"], admin_id);
-    assert_eq!(me.headers[header::CACHE_CONTROL], "no-store");
-    let token = admin_cookie.split_once('=').unwrap().1;
-    let stored: (String, String) = sqlx::query_as("SELECT s.token_hash, u.password_hash FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.id = $1 ORDER BY s.created_at DESC LIMIT 1")
-        .bind(Uuid::parse_str(admin_id).unwrap()).fetch_one(pool).await.unwrap();
-    assert_ne!(stored.0, token);
-    assert!(stored.1.starts_with("$argon2id$"));
-    assert!(!stored.1.contains(PASSWORD));
+    .bind(Uuid::parse_str(admin_id).unwrap())
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(claims["sid"], admin_session.to_string());
+    assert_eq!(admin_hash, sha256_hex(pool, &admin_refresh).await);
+    assert!(password_hash.starts_with("$argon2id$"));
+    assert!(!password_hash.contains(PASSWORD));
+    assert_tokens_not_stored(pool, &[&admin_access, &admin_refresh]).await;
 
-    let (other_cookie, other_csrf, _) = login(app, "admin@example.test").await;
-    assert_ne!(admin_cookie, other_cookie);
-    assert_ne!(admin_csrf, other_csrf);
-    for csrf in [None, Some("invalid-csrf"), Some(other_csrf.as_str())] {
-        let response = request(
-            app,
-            Method::POST,
-            "/api/v1/admin/auth/logout",
-            None,
-            Some(&admin_cookie),
-            csrf,
-            Some(ORIGIN),
-        )
-        .await;
-        assert_error(&response, StatusCode::FORBIDDEN, "csrf_rejected");
+    run_token_validation(app, &admin_access, &admin_refresh, &claims).await;
+
+    // 刷新轮换：新令牌可用，旧 refresh token 立即失效；重放旧 refresh token 撤销整个会话。
+    let (other_access, other_refresh, _) = login(app, "admin@example.test").await;
+    assert_ne!(admin_access, other_access);
+    assert_ne!(admin_refresh, other_refresh);
+    let rotated = refresh(app, &other_refresh).await;
+    assert_eq!(rotated.status, StatusCode::OK, "{}", rotated.json);
+    assert_eq!(rotated.headers[header::CACHE_CONTROL], "no-store");
+    let (rotated_access, rotated_refresh) = token_pair(&rotated.json["data"], 900);
+    assert_ne!(rotated_refresh, other_refresh);
+    assert_eq!(
+        jwt_payload(&rotated_access)["sid"],
+        jwt_payload(&other_access)["sid"],
+        "刷新沿用同一会话"
+    );
+    assert_eq!(me(app, &rotated_access).await.status, StatusCode::OK);
+    let rotated_audits: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action LIKE 'auth.refresh%'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(rotated_audits, 0, "正常刷新不写审计");
+    assert_tokens_not_stored(pool, &[&other_refresh, &rotated_refresh, &rotated_access]).await;
+    let replay = refresh(app, &other_refresh).await;
+    assert_unauthorized(&replay);
+    for access in [&other_access, &rotated_access] {
+        assert_unauthorized(&me(app, access).await);
     }
-    let origin_rejected = request(
-        app,
-        Method::POST,
-        "/api/v1/admin/auth/logout",
-        None,
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        None,
+    assert_unauthorized(&refresh(app, &rotated_refresh).await);
+    let reuse_audits: Vec<(Option<Uuid>, Option<Uuid>, Value, String)> = sqlx::query_as(
+        "SELECT actor_user_id, resource_id, metadata, row_to_json(a)::text FROM audit_logs a WHERE action = 'auth.refresh_reuse'",
     )
-    .await;
-    assert_error(&origin_rejected, StatusCode::FORBIDDEN, "origin_rejected");
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(reuse_audits.len(), 1, "重放只记录一次审计");
+    let (actor, resource, metadata, row) = &reuse_audits[0];
+    assert_eq!(*actor, None);
+    assert_eq!(*resource, Some(Uuid::parse_str(admin_id).unwrap()));
+    assert_eq!(*metadata, json!({}));
+    for token in [
+        &other_access,
+        &other_refresh,
+        &rotated_access,
+        &rotated_refresh,
+    ] {
+        assert!(!row.contains(token.as_str()), "审计不得包含令牌");
+    }
+    // 其他会话不受影响。
+    assert_eq!(me(app, &admin_access).await.status, StatusCode::OK);
 
-    let created = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"author@example.test","display_name":"Acceptance Author","password":PASSWORD,"roles":["author"]})), Some(&admin_cookie), Some(&admin_csrf), Some(ORIGIN)).await;
+    // 同一 refresh token 并发提交只有一次成功。
+    let (_, concurrent_refresh, _) = login(app, "admin@example.test").await;
+    let attempts = futures_join(app, &concurrent_refresh).await;
+    let succeeded = attempts
+        .iter()
+        .filter(|response| response.status == StatusCode::OK)
+        .count();
+    assert_eq!(succeeded, 1, "并发刷新只能成功一次");
+    for response in attempts
+        .iter()
+        .filter(|response| response.status != StatusCode::OK)
+    {
+        assert_unauthorized(response);
+    }
+    // 落败的一次无法与重放区分，按重放撤销该会话，成功换得的新令牌随之失效。
+    for response in attempts
+        .iter()
+        .filter(|response| response.status == StatusCode::OK)
+    {
+        let access = response.json["data"]["access_token"].as_str().unwrap();
+        assert_unauthorized(&me(app, access).await);
+    }
+
+    let created = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"author@example.test","display_name":"Acceptance Author","password":PASSWORD,"roles":["author"]})), Some(&admin_access)).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
     let author_id = created.json["data"]["id"].as_str().unwrap();
     assert_eq!(Uuid::parse_str(author_id).unwrap().get_version_num(), 7);
     assert!(created.json["data"].get("password_hash").is_none());
-    let duplicate = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"AUTHOR@example.test","display_name":"Duplicate","password":PASSWORD,"roles":["author"]})), Some(&admin_cookie), Some(&admin_csrf), Some(ORIGIN)).await;
+    let duplicate = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"AUTHOR@example.test","display_name":"Duplicate","password":PASSWORD,"roles":["author"]})), Some(&admin_access)).await;
     assert_error(&duplicate, StatusCode::CONFLICT, "email_in_use");
     for (body, field, code) in [
         (
@@ -478,15 +748,13 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Method::POST,
             "/api/v1/admin/users",
             Some(body),
-            Some(&admin_cookie),
-            Some(&admin_csrf),
-            Some(ORIGIN),
+            Some(&admin_access),
         )
         .await;
         assert_field_error(&invalid, field, code);
     }
-    let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
-    let (author_cookie2, _, _) = login(app, "author@example.test").await;
+    let (author_access, author_refresh, _) = login(app, "author@example.test").await;
+    let (author_access2, author_refresh2, _) = login(app, "author@example.test").await;
 
     // 修改自己的密码：校验当前密码，保留本会话并撤销其他会话。
     const NEW_PASSWORD: &str = "rotated-password-2026";
@@ -512,32 +780,26 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Method::POST,
             "/api/v1/admin/auth/password",
             Some(body),
-            Some(&author_cookie),
-            Some(&author_csrf),
-            Some(ORIGIN),
+            Some(&author_access),
         )
         .await;
         assert_field_error(&response, field, code);
     }
-    let missing_csrf = request(
+    let anonymous_change = request(
         app,
         Method::POST,
         "/api/v1/admin/auth/password",
         Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
-        Some(&author_cookie),
         None,
-        Some(ORIGIN),
     )
     .await;
-    assert_error(&missing_csrf, StatusCode::FORBIDDEN, "csrf_rejected");
+    assert_unauthorized(&anonymous_change);
     let changed = request(
         app,
         Method::POST,
         "/api/v1/admin/auth/password",
         Some(json!({"current_password":PASSWORD,"new_password":NEW_PASSWORD})),
-        Some(&author_cookie),
-        Some(&author_csrf),
-        Some(ORIGIN),
+        Some(&author_access),
     )
     .await;
     assert_eq!(changed.status, StatusCode::NO_CONTENT, "{}", changed.json);
@@ -546,9 +808,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/auth/me",
         None,
-        Some(&author_cookie),
-        None,
-        None,
+        Some(&author_access),
     )
     .await;
     assert_eq!(kept.status, StatusCode::OK, "current session must survive");
@@ -557,9 +817,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/auth/me",
         None,
-        Some(&author_cookie2),
-        None,
-        None,
+        Some(&author_access2),
     )
     .await;
     assert_eq!(
@@ -567,6 +825,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         StatusCode::UNAUTHORIZED,
         "other sessions must be revoked"
     );
+    assert_unauthorized(&refresh(app, &author_refresh2).await);
     let change_audit: Value = sqlx::query_scalar(
         "SELECT metadata FROM audit_logs WHERE action = 'auth.password_change' ORDER BY id DESC LIMIT 1",
     )
@@ -584,8 +843,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             "/api/v1/admin/auth/login",
             Some(json!({"email":"author@example.test","password":password})),
             None,
-            None,
-            Some(ORIGIN),
         )
         .await;
         assert_eq!(response.status, status, "{}", response.json);
@@ -597,9 +854,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"password":PASSWORD})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(reset.status, StatusCode::OK, "{}", reset.json);
@@ -608,9 +863,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/auth/me",
         None,
-        Some(&author_cookie),
-        None,
-        None,
+        Some(&author_access),
     )
     .await;
     assert_eq!(
@@ -618,6 +871,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         StatusCode::UNAUTHORIZED,
         "reset must revoke every session"
     );
+    assert_unauthorized(&refresh(app, &author_refresh).await);
     let reset_audit: Value = sqlx::query_scalar(
         "SELECT metadata FROM audit_logs WHERE action = 'users.update' ORDER BY id DESC LIMIT 1",
     )
@@ -631,30 +885,19 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"password":"short"})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_field_error(&short_reset, "password", "out_of_range");
-    let (author_cookie, author_csrf, _) = login(app, "author@example.test").await;
-    let (author_cookie2, _, _) = login(app, "author@example.test").await;
+    let (author_access, author_refresh, _) = login(app, "author@example.test").await;
+    let (author_access2, _, _) = login(app, "author@example.test").await;
     for path in [
         "/api/v1/admin/users",
         "/api/v1/admin/roles",
         "/api/v1/admin/audit-logs",
         "/api/v1/admin/system/health",
     ] {
-        let response = request(
-            app,
-            Method::GET,
-            path,
-            None,
-            Some(&author_cookie),
-            None,
-            None,
-        )
-        .await;
+        let response = request(app, Method::GET, path, None, Some(&author_access)).await;
         assert_eq!(
             response.status,
             StatusCode::FORBIDDEN,
@@ -662,7 +905,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             response.json
         );
     }
-    let forbidden_create = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"intruder@example.test","display_name":"No","password":PASSWORD,"roles":["admin"]})), Some(&author_cookie), Some(&author_csrf), Some(ORIGIN)).await;
+    let forbidden_create = request(app, Method::POST, "/api/v1/admin/users", Some(json!({"email":"intruder@example.test","display_name":"No","password":PASSWORD,"roles":["admin"]})), Some(&author_access)).await;
     assert_eq!(
         forbidden_create.status,
         StatusCode::FORBIDDEN,
@@ -675,9 +918,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/users",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_eq!(users.status, StatusCode::OK, "{}", users.json);
@@ -692,9 +933,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/system/health",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_eq!(healthy.status, StatusCode::OK, "{}", healthy.json);
@@ -712,9 +951,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Method::GET,
             &format!("/api/v1/admin/users?{query}"),
             None,
-            Some(&admin_cookie),
-            None,
-            None,
+            Some(&admin_access),
         )
         .await;
         assert_field_error(&response, field, code);
@@ -731,9 +968,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Method::PATCH,
             &format!("/api/v1/admin/users/{bad_id}"),
             Some(json!({"display_name":"Rejected ID"})),
-            Some(&admin_cookie),
-            Some(&admin_csrf),
-            Some(ORIGIN),
+            Some(&admin_access),
         )
         .await;
         assert_field_error(&response, "id", "invalid_format");
@@ -743,9 +978,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/roles",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_eq!(roles.status, StatusCode::OK, "{}", roles.json);
@@ -769,15 +1002,13 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         assert!(!role["permissions"].as_array().unwrap().is_empty());
     }
 
-    // 角色变更无需重新登录即可生效，也允许实现直接撤销旧会话。
+    // 角色变更无需重新登录即可对已签发的 access token 立即生效。
     let promoted = request(
         app,
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"roles":["admin"]})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(promoted.status, StatusCode::OK, "{}", promoted.json);
@@ -786,24 +1017,16 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/users",
         None,
-        Some(&author_cookie),
-        None,
-        None,
+        Some(&author_access),
     )
     .await;
-    assert!(
-        matches!(current.status, StatusCode::OK | StatusCode::UNAUTHORIZED),
-        "{}",
-        current.json
-    );
+    assert_eq!(current.status, StatusCode::OK, "{}", current.json);
     let demoted = request(
         app,
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"roles":["author"]})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(demoted.status, StatusCode::OK, "{}", demoted.json);
@@ -812,19 +1035,10 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/users",
         None,
-        Some(&author_cookie),
-        None,
-        None,
+        Some(&author_access),
     )
     .await;
-    assert!(
-        matches!(
-            denied.status,
-            StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED
-        ),
-        "{}",
-        denied.json
-    );
+    assert_error(&denied, StatusCode::FORBIDDEN, "forbidden");
 
     // 唯一启用的管理员不能被停用或移除 admin 角色，失败时整笔修改回滚且不写审计。
     let admin_id: Uuid =
@@ -846,9 +1060,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
             Method::PATCH,
             &format!("/api/v1/admin/users/{admin_id}"),
             Some(body),
-            Some(&admin_cookie),
-            Some(&admin_csrf),
-            Some(ORIGIN),
+            Some(&admin_access),
         )
         .await;
         assert_error(&response, StatusCode::CONFLICT, "last_admin_required");
@@ -871,9 +1083,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/users",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_eq!(still_admin.status, StatusCode::OK, "{}", still_admin.json);
@@ -899,9 +1109,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"status":"disabled"})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.json);
@@ -914,32 +1122,16 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         remaining, 0,
         "disabling an account must remove every session"
     );
-    for cookie in [&author_cookie, &author_cookie2] {
-        let response = request(
-            app,
-            Method::GET,
-            "/api/v1/admin/auth/me",
-            None,
-            Some(cookie),
-            None,
-            None,
-        )
-        .await;
-        assert_eq!(
-            response.status,
-            StatusCode::UNAUTHORIZED,
-            "{}",
-            response.json
-        );
+    for access in [&author_access, &author_access2] {
+        assert_unauthorized(&me(app, access).await);
     }
+    assert_unauthorized(&refresh(app, &author_refresh).await);
     let disabled_login = request(
         app,
         Method::POST,
         "/api/v1/admin/auth/login",
         Some(json!({"email":"author@example.test","password":PASSWORD})),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_error(
@@ -961,9 +1153,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::PATCH,
         &format!("/api/v1/admin/users/{author_id}"),
         Some(json!({"status":"active"})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(enabled.status, StatusCode::OK, "{}", enabled.json);
@@ -973,9 +1163,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/auth/me",
         None,
-        Some(&author_cookie),
-        None,
-        None,
+        Some(&author_access),
     )
     .await;
     assert_eq!(
@@ -983,34 +1171,24 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         StatusCode::UNAUTHORIZED,
         "re-enabling must not resurrect revoked sessions"
     );
-    let _ = login(app, "author@example.test").await;
+    let (expiring_access, expiring_refresh, _) = login(app, "author@example.test").await;
 
+    // 服务端会话过期后，即使 JWT 本身尚未过期，access 与 refresh token 均失效。
     sqlx::query(
         "UPDATE sessions SET expires_at = now() - interval '1 second' WHERE token_hash <> $1",
     )
-    .bind(&stored.0)
+    .bind(&admin_hash)
     .execute(pool)
     .await
     .unwrap();
-    let expired = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/auth/me",
-        None,
-        Some(&other_cookie),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(expired.status, StatusCode::UNAUTHORIZED);
+    assert_unauthorized(&me(app, &expiring_access).await);
+    assert_unauthorized(&refresh(app, &expiring_refresh).await);
     let audit = request(
         app,
         Method::GET,
         "/api/v1/admin/audit-logs",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_eq!(audit.status, StatusCode::OK, "{}", audit.json);
@@ -1019,7 +1197,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert!(first_audit["metadata"].is_object());
     assert!(first_audit.get("ip_address").is_some());
     let serialized_audit = audit.json.to_string();
-    for secret in [PASSWORD, token, &admin_csrf] {
+    for secret in [PASSWORD, &admin_access, &admin_refresh] {
         assert!(
             !serialized_audit.contains(secret),
             "audit logs must not expose credentials"
@@ -1031,9 +1209,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/missing",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_error(&unknown, StatusCode::NOT_FOUND, "not_found");
@@ -1042,9 +1218,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::DELETE,
         "/api/v1/admin/auth/me",
         None,
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_error(
@@ -1057,9 +1231,7 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::POST,
         "/api/v1/admin/auth/logout",
         None,
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(logout.status, StatusCode::NO_CONTENT, "{}", logout.json);
@@ -1069,17 +1241,31 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         Method::GET,
         "/api/v1/admin/auth/me",
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
-    assert_eq!(after_logout.status, StatusCode::UNAUTHORIZED);
+    assert_unauthorized(&after_logout);
+    // 退出后同一会话的 refresh token 也不能再换取新令牌；会话已不存在，不按重放记录。
+    assert_unauthorized(&refresh(app, &admin_refresh).await);
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE id = $1")
+        .bind(admin_session)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0, "退出登录必须删除会话");
+    let reuse_audits: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action = 'auth.refresh_reuse'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    // 只有轮换后重放与并发刷新中落败的一次各记录一条。
+    assert_eq!(reuse_audits, 2);
+    assert_tokens_not_stored(pool, &[&admin_access, &admin_refresh]).await;
 }
 
 /// 发起只读管理请求的便捷封装。
-async fn get(app: &Router, path: &str, cookie: &str) -> Response {
-    request(app, Method::GET, path, None, Some(cookie), None, None).await
+async fn get(app: &Router, path: &str, access: &str) -> Response {
+    request(app, Method::GET, path, None, Some(access)).await
 }
 
 fn emails(response: &Response) -> Vec<String> {
@@ -1100,9 +1286,9 @@ fn assert_timestamp(value: &Value) {
 
 /// 账户详情、最近登录时间、列表筛选与角色账户数。
 async fn run_account_queries(app: &Router) {
-    let (admin_cookie, admin_csrf, admin_login) = login(app, "admin@example.test").await;
+    let (admin_access, _, admin_login) = login(app, "admin@example.test").await;
     assert_timestamp(&admin_login["user"]["last_login_at"]);
-    let me = get(app, "/api/v1/admin/auth/me", &admin_cookie).await;
+    let me = get(app, "/api/v1/admin/auth/me", &admin_access).await;
     assert_eq!(me.status, StatusCode::OK, "{}", me.json);
     assert_eq!(
         me.json["data"]["user"]["last_login_at"],
@@ -1126,9 +1312,7 @@ async fn run_account_queries(app: &Router) {
             Method::POST,
             "/api/v1/admin/users",
             Some(json!({"email":email,"display_name":name,"password":PASSWORD,"roles":roles})),
-            Some(&admin_cookie),
-            Some(&admin_csrf),
-            Some(ORIGIN),
+            Some(&admin_access),
         )
         .await;
         assert_eq!(response.status, StatusCode::CREATED, "{}", response.json);
@@ -1143,25 +1327,23 @@ async fn run_account_queries(app: &Router) {
         Method::PATCH,
         &format!("/api/v1/admin/users/{dormant_id}"),
         Some(json!({"status":"disabled"})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(disabled.status, StatusCode::OK, "{}", disabled.json);
 
     // 详情：登录前 last_login_at 为 null，登录后为时间。
     let lead_path = format!("/api/v1/admin/users/{}", created[0]);
-    let before = get(app, &lead_path, &admin_cookie).await;
+    let before = get(app, &lead_path, &admin_access).await;
     assert_eq!(before.status, StatusCode::OK, "{}", before.json);
     assert_eq!(before.json["data"]["id"], created[0].as_str());
     assert_eq!(before.json["data"]["email"], "ops_lead@example.test");
     assert_eq!(before.json["data"]["roles"], json!(["editor"]));
     assert!(before.json["data"]["last_login_at"].is_null());
     assert!(before.json["data"].get("password_hash").is_none());
-    let (lead_cookie, _, lead_login) = login(app, "ops_lead@example.test").await;
+    let (lead_access, _, lead_login) = login(app, "ops_lead@example.test").await;
     assert_timestamp(&lead_login["user"]["last_login_at"]);
-    let after = get(app, &lead_path, &admin_cookie).await;
+    let after = get(app, &lead_path, &admin_access).await;
     assert_eq!(after.status, StatusCode::OK, "{}", after.json);
     assert_eq!(
         after.json["data"]["last_login_at"],
@@ -1170,7 +1352,7 @@ async fn run_account_queries(app: &Router) {
     let missing = get(
         app,
         &format!("/api/v1/admin/users/{}", ids::new_id()),
-        &admin_cookie,
+        &admin_access,
     )
     .await;
     assert_error(&missing, StatusCode::NOT_FOUND, "not_found");
@@ -1180,15 +1362,15 @@ async fn run_account_queries(app: &Router) {
         "019535d93df779fbb466fa907fa17f9e",
         "not-an-id",
     ] {
-        let response = get(app, &format!("/api/v1/admin/users/{bad_id}"), &admin_cookie).await;
+        let response = get(app, &format!("/api/v1/admin/users/{bad_id}"), &admin_access).await;
         assert_field_error(&response, "id", "invalid_format");
     }
     // editor 没有 users.manage，不能读取账户详情或列表。
     for path in [lead_path.as_str(), "/api/v1/admin/users?q=ops"] {
-        let forbidden = get(app, path, &lead_cookie).await;
+        let forbidden = get(app, path, &lead_access).await;
         assert_error(&forbidden, StatusCode::FORBIDDEN, "forbidden");
     }
-    let anonymous = request(app, Method::GET, &lead_path, None, None, None, None).await;
+    let anonymous = request(app, Method::GET, &lead_path, None, None).await;
     assert_error(&anonymous, StatusCode::UNAUTHORIZED, "unauthorized");
 
     // 筛选：结果按 created_at DESC、id DESC 排序，total 为筛选后的数量。
@@ -1228,7 +1410,7 @@ async fn run_account_queries(app: &Router) {
         ),
         ("role=admin&unknown=ignored", vec!["admin@example.test"]),
     ] {
-        let response = get(app, &format!("/api/v1/admin/users?{query}"), &admin_cookie).await;
+        let response = get(app, &format!("/api/v1/admin/users?{query}"), &admin_access).await;
         assert_eq!(
             response.status,
             StatusCode::OK,
@@ -1248,7 +1430,7 @@ async fn run_account_queries(app: &Router) {
     let paged = get(
         app,
         "/api/v1/admin/users?role=author&per_page=1&page=2",
-        &admin_cookie,
+        &admin_access,
     )
     .await;
     assert_eq!(paged.status, StatusCode::OK, "{}", paged.json);
@@ -1274,14 +1456,14 @@ async fn run_account_queries(app: &Router) {
             "duplicate",
         ),
     ] {
-        let response = get(app, query, &admin_cookie).await;
+        let response = get(app, query, &admin_access).await;
         assert_field_error(&response, field, code);
     }
     // 多个字段同时无效时一次返回全部错误。
     let combined = get(
         app,
         "/api/v1/admin/users?role=x&status=y&per_page=0",
-        &admin_cookie,
+        &admin_access,
     )
     .await;
     for (field, code) in [
@@ -1293,7 +1475,7 @@ async fn run_account_queries(app: &Router) {
     }
 
     // 角色账户数包含停用账户。
-    let roles = get(app, "/api/v1/admin/roles", &admin_cookie).await;
+    let roles = get(app, "/api/v1/admin/roles", &admin_access).await;
     assert_eq!(roles.status, StatusCode::OK, "{}", roles.json);
     let counts: std::collections::BTreeMap<_, _> = roles.json["data"]
         .as_array()
@@ -1316,8 +1498,8 @@ async fn run_account_queries(app: &Router) {
 }
 
 /// 以管理员会话 GET 指定路径并断言 200。
-async fn admin_get(app: &Router, cookie: &str, path: &str) -> Response {
-    let response = request(app, Method::GET, path, None, Some(cookie), None, None).await;
+async fn admin_get(app: &Router, access: &str, path: &str) -> Response {
+    let response = request(app, Method::GET, path, None, Some(access)).await;
     assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.json);
     response
 }
@@ -1331,7 +1513,7 @@ fn total(response: &Response) -> i64 {
 /// 审计记录的请求 ID、操作者摘要、筛选条件与详情接口。
 async fn run_audit_logs(app: &Router, pool: &PgPool) {
     const LOGS: &str = "/api/v1/admin/audit-logs";
-    let (admin_cookie, admin_csrf, admin_session) = login(app, "admin@example.test").await;
+    let (admin_access, _, admin_session) = login(app, "admin@example.test").await;
     let admin_id = admin_session["user"]["id"].as_str().unwrap().to_owned();
 
     // 登录审计的 request_id 与登录响应头 X-Request-Id 一致，可按 request_id 精确定位。
@@ -1343,7 +1525,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     .unwrap();
     let by_login = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?request_id={login_request_id}"),
     )
     .await;
@@ -1362,9 +1544,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
         Method::POST,
         "/api/v1/admin/users",
         Some(json!({"email":"auditee@example.test","display_name":"Auditee","password":PASSWORD,"roles":["author"]})),
-        Some(&admin_cookie),
-        Some(&admin_csrf),
-        Some(ORIGIN),
+        Some(&admin_access),
     )
     .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
@@ -1372,7 +1552,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     let created_id = created.json["data"]["id"].as_str().unwrap().to_owned();
     let by_create = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?request_id={create_request_id}"),
     )
     .await;
@@ -1384,7 +1564,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     assert_eq!(create_log["actor"]["email"], "admin@example.test");
     let by_resource = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?resource_id={created_id}"),
     )
     .await;
@@ -1394,7 +1574,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     // CLI 初始化管理员没有 HTTP 请求与操作账户。
     let bootstrap = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?action=users.bootstrap"),
     )
     .await;
@@ -1421,7 +1601,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     assert!(auth_count > 1);
     let auth_page = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?action=auth.*&per_page=1"),
     )
     .await;
@@ -1429,7 +1609,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     assert_eq!(auth_page.json["data"].as_array().unwrap().len(), 1);
     let auth_all = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?action=auth.*&per_page=100"),
     )
     .await;
@@ -1442,7 +1622,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     );
     let exact = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?action=auth&per_page=100"),
     )
     .await;
@@ -1457,23 +1637,23 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
             .await
             .unwrap();
     }
-    let escaped = admin_get(app, &admin_cookie, &format!("{LOGS}?action=users_.*")).await;
+    let escaped = admin_get(app, &admin_access, &format!("{LOGS}?action=users_.*")).await;
     assert_eq!(total(&escaped), 1, "{}", escaped.json);
     assert_eq!(escaped.json["data"][0]["action"], "users_.probe");
-    let probes = admin_get(app, &admin_cookie, &format!("{LOGS}?resource_type=probe")).await;
+    let probes = admin_get(app, &admin_access, &format!("{LOGS}?resource_type=probe")).await;
     assert_eq!(total(&probes), 2, "{}", probes.json);
     let user_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE resource_type = 'user'")
             .fetch_one(pool)
             .await
             .unwrap();
-    let users = admin_get(app, &admin_cookie, &format!("{LOGS}?resource_type=user")).await;
+    let users = admin_get(app, &admin_access, &format!("{LOGS}?resource_type=user")).await;
     assert_eq!(total(&users), user_count);
 
     // 操作者筛选与 AND 组合；结果按 created_at DESC、id DESC 排序。
     let by_actor = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?actor_user_id={admin_id}&per_page=100"),
     )
     .await;
@@ -1496,7 +1676,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     assert!(keys.windows(2).all(|pair| pair[0] >= pair[1]), "排序不稳定");
     let combined = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?actor_user_id={admin_id}&action=users.create&resource_type=user"),
     )
     .await;
@@ -1509,7 +1689,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     );
     let no_match = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?actor_user_id={admin_id}&action=users.bootstrap"),
     )
     .await;
@@ -1520,21 +1700,21 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
     let created_at = create_log["created_at"].as_str().unwrap();
     let from = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?request_id={create_request_id}&from={created_at}"),
     )
     .await;
     assert_eq!(total(&from), 1, "from 必须包含边界");
     let to = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!("{LOGS}?request_id={create_request_id}&to={created_at}"),
     )
     .await;
     assert_eq!(total(&to), 0, "to 不得包含边界");
     let window = admin_get(
         app,
-        &admin_cookie,
+        &admin_access,
         &format!(
             "{LOGS}?request_id={create_request_id}&from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00%2B08:00"
         ),
@@ -1571,9 +1751,7 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
             Method::GET,
             &format!("{LOGS}?{query}"),
             None,
-            Some(&admin_cookie),
-            None,
-            None,
+            Some(&admin_access),
         )
         .await;
         assert_field_error(&response, field, code);
@@ -1584,25 +1762,21 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
         Method::GET,
         &format!("{LOGS}?action={long_action}"),
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_field_error(&response, "action", "invalid_value");
 
     // 详情：200 与列表一致；不存在 404；非法 UUID 422；Author 无权访问。
     let log_id = create_log["id"].as_str().unwrap();
-    let detail = admin_get(app, &admin_cookie, &format!("{LOGS}/{log_id}")).await;
+    let detail = admin_get(app, &admin_access, &format!("{LOGS}/{log_id}")).await;
     assert_eq!(detail.json["data"], create_log);
     let missing = request(
         app,
         Method::GET,
         &format!("{LOGS}/{}", ids::new_id()),
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_error(&missing, StatusCode::NOT_FOUND, "not_found");
@@ -1611,24 +1785,13 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
         Method::GET,
         &format!("{LOGS}/67e55044-10b1-426f-9247-bb680e5fe0c8"),
         None,
-        Some(&admin_cookie),
-        None,
-        None,
+        Some(&admin_access),
     )
     .await;
     assert_field_error(&invalid, "id", "invalid_format");
-    let (author_cookie, _, _) = login(app, "author@example.test").await;
+    let (author_access, _, _) = login(app, "author@example.test").await;
     for path in [format!("{LOGS}/{log_id}"), format!("{LOGS}?action=auth.*")] {
-        let forbidden = request(
-            app,
-            Method::GET,
-            &path,
-            None,
-            Some(&author_cookie),
-            None,
-            None,
-        )
-        .await;
+        let forbidden = request(app, Method::GET, &path, None, Some(&author_access)).await;
         assert_error(&forbidden, StatusCode::FORBIDDEN, "forbidden");
     }
 }
@@ -1645,8 +1808,6 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
         "/api/v1/admin/auth/me",
         None,
         None,
-        None,
-        None,
     )
     .await;
     assert_eq!(first.status, StatusCode::UNAUTHORIZED);
@@ -1654,8 +1815,6 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
         &api_limited,
         Method::GET,
         "/api/v1/admin/auth/me",
-        None,
-        None,
         None,
         None,
     )
@@ -1674,8 +1833,6 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
         "/api/v1/admin/auth/login",
         Some(json!({"email":"missing@example.test","password":PASSWORD})),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_eq!(first.status, StatusCode::UNAUTHORIZED);
@@ -1685,8 +1842,6 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
         "/api/v1/admin/auth/login",
         Some(json!({"email":"missing@example.test","password":PASSWORD})),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await;
     assert_error(&second, StatusCode::TOO_MANY_REQUESTS, "rate_limited");
@@ -1696,8 +1851,6 @@ async fn run_rate_limits(pool: &PgPool, database_url: &str) {
         &login_limited,
         Method::GET,
         "/api/v1/admin/auth/me",
-        None,
-        None,
         None,
         None,
     )
@@ -1712,8 +1865,6 @@ async fn login_attempt(app: &Router, email: &str, password: &str) -> Response {
         "/api/v1/admin/auth/login",
         Some(json!({"email": email, "password": password})),
         None,
-        None,
-        Some(ORIGIN),
     )
     .await
 }

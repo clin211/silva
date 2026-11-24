@@ -84,7 +84,7 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 - HTTP 响应包含服务端生成的 UUIDv7 `X-Request-Id`，以及 32 位十六进制 W3C `X-Trace-Id`。两者含义不同。只接受标准 `traceparent` / `tracestate`，不传播客户端 baggage，不采信客户端请求 ID。
 - 请求根 span 自动关联用例和数据库适配器 span。日志等级改变不会关闭业务 span；`RUST_LOG=warn` 时错误仍有请求上下文。
 - 指标标签只使用路由模板、固定方法枚举、状态码、有限任务类型和错误分类。未知路由统一 `unmatched`，自定义 HTTP 方法统一 `OTHER`。用户 ID、request ID、trace ID、原始 URL、查询参数不作为指标标签。
-- 密码、Session / CSRF token、请求体、数据库连接串不进入埋点。`#[instrument]` 显式使用 `skip_all`；SQLx 原始语句日志关闭。
+- 密码、access / refresh token、JWT 签名密钥、请求体、数据库连接串不进入埋点。`#[instrument]` 显式使用 `skip_all`；SQLx 原始语句日志关闭。
 - HTTP 延迟使用 Histogram，口径从请求中间件进入到响应头生成，不包含响应体传输。`traffic=application` 为业务流量；健康检查、OpenAPI、metrics 使用 `traffic=operations`，从业务错误率和延迟告警中排除。
 - 数据库操作延迟包含适配器调用中的连接等待、SQL 和事务，不冒充单条 SQL 耗时。获取连接指标的 `transaction` 包含 BEGIN 往返。PostgreSQL exporter 提供数据库自身状态。Linux 容器额外提供进程 CPU、RSS、文件描述符等指标；macOS 宿主机不提供 Linux 进程采集器。
 - Worker 指标包括执行结果、耗时、删除会话数量、执行周期和最近成功时间；监听可用不能替代任务成功心跳。

@@ -9,8 +9,8 @@
 - 每张业务表及每个未删除用户字段必须有非空 `COMMENT ON TABLE/COLUMN`；不检查 PostgreSQL 系统表、`_sqlx_migrations`。所有字段的注释同迁移创建。CI 通过 `obj_description`、`col_description` 验证并输出具体缺失对象。
 - 所有 FK 写出删除策略。原文已有策略原样保留；原文未指定者统一显式 `ON DELETE NO ACTION`，保持 PostgreSQL 默认语义、避免擅自删除作者/审计/发布引用。两个 post revision 复合 FK 保持 `DEFERRABLE INITIALLY DEFERRED`，使用 `ON DELETE NO ACTION` 以允许事务内先预分配 post/revision ID 后写入。
 - `site_state` 在 schema migration 初始化唯一 `singleton=true` 行；期望与线上 generation 初值 NULL，不能伪造已上线。
-- 账户密码仅 Argon2id hash、session 仅 token hash；角色和权限由 Rust seed 通过 `shared::ids` 分配 UUIDv7，SQL 不写固定业务实体 ID。
-- schema 不替代业务授权：账号停用的会话撤销、动态读取角色权限、Origin/CSRF、媒体就绪及归属、只追加 revision、generation 原子切换和租约 fencing 由对应 Rust 用例负责。
+- 账户密码仅 Argon2id hash、session 仅当前 refresh token 的 SHA-256 hash（迁移 `20261124000001` 更新 `sessions` 注释）；角色和权限由 Rust seed 通过 `shared::ids` 分配 UUIDv7，SQL 不写固定业务实体 ID。
+- schema 不替代业务授权：账号停用的会话撤销、动态读取角色权限、JWT 校验与 refresh token 轮换、媒体就绪及归属、只追加 revision、generation 原子切换和租约 fencing 由对应 Rust 用例负责。
 
 ## 实施约束与待确认项
 
@@ -110,13 +110,13 @@ CREATE TABLE sessions (
   last_seen_at timestamptz
 );
 
-COMMENT ON TABLE sessions IS '后台登录会话，每条记录对应一个服务端会话。';
+COMMENT ON TABLE sessions IS '后台登录会话，每次登录创建一条；access token 与 refresh token 通过会话 ID 关联，删除该行即撤销其全部令牌。';
 COMMENT ON COLUMN sessions.id IS '该记录的 UUIDv7 主键。';
 COMMENT ON COLUMN sessions.user_id IS '会话所属的后台用户 ID';
-COMMENT ON COLUMN sessions.token_hash IS '用于查找会话的令牌哈希，不保存原始令牌';
-COMMENT ON COLUMN sessions.expires_at IS '会话失效时间';
+COMMENT ON COLUMN sessions.token_hash IS '当前有效 refresh token 的 SHA-256 哈希，每次刷新轮换；不保存令牌原文';
+COMMENT ON COLUMN sessions.expires_at IS '当前 refresh token 的过期时间，即会话失效时间；每次刷新按 refresh token 有效期重新计算';
 COMMENT ON COLUMN sessions.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN sessions.last_seen_at IS '最近一次记录的会话活动时间，未记录时为 NULL';
+COMMENT ON COLUMN sessions.last_seen_at IS '最近一次记录的会话活动时间（鉴权最多每 5 分钟更新一次，刷新令牌时更新），未记录时为 NULL';
 ```
 
 ```sql

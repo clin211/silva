@@ -14,7 +14,8 @@ async-trait.workspace = true
 argon2.workspace = true
 chrono.workspace = true
 hex.workspace = true
-rand.workspace = true
+jsonwebtoken.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
@@ -22,6 +23,9 @@ tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
 
 [lints]
 workspace = true

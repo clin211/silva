@@ -20,9 +20,9 @@
 
 ## 配置契约
 
-配置由 `server/.env.example` 和 `crates/shared/src/config.rs` 冻结：`DATABASE_URL`、`SILVA_BIND`、`SILVA_ADMIN_ORIGIN`、`SILVA_ENV`、`SILVA_DB_MAX_CONNECTIONS`、`SILVA_SESSION_TTL_SECONDS`、`SILVA_WORKER_INTERVAL_SECONDS`、`SILVA_API_RATE_PER_MINUTE`、`SILVA_LOGIN_RATE_PER_MINUTE`、`RUST_LOG`。
+配置由 `server/.env.example` 和 `crates/shared/src/config.rs` 冻结：`DATABASE_URL`、`SILVA_BIND`、`SILVA_ENV`、`SILVA_DB_MAX_CONNECTIONS`、`SILVA_JWT_SECRET`、`SILVA_ACCESS_TOKEN_TTL_SECONDS`、`SILVA_REFRESH_TOKEN_TTL_SECONDS`、`SILVA_WORKER_INTERVAL_SECONDS`、`SILVA_API_RATE_PER_MINUTE`、`SILVA_LOGIN_RATE_PER_MINUTE`、`RUST_LOG`。
 
-宿主机开发默认 PostgreSQL `127.0.0.1:55439`、API `127.0.0.1:8088`、后台 Origin `http://localhost:5173`。Compose 覆盖数据库主机为 `postgres`，容器 HTTP bind 为 `0.0.0.0:8088`；宿主机端口仍仅绑定 `127.0.0.1`。Cookie 所有环境始终采用 HttpOnly、Secure、SameSite=Lax、Path=/、host-only，不提供关闭 Secure 的开关。HTTP curl 冒烟可以手动回传 Cookie，浏览器开发应优先使用本地 HTTPS 代理。
+宿主机开发默认 PostgreSQL `127.0.0.1:55439`、API `127.0.0.1:8088`。Compose 覆盖数据库主机为 `postgres`，容器 HTTP bind 为 `0.0.0.0:8088`；宿主机端口仍仅绑定 `127.0.0.1`。管理接口使用 `Authorization: Bearer <access_token>`；生产环境必须设置至少 32 字节的 `SILVA_JWT_SECRET`，否则 API 启动失败，开发和测试环境未设置时 API 随机生成密钥并告警（重启后令牌失效）。CLI 与 Worker 不签发令牌，不要求该变量。
 
 CLI 管理员密码只通过 `SILVA_ADMIN_PASSWORD` 提供，不出现在命令参数、仓库或日志中；邮箱/名称通过 `--email`/`--display-name` 或 `SILVA_ADMIN_EMAIL`/`SILVA_ADMIN_NAME`。
 

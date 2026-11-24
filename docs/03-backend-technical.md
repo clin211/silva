@@ -188,13 +188,13 @@ CREATE TABLE sessions (
   last_seen_at timestamptz
 );
 
-COMMENT ON TABLE sessions IS '后台登录会话，每条记录对应一个服务端会话。';
+COMMENT ON TABLE sessions IS '后台登录会话，每次登录创建一条；access token 与 refresh token 通过会话 ID 关联，删除该行即撤销其全部令牌。';
 COMMENT ON COLUMN sessions.id IS '该记录的 UUIDv7 主键。';
 COMMENT ON COLUMN sessions.user_id IS '会话所属的后台用户 ID';
-COMMENT ON COLUMN sessions.token_hash IS '用于查找会话的令牌哈希，不保存原始令牌';
-COMMENT ON COLUMN sessions.expires_at IS '会话失效时间';
+COMMENT ON COLUMN sessions.token_hash IS '当前有效 refresh token 的 SHA-256 哈希，每次刷新轮换；不保存令牌原文';
+COMMENT ON COLUMN sessions.expires_at IS '当前 refresh token 的过期时间，即会话失效时间；每次刷新按 refresh token 有效期重新计算';
 COMMENT ON COLUMN sessions.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN sessions.last_seen_at IS '最近一次记录的会话活动时间，未记录时为 NULL';
+COMMENT ON COLUMN sessions.last_seen_at IS '最近一次记录的会话活动时间（鉴权最多每 5 分钟更新一次，刷新令牌时更新），未记录时为 NULL';
 ```
 
 ### 4.2 Content / Markdown CMS
@@ -772,7 +772,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 }
 ```
 
-常见 HTTP 状态：200、201、202、204、400、401、403、404、409、422、429、500、503。400 表示请求体不是合法 JSON；401 表示无有效会话，403 表示无权限或 CSRF 校验失败；409 表示资源当前状态或版本不允许该操作；422 表示输入字段无效，`details` 列出字段级错误。错误用稳定的 `error.code` 区分，详见 §6。
+常见 HTTP 状态：200、201、202、204、400、401、403、404、409、422、429、500、503。400 表示请求体不是合法 JSON；401 表示令牌缺失、无效、已撤销（`unauthorized`）或 access token 已过期（`token_expired`），403 表示无权限；409 表示资源当前状态或版本不允许该操作；422 表示输入字段无效，`details` 列出字段级错误。错误用稳定的 `error.code` 区分，详见 §6。
 
 ### 5.3 Public API
 
@@ -797,9 +797,10 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 | Method      | Path                                                                                                      | 说明                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| POST        | `/auth/login`                                                                                             | 公开入口；创建会话，响应头返回 `X-CSRF-Token`  |
-| POST        | `/auth/logout`                                                                                            | 撤销当前会话；204                              |
-| GET         | `/auth/me`                                                                                                | 当前用户、权限；响应头返回 `X-CSRF-Token`      |
+| POST        | `/auth/login`                                                                                             | 公开入口；创建会话，返回 access/refresh token  |
+| POST        | `/auth/refresh`                                                                                           | 公开入口；轮换 refresh token，返回新令牌对     |
+| POST        | `/auth/logout`                                                                                            | 撤销当前会话及其全部令牌；204                  |
+| GET         | `/auth/me`                                                                                                | 当前用户、权限                                 |
 | GET, POST   | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章            |
 | GET         | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID   |
 | POST        | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                              |
@@ -904,8 +905,8 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 ## 9. 安全要求
 
 - 密码使用 Argon2id。
-- 后台入口与浏览器访问的 Admin API 同源。Session Cookie 使用 HttpOnly、Secure、SameSite=Lax、Path=/ 和 host-only（不设置 Domain）；数据库只存 token hash。停用账号立即撤销该用户会话；权限检查使用当前账户状态与角色。
-- 登录只接受 JSON 和配置的精确同源 Origin；其他管理写操作同时校验 Origin 和会话绑定的 `X-CSRF-Token`，由登录和 `auth/me` 的响应头 `X-CSRF-Token` 返回。拒绝缺失或不匹配的 Origin；认证响应与非公开预览使用 `Cache-Control: no-store`。
+- 后台认证使用 JWT（固定 HS256，拒绝 `none` 及其他算法）：登录返回 access token（默认 900 秒）与 refresh token（默认 7 天），管理接口只接受 `Authorization: Bearer <access_token>`。令牌只含账户 ID 与会话 ID，每次请求按会话读取当前账户状态、角色与权限；数据库只存当前 refresh token 的 SHA-256 hash。refresh token 每次使用都轮换，已轮换的 refresh token 再次提交视为重放并撤销整个会话。退出登录、停用账号、重置或修改密码删除会话后，相关令牌立即失效。生产环境签名密钥 `SILVA_JWT_SECRET` 至少 32 字节，经部署 Secret 注入。
+- 令牌不由浏览器自动携带，因此不再使用 Cookie、CSRF token 与 Origin 校验；登录与刷新只接受 JSON，认证响应与非公开预览使用 `Cache-Control: no-store`。前端只在内存或受控存储中保存令牌，并防范 XSS 泄露令牌。
 - 在服务端每个管理用例执行产品 §3 的 RBAC 与文章/媒体归属检查，含嵌套修订读取、上传确认和媒体引用；前端隐藏按钮不作为授权。登录及 API 做限流，管理操作写审计。
 - Markdown 渲染与预览使用同一套允许的标签、属性和 URL 协议；不要执行原始 HTML 或远程资源探测。上传校验与私有、公开读取边界见 §4.3。
 - Secret 通过部署环境 Secret 管理，不提交到仓库。管理 API 不启用跨域凭证；对象存储直传 CORS 只允许后台 origin 和签名所需的方法、请求头。

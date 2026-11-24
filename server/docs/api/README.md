@@ -16,21 +16,19 @@ curl --fail --output silva-openapi.json http://127.0.0.1:8088/openapi.json
 
 ## 客户端认证
 
-在 Apifox 中将请求地址设置为目标环境，登录及管理写操作显式携带与 `SILVA_ADMIN_ORIGIN` 精确匹配的 `Origin`。例如配置为 `https://admin.example.com` 时，请求头也使用该值，不带尾部斜杠。
+管理接口使用 JWT Bearer 认证。登录返回 `access_token` 与 `refresh_token`，之后在请求头 `Authorization: Bearer <access_token>` 中携带 access token；Apifox 中把认证方式设为 Bearer Token 并填入 access token。服务端不使用 Cookie、CSRF token 或 Origin 校验。
 
-登录成功后保存并回传 `__Host-silva_session` Cookie，并从登录响应的 `data.csrf_token` 字段取得 Token。登录之外的管理写操作还要携带 `X-CSRF-Token`；可通过 `GET /api/v1/admin/auth/me` 重新获取当前会话的 Token。Apifox 中的 Cookie 和 Token 传递由调试配置维护。
+- access token 默认 900 秒过期（`SILVA_ACCESS_TOKEN_TTL_SECONDS`），过期后返回 401 `token_expired`，此时调用 `POST /api/v1/admin/auth/refresh` 提交 `{"refresh_token": "..."}` 换取新令牌对，再重试原请求。
+- refresh token 默认 7 天过期（`SILVA_REFRESH_TOKEN_TTL_SECONDS`），每次刷新都会轮换：旧 refresh token 立即失效，必须保存新返回的 refresh token。已用过的 refresh token 再次提交视为重放，整个会话被撤销，需要重新登录。
+- 每次请求都按令牌中的会话读取账户当前状态、角色和权限。退出登录、账户停用、管理员重置密码或本人修改密码（其他会话）后，相关令牌立即返回 401 `unauthorized`。
+- 令牌等同于凭据：不要写入日志、URL 或共享的调试环境；生产环境只通过 HTTPS 传输。生产入口应限制 `/openapi.json` 和运维接口的外部访问。
 
-会话 Cookie 具有 HttpOnly、Secure、SameSite=Lax、Path=/ 属性且没有 Domain。请使用 HTTPS 入口调试，以便客户端按 Secure 属性回传 Cookie。服务端不接受 Bearer Token。
+## 登录、读取当前账户、刷新和退出
 
-浏览器后台仍需通过同源 HTTPS 入口代理 `/api/v1/admin/*`，并将该入口的 Origin 配置为 `SILVA_ADMIN_ORIGIN`；服务端没有启用凭据式 CORS。生产入口应限制 `/openapi.json` 和运维接口的外部访问。
-
-## 登录、读取会话和退出
-
-以下命令在 Bash 或 Zsh 中执行，需要 curl、jq 和可信的 HTTPS 入口。先按 [服务端 README](../../README.md) 初始化管理员。示例只在临时目录保存 Cookie 和登录结果，结束时清理。
+以下命令在 Bash 或 Zsh 中执行，需要 curl 和 jq。先按 [服务端 README](../../README.md) 初始化管理员。示例把令牌保存在仅当前用户可读的临时目录，结束时清理。
 
 ```sh
 SILVA_API_BASE=https://admin.example.com
-SILVA_API_ORIGIN=https://admin.example.com
 SILVA_API_TMP=$(mktemp -d)
 chmod 700 "$SILVA_API_TMP"
 trap 'rm -rf -- "$SILVA_API_TMP"' EXIT
@@ -44,18 +42,31 @@ jq -nc '{email: env.SILVA_API_EMAIL, password: env.SILVA_API_PASSWORD}' \
   | curl --fail-with-body --silent --show-error \
       "$SILVA_API_BASE/api/v1/admin/auth/login" \
       -H 'Content-Type: application/json' \
-      -H "Origin: $SILVA_API_ORIGIN" \
-      --cookie-jar "$SILVA_API_TMP/cookies" \
       --data-binary @- > "$SILVA_API_TMP/login.json"
 unset SILVA_API_PASSWORD
-SILVA_API_CSRF=$(jq -er '.data.csrf_token' "$SILVA_API_TMP/login.json")
+SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/login.json")
+SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/login.json")
 
 curl --fail-with-body --silent --show-error \
   "$SILVA_API_BASE/api/v1/admin/auth/me" \
-  --cookie "$SILVA_API_TMP/cookies"
+  -H "Authorization: Bearer $SILVA_API_ACCESS"
 ```
 
-登录响应为 `{"data": {"user", "permissions", "csrf_token"}}`，并通过 `Set-Cookie` 设置会话。CSRF Token 绑定当前会话，不能混用不同登录会话的 Token。
+登录响应为 `{"data": {"user", "permissions", "access_token", "refresh_token", "token_type": "Bearer", "expires_in", "refresh_expires_in"}}`，两个 `expires_in` 均为秒数。`GET /auth/me` 返回 `{"data": {"user", "permissions"}}`。
+
+access token 过期后刷新令牌，并同时替换两个变量：
+
+```sh
+jq -nc --arg token "$SILVA_API_REFRESH" '{refresh_token: $token}' \
+  | curl --fail-with-body --silent --show-error \
+      "$SILVA_API_BASE/api/v1/admin/auth/refresh" \
+      -H 'Content-Type: application/json' \
+      --data-binary @- > "$SILVA_API_TMP/refresh.json"
+SILVA_API_ACCESS=$(jq -er '.data.access_token' "$SILVA_API_TMP/refresh.json")
+SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/refresh.json")
+```
+
+刷新响应为 `{"data": {"access_token", "refresh_token", "token_type", "expires_in", "refresh_expires_in"}}`。同一 refresh token 并发提交时只有一次成功。
 
 ## 查询列表与更新账户
 
@@ -64,7 +75,7 @@ curl --fail-with-body --silent --show-error \
 ```sh
 curl --fail-with-body --silent --show-error \
   "$SILVA_API_BASE/api/v1/admin/users?page=1&per_page=20" \
-  --cookie "$SILVA_API_TMP/cookies"
+  -H "Authorization: Bearer $SILVA_API_ACCESS"
 ```
 
 分页响应为 `{ "data": [...], "meta": { "pagination": { "page": 1, "per_page": 20, "total": 1, "total_pages": 1 } } }`。`page` 从 1 开始，默认 1；`per_page` 默认 20，范围 1–100。账户和审计列表按 `created_at DESC, id DESC` 排序。
@@ -75,35 +86,30 @@ curl --fail-with-body --silent --show-error \
 SILVA_API_USER_ID=019535d9-3df7-79fb-b466-fa907fa17f9e
 curl --fail-with-body --silent --show-error \
   --request PATCH "$SILVA_API_BASE/api/v1/admin/users/$SILVA_API_USER_ID" \
-  --cookie "$SILVA_API_TMP/cookies" \
+  -H "Authorization: Bearer $SILVA_API_ACCESS" \
   -H 'Content-Type: application/json' \
-  -H "Origin: $SILVA_API_ORIGIN" \
-  -H "X-CSRF-Token: $SILVA_API_CSRF" \
   --data '{"display_name":"新显示名称"}'
 ```
 
-更新时字段省略或显式传 `null` 均保持原值；`roles` 提供后会替换整组角色，不能是空数组或重复角色。`status` 可为 `active` 或 `disabled`，禁用账户会原子撤销该账户的全部会话。后续请求按当前账户状态与权限授权。
+更新时字段省略或显式传 `null` 均保持原值；`roles` 提供后会替换整组角色，不能是空数组或重复角色。`status` 可为 `active` 或 `disabled`，禁用账户会原子撤销该账户的全部会话，其令牌立即失效。后续请求按当前账户状态与权限授权。
 
-所有管理写操作（POST、PATCH）要求精确匹配的 Origin；登录之外还要求当前会话的 CSRF Token。JSON 请求最大 64 KiB，输入不接受未知字段。密码长度按 UTF-8 字节计算，创建账户时为 12–1024 字节；显示名称最多 100 字节。
+登录与刷新之外的管理接口都要求有效的 access token。JSON 请求最大 64 KiB，输入不接受未知字段。密码长度按 UTF-8 字节计算，创建账户时为 12–1024 字节；显示名称最多 100 字节。
 
-操作完成后退出登录，成功返回 204 且没有响应体：
+操作完成后退出登录，成功返回 204 且没有响应体；该会话的 access token 和 refresh token 随即失效：
 
 ```sh
 curl --fail-with-body --silent --show-error \
   --request POST "$SILVA_API_BASE/api/v1/admin/auth/logout" \
-  --cookie "$SILVA_API_TMP/cookies" \
-  --cookie-jar "$SILVA_API_TMP/cookies" \
-  -H "Origin: $SILVA_API_ORIGIN" \
-  -H "X-CSRF-Token: $SILVA_API_CSRF"
-unset SILVA_API_CSRF
+  -H "Authorization: Bearer $SILVA_API_ACCESS"
+unset SILVA_API_ACCESS SILVA_API_REFRESH
 ```
 
 ## 权限
 
 | 接口 | 要求 |
 | --- | --- |
-| `POST /api/v1/admin/auth/login` | 无需已有会话，要求 Origin |
-| `GET /api/v1/admin/auth/me`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效会话 |
+| `POST /api/v1/admin/auth/login`、`POST /api/v1/admin/auth/refresh` | 无需 access token |
+| `GET /api/v1/admin/auth/me`、`POST /api/v1/admin/auth/logout`、`POST /api/v1/admin/auth/password` | 有效 access token |
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
@@ -122,8 +128,7 @@ unset SILVA_API_CSRF
     "message": "Request validation failed",
     "details": [
       { "field": "display_name", "code": "out_of_range", "message": "display_name must contain 1 to 100 bytes" }
-    ],
-    "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+    ]
   }
 }
 ```
@@ -133,9 +138,8 @@ unset SILVA_API_CSRF
 | HTTP 状态 | 常见错误码 | 处理 |
 | --- | --- | --- |
 | 400 | `malformed_json` | 检查请求体是否为合法 JSON |
+| 401 | `token_expired` | 用 refresh token 调用 `auth/refresh` 后重试 |
 | 401 | `invalid_credentials`、`unauthorized` | 检查凭据，或重新登录 |
-| 403 | `origin_rejected` | 检查页面 Origin 与服务端配置是否精确一致 |
-| 403 | `csrf_rejected` | 从当前会话的 `auth/me` 重新获取 Token |
 | 403 | `forbidden` | 检查当前账户的权限 |
 | 404 / 405 | `not_found` / `method_not_allowed` | 检查资源、路径或方法 |
 | 409 | `email_in_use` | 更换已存在的邮箱 |
@@ -145,7 +149,7 @@ unset SILVA_API_CSRF
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 / 503 | `internal_error` / `service_unavailable` | 记录请求标识并排查服务依赖 |
 
-响应头 `X-Request-Id` 是服务端生成的 UUIDv7，与错误体 `request_id` 一致。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。
+响应头 `X-Request-Id` 是服务端生成的 UUIDv7，排障时提供它；错误正文不重复携带。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。
 
 ## 维护与检查
 

@@ -54,7 +54,7 @@
 }
 ```
 
-动作结果也是对象，例如登录返回 `{"data": {"user": {...}, "permissions": [...]}}`，CSRF token 在响应头 `X-CSRF-Token` 中。
+动作结果也是对象，例如登录返回 `{"data": {"user": {...}, "permissions": [...], "access_token": "...", "refresh_token": "...", "token_type": "Bearer", "expires_in": 900, "refresh_expires_in": 604800}}`。
 
 ### 3.3 集合
 
@@ -138,11 +138,10 @@
 | 状态 | 错误码 | 含义 | 客户端处理 |
 | --- | --- | --- | --- |
 | 400 | `malformed_json` | 请求体不是合法 JSON（语法错误、空正文、结尾有多余内容） | 修正请求体编码 |
-| 401 | `unauthorized` | 会话缺失、无效、过期、已撤销，或账户已停用 | 跳转登录 |
+| 401 | `unauthorized` | 令牌缺失、格式错误、签名或声明无效、种类不符、会话已撤销或过期、refresh token 重放，或账户已停用 | 跳转登录 |
+| 401 | `token_expired` | access token 签名有效但已过期 | 用 refresh token 调用 `auth/refresh` 后重试原请求；刷新失败再跳转登录 |
 | 401 | `invalid_credentials` | 登录时邮箱或密码错误。为防止枚举账户，不区分具体原因 | 提示重新输入 |
 | 403 | `forbidden` | 已登录，但缺少所需权限 | 提示无权限 |
-| 403 | `origin_rejected` | 写操作的 `Origin` 与 `SILVA_ADMIN_ORIGIN` 不完全一致 | 检查部署和代理配置 |
-| 403 | `csrf_rejected` | `X-CSRF-Token` 缺失，或与当前会话不匹配 | 调用 `auth/me` 重新获取 Token 后重试 |
 | 404 | `not_found` | 路径或资源不存在 | 提示资源不存在 |
 | 405 | `method_not_allowed` | 路径存在，但不支持该 HTTP 方法 | 修正调用代码 |
 | 409 | `email_in_use` | 规范化后的邮箱已被其他账户使用 | 提示更换邮箱 |
@@ -173,7 +172,7 @@
 ## 6. 状态码选择规则
 
 - **400 和 422：** 请求体无法解析为 JSON 时返回 400 `malformed_json`；JSON 合法，但字段缺失、多余、类型或取值不符时返回 422 `validation_error`。查询参数和路径参数无效时也返回 422。
-- **401 和 403：** 无法确认调用者身份时返回 401；身份已确认但不允许执行该操作时返回 403。Origin 和 CSRF 校验失败属于 403。
+- **401 和 403：** 无法确认调用者身份时返回 401；身份已确认但不允许执行该操作时返回 403。
 - **404：** 资源不存在时返回 404。调用者无权知道某资源是否存在时，也返回 404 而不是 403。
 - **409：** 请求本身合法，但与资源当前状态冲突，例如唯一性约束、并发版本或业务不变量。每种冲突使用单独的错误码。
 - **422 中的业务规则：** 只涉及请求自身字段的规则（如“新密码不能与当前密码相同”）返回 422，并在 `details` 中指明字段；需要依赖其他资源状态的规则返回 409。
@@ -189,8 +188,7 @@
 | `Cache-Control: no-store` | 所有响应 | 管理接口的响应不允许缓存 |
 | `X-Content-Type-Options: nosniff` | 所有响应 | 禁止浏览器猜测内容类型 |
 | `Retry-After` | 429 | 需要等待的秒数 |
-| `Set-Cookie` | 登录、退出 | 会话 Cookie，属性见 [身份契约](identity.md) |
-| `X-CSRF-Token` | 登录、`GET /auth/me` 的 200 响应 | 绑定当前会话的 CSRF token，正文不携带；管理写请求原样放入同名请求头 |
+| `WWW-Authenticate` | 所有 401 | `Bearer`；access token 过期时为 `Bearer error="invalid_token", error_description="The access token expired"`，见 [身份契约](identity.md) |
 
 ## 8. 代码落地
 
