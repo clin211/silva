@@ -7,9 +7,9 @@
 - 密码使用 Argon2id；数据库不保存明文密码。
 - Session Cookie 固定要求 `HttpOnly; Secure; SameSite=Lax; Path=/`，host-only，不设置 `Domain`。数据库只保存会话 token hash。
 - `POST /api/v1/admin/auth/login` 是无需既有会话的入口，只接受 JSON 和配置的**精确同源 Origin**。缺失、不匹配 Origin 均拒绝；不启用管理 API 跨域凭证。
-- 其他管理写请求必须同时校验精确 Origin 和当前会话绑定的 `X-CSRF-Token`。CSRF token 由登录和 `GET /api/v1/admin/auth/me` 返回；另一个会话的 token 不可复用。
+- 其他管理写请求必须同时校验精确 Origin 和当前会话绑定的 `X-CSRF-Token`。CSRF token 由登录和 `GET /api/v1/admin/auth/me` 通过响应头 `X-CSRF-Token` 返回，正文不携带；另一个会话的 token 不可复用。
 - `POST /api/v1/admin/auth/logout` 撤销当前会话，成功 204，无响应体。
-- `GET /api/v1/admin/auth/me` 在 `data` 中返回当前用户、当前权限、`csrf_token`。
+- `GET /api/v1/admin/auth/me` 在 `data` 中返回当前用户、当前权限，CSRF token 在响应头 `X-CSRF-Token` 中。
 - 无有效会话返回 401；无权限或 CSRF 检查失败返回 403。
 - 停用账户立即撤销其全部会话；每次授权使用当前账户状态与当前角色，不能依赖登录时权限快照。
 - 认证响应与非公开预览使用 `Cache-Control: no-store`。登录和 API 均需限流，管理操作需审计，不记录密码、原始 session token 或敏感凭据。
@@ -49,7 +49,7 @@
 以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
 
 - Cookie 名称：`__Host-silva_session`。
-- 登录输入：`{email,password}`；登录和 `auth/me` 返回 `{"data":{user,permissions,csrf_token}}`。
+- 登录输入：`{email,password}`；登录和 `auth/me` 返回 `{"data":{user,permissions}}`，并带响应头 `X-CSRF-Token`。
 - 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
 - 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...],password?}`，200 直接返回 User。`password` 为管理员重置，设置后撤销该账户全部会话。
 - 修改自己的密码：`{current_password,new_password}`；当前密码错误、新密码不符合 12..1024 字节或与当前密码相同时返回 422 `validation_error`，`details` 分别指向 `current_password`（`incorrect`）或 `new_password`（`out_of_range`、`unchanged`）；与登录共用每 IP 登录限流额度。角色必须是非空、无重复的内置键数组。
@@ -92,7 +92,7 @@
 使用真实临时 PostgreSQL 执行全部迁移后测试：
 
 1. 登录成功 Cookie 属性、CSRF token、`auth/me`、登出 204 和登出后 401；DB 只含 token hash。
-2. 缺失/错误 Origin、非 JSON 登录、缺失/错误/其他会话 CSRF token 均被拒绝，错误响应统一且包含合法 UUIDv7 request_id。
+2. 缺失/错误 Origin、非 JSON 登录、缺失/错误/其他会话 CSRF token 均被拒绝，错误响应统一，响应头 `X-Request-Id` 为合法 UUIDv7，正文不含 `request_id`。
 3. 不存在用户、错误密码、无效/过期会话不获得登录或授权；密码不能明文保存。
 4. Author 无法读取账户/角色/审计/系统信息或创建账户；当前角色变更立即影响授权。
 5. Admin 创建账户、内置角色分配、停用账户后所有既有会话立即失效；审计可查且不含凭据。

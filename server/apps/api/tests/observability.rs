@@ -58,7 +58,7 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
     );
     let body = to_bytes(response.into_body(), 1_000_000).await.unwrap();
     let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(error["error"]["request_id"], request_id);
+    assert!(error["error"].get("request_id").is_none());
 
     let response = app
         .clone()

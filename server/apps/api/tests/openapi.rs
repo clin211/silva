@@ -151,19 +151,13 @@ fn all_entity_and_request_ids_constrain_uuid_version_and_variant() {
     let spec = contract();
     let schemas = spec["components"]["schemas"].as_object().unwrap();
     assert_uuid_v7(&spec, &schemas["UuidV7"]);
-    for (name, schema) in schemas {
+    for schema in schemas.values() {
         if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
             for (field, value) in properties {
                 if field == "id" || field.ends_with("_id") {
                     assert_uuid_v7(&spec, value);
                 }
             }
-        }
-        if name == "ErrorResponse" {
-            assert_uuid_v7(
-                &spec,
-                &schema["properties"]["error"]["properties"]["request_id"],
-            );
         }
     }
     for parameter in [
@@ -757,4 +751,40 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         assert!(!json.to_string().contains("a@example.test"), "{json}");
     }
     telemetry.shutdown().await;
+}
+
+/// 请求 ID 与 CSRF token 只通过响应头返回：错误正文和会话视图不得再声明对应字段。
+#[test]
+fn request_id_and_csrf_token_are_response_headers_only() {
+    let spec = contract();
+    let schemas = &spec["components"]["schemas"];
+    let error = &schemas["ErrorResponse"]["properties"]["error"];
+    assert!(error["properties"].get("request_id").is_none());
+    assert!(
+        !error["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "request_id")
+    );
+    assert!(
+        schemas["AuthSession"]["properties"]
+            .get("csrf_token")
+            .is_none()
+    );
+    let text = spec.to_string();
+    assert!(
+        !text.contains("\"csrf_token\""),
+        "OpenAPI 中不应再出现 csrf_token 字段"
+    );
+    for (path, method) in [
+        ("/api/v1/admin/auth/login", "post"),
+        ("/api/v1/admin/auth/me", "get"),
+    ] {
+        let headers = &spec["paths"][path][method]["responses"]["200"]["headers"];
+        assert_eq!(
+            headers["X-CSRF-Token"]["$ref"], "#/components/headers/CsrfToken",
+            "{method} {path}"
+        );
+    }
 }

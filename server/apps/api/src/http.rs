@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    error::{ApiError, ErrorCode, REQUEST_ID},
+    error::{ApiError, ErrorCode},
     response,
 };
 use axum::{
@@ -532,9 +532,7 @@ pub(crate) async fn context(
         tracing::info!(%request_id, %method, %route, status = response.status().as_u16(), latency_ms = elapsed.as_secs_f64() * 1000.0, "http request");
         Ok(response)
     };
-    REQUEST_ID
-        .scope(request_id, response.instrument(span))
-        .await
+    response.instrument(span).await
 }
 
 fn exact_header(headers: &HeaderMap, name: &str, expected: &str) -> bool {
@@ -572,11 +570,11 @@ async fn authorize(
     let csrf = state.identity.csrf_token(&token);
     if write {
         let candidate = headers
-            .get("x-csrf-token")
+            .get(CSRF_HEADER)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         if !bool::from(candidate.as_bytes().ct_eq(csrf.as_bytes()))
-            || headers.get_all("x-csrf-token").iter().count() != 1
+            || headers.get_all(CSRF_HEADER).iter().count() != 1
         {
             return Err(ApiError::new(
                 ErrorCode::CsrfRejected,
@@ -593,12 +591,21 @@ pub(crate) struct LoginInput {
     email: String,
     password: String,
 }
-/// 登录与读取会话共用的会话视图，作为 `data` 返回。
+/// 登录与读取会话共用的会话视图，作为 `data` 返回；CSRF token 通过响应头 `X-CSRF-Token` 返回。
 #[derive(Serialize)]
 struct AuthSession {
     user: User,
     permissions: Vec<String>,
-    csrf_token: String,
+}
+
+/// 当前会话的 CSRF token 响应头，后续管理写请求原样放入请求头 `X-CSRF-Token`。
+const CSRF_HEADER: &str = "x-csrf-token";
+
+fn with_csrf_header(mut response: Response, csrf_token: &str) -> HttpResult<Response> {
+    let value = HeaderValue::from_str(csrf_token)
+        .map_err(|_| ApiError::from(AppError::Internal(anyhow::anyhow!("invalid CSRF token"))))?;
+    response.headers_mut().insert(CSRF_HEADER, value);
+    Ok(response)
 }
 
 pub(crate) async fn login(
@@ -615,11 +622,13 @@ pub(crate) async fn login(
         session.token,
         state.config.session_ttl.as_secs()
     );
-    let mut response = response::ok(AuthSession {
-        user: session.principal.user,
-        permissions: session.principal.permissions,
-        csrf_token: session.csrf_token,
-    });
+    let mut response = with_csrf_header(
+        response::ok(AuthSession {
+            user: session.principal.user,
+            permissions: session.principal.permissions,
+        }),
+        &session.csrf_token,
+    )?;
     response.headers_mut().insert(
         header::SET_COOKIE,
         HeaderValue::from_str(&cookie).map_err(|_| {
@@ -633,11 +642,13 @@ pub(crate) async fn login(
 
 pub(crate) async fn me(State(state): State<AppState>, headers: HeaderMap) -> HttpResult<Response> {
     let (principal, csrf_token) = authorize(&state, &headers, false).await?;
-    Ok(response::ok(AuthSession {
-        user: principal.user,
-        permissions: principal.permissions,
-        csrf_token,
-    }))
+    with_csrf_header(
+        response::ok(AuthSession {
+            user: principal.user,
+            permissions: principal.permissions,
+        }),
+        &csrf_token,
+    )
 }
 
 pub(crate) async fn logout(

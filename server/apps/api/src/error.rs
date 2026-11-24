@@ -1,4 +1,4 @@
-//! 统一错误响应：`{"error": {"code", "message", "details", "request_id"}}`。
+//! 统一错误响应：`{"error": {"code", "message", "details"}}`；请求 ID 只通过响应头 `X-Request-Id` 返回。
 //! 规范见 `docs/contracts/api-response.md`；错误码在此集中登记，HTTP 状态由错误码唯一决定。
 
 use axum::{
@@ -9,9 +9,6 @@ use axum::{
 use serde::Serialize;
 use silva_application::login_lockout::retry_after_seconds;
 use silva_shared::error::{AppError, Conflict, FieldError};
-use uuid::Uuid;
-
-tokio::task_local! { pub static REQUEST_ID: Uuid; }
 
 /// 对外错误码，封闭集合。客户端只按 HTTP 状态和此错误码分支，不解析 `message`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -149,20 +146,15 @@ struct ErrorObject<'a> {
     code: ErrorCode,
     message: &'a str,
     details: &'a [FieldError],
-    request_id: Uuid,
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let request_id = REQUEST_ID
-            .try_with(|id| *id)
-            .unwrap_or_else(|_| silva_shared::ids::new_id());
         let body = ErrorBody {
             error: ErrorObject {
                 code: self.code,
                 message: &self.message,
                 details: &self.details,
-                request_id,
             },
         };
         let mut response = (self.code.status(), Json(body)).into_response();

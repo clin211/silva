@@ -21,7 +21,7 @@
 2. **顶层只有一个键表示结果。** 成功正文必有 `data`，失败正文必有 `error`，两者不会同时出现。成功正文可以另带 `meta`，除此之外没有其他顶层键。
 3. **JSON 约定：** `Content-Type: application/json`，UTF-8；字段名用 `snake_case`；时间为 RFC 3339 UTC 字符串（如 `2026-11-21T08:00:00Z`）；实体 ID 为带连字符的 UUIDv7 字符串；枚举值用小写 `snake_case` 字符串。
 4. **字段稳定存在。** 资源 Schema 中声明的字段总是出现，没有值时返回 `null`，不省略。数组没有元素时返回 `[]`，不返回 `null`。
-5. **不泄露内部细节。** 响应中不出现 SQL、堆栈、内部主机名、密码哈希或令牌原文；500 的细节只写入日志，用 `request_id` 关联。
+5. **不泄露内部细节。** 响应中不出现 SQL、堆栈、内部主机名、密码哈希或令牌原文；500 的细节只写入日志，用响应头 `X-Request-Id` 关联。
 6. **客户端必须容忍新增内容。** 客户端忽略未知字段；遇到未知错误码时按 HTTP 状态兜底处理。
 
 ## 3. 成功响应
@@ -54,7 +54,7 @@
 }
 ```
 
-动作结果也是对象，例如登录返回 `{"data": {"user": {...}, "permissions": [...], "csrf_token": "..."}}`。
+动作结果也是对象，例如登录返回 `{"data": {"user": {...}, "permissions": [...]}}`，CSRF token 在响应头 `X-CSRF-Token` 中。
 
 ### 3.3 集合
 
@@ -104,8 +104,7 @@
         "code": "duplicate",
         "message": "role is listed more than once"
       }
-    ],
-    "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+    ]
   }
 }
 ```
@@ -115,7 +114,8 @@
 | `code` | string | 稳定的错误码，取值见 5.1。客户端只根据 HTTP 状态和这个字段做判断 |
 | `message` | string | 面向开发者的英文说明，措辞可能调整。不要用它做判断，也不要直接展示给终端用户；界面文案由前端按 `code` 提供 |
 | `details` | array | 字段级错误，元素结构见 4.2。没有时为 `[]`，这个字段始终存在 |
-| `request_id` | string | 服务端生成的 UUIDv7，与响应头 `X-Request-Id` 相同。用户反馈问题时提供它 |
+
+错误正文不包含请求 ID。排查问题时读取响应头 `X-Request-Id`（见第 7 节），用户反馈问题时提供它。
 
 ### 4.2 字段级错误
 
@@ -151,7 +151,7 @@
 | 415 | `unsupported_media_type` | `Content-Type` 不是 `application/json` 或 `application/*+json` | 修正请求头 |
 | 422 | `validation_error` | 输入不满足约束，`details` 中列出具体字段 | 按 `details` 标注表单 |
 | 429 | `rate_limited` | 超过请求频率限制 | 按 `Retry-After` 秒数等待后重试 |
-| 500 | `internal_error` | 服务端内部错误 | 展示通用错误和 `request_id` |
+| 500 | `internal_error` | 服务端内部错误 | 展示通用错误和响应头 `X-Request-Id` |
 | 503 | `service_unavailable` | 数据库等必要依赖不可用 | 稍后重试 |
 
 [后端技术方案](../../../docs/03-backend-technical.md)中规划的 `revision_conflict`、`site_generation_changed`、`site_not_ready` 等错误码，要等对应接口实现时再按第 8 节的流程登记。
@@ -184,19 +184,20 @@
 
 | 响应头 | 出现位置 | 说明 |
 | --- | --- | --- |
-| `X-Request-Id` | 所有响应 | 服务端生成的 UUIDv7，与错误正文的 `request_id` 相同 |
+| `X-Request-Id` | 所有响应 | 服务端生成的 UUIDv7，排障时用它关联日志与审计；正文不重复携带 |
 | `X-Trace-Id` | 所有响应 | 32 位小写十六进制 W3C trace ID，用于链路查询 |
 | `Cache-Control: no-store` | 所有响应 | 管理接口的响应不允许缓存 |
 | `X-Content-Type-Options: nosniff` | 所有响应 | 禁止浏览器猜测内容类型 |
 | `Retry-After` | 429 | 需要等待的秒数 |
 | `Set-Cookie` | 登录、退出 | 会话 Cookie，属性见 [身份契约](identity.md) |
+| `X-CSRF-Token` | 登录、`GET /auth/me` 的 200 响应 | 绑定当前会话的 CSRF token，正文不携带；管理写请求原样放入同名请求头 |
 
 ## 8. 代码落地
 
 | 位置 | 职责 |
 | --- | --- |
 | `apps/api/src/response.rs` | 构造成功响应：`ok`（200 + `data`）、`created`（201）、`page`（200 + `data` + `meta.pagination`）、`no_content`（204）。业务处理器只通过这些函数返回 2xx |
-| `apps/api/src/error.rs` | `ErrorCode` 登记全部对外错误码，并通过 `status()` 决定 HTTP 状态；`ApiError` 负责序列化错误正文，并从任务上下文读取 `request_id` |
+| `apps/api/src/error.rs` | `ErrorCode` 登记全部对外错误码，并通过 `status()` 决定 HTTP 状态；`ApiError` 负责序列化错误正文；请求 ID 由请求中间件写入响应头 `X-Request-Id` |
 | `crates/shared/src/error.rs` | 各层共用的 `AppError`、`Conflict`（每个变体对应一个 409 错误码）、`FieldError` 和 `FieldErrorCode`。领域层和应用层只表达“哪里出了什么问题”，不涉及 HTTP |
 | `apps/api/src/http.rs` | `Input`（JSON 请求体）、`PageInput`（分页参数）、`IdPath`（UUIDv7 路径参数）提取器，把解析失败转换为上述错误 |
 

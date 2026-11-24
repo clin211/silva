@@ -767,8 +767,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
     "message": "Request validation failed",
     "details": [
       { "field": "roles[1]", "code": "duplicate", "message": "role is listed more than once" }
-    ],
-    "request_id": "017f22e2-79b0-7cc3-98c4-dc0c0c07398f"
+    ]
   }
 }
 ```
@@ -798,9 +797,9 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 | Method      | Path                                                                                                      | 说明                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| POST        | `/auth/login`                                                                                             | 公开入口；创建会话并返回 `csrf_token`          |
+| POST        | `/auth/login`                                                                                             | 公开入口；创建会话，响应头返回 `X-CSRF-Token`  |
 | POST        | `/auth/logout`                                                                                            | 撤销当前会话；204                              |
-| GET         | `/auth/me`                                                                                                | 当前用户、权限和 `csrf_token`                  |
+| GET         | `/auth/me`                                                                                                | 当前用户、权限；响应头返回 `X-CSRF-Token`      |
 | GET, POST   | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章            |
 | GET         | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID   |
 | POST        | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                              |
@@ -906,7 +905,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 - 密码使用 Argon2id。
 - 后台入口与浏览器访问的 Admin API 同源。Session Cookie 使用 HttpOnly、Secure、SameSite=Lax、Path=/ 和 host-only（不设置 Domain）；数据库只存 token hash。停用账号立即撤销该用户会话；权限检查使用当前账户状态与角色。
-- 登录只接受 JSON 和配置的精确同源 Origin；其他管理写操作同时校验 Origin 和会话绑定的 `X-CSRF-Token`，由登录和 `auth/me` 返回。拒绝缺失或不匹配的 Origin；认证响应与非公开预览使用 `Cache-Control: no-store`。
+- 登录只接受 JSON 和配置的精确同源 Origin；其他管理写操作同时校验 Origin 和会话绑定的 `X-CSRF-Token`，由登录和 `auth/me` 的响应头 `X-CSRF-Token` 返回。拒绝缺失或不匹配的 Origin；认证响应与非公开预览使用 `Cache-Control: no-store`。
 - 在服务端每个管理用例执行产品 §3 的 RBAC 与文章/媒体归属检查，含嵌套修订读取、上传确认和媒体引用；前端隐藏按钮不作为授权。登录及 API 做限流，管理操作写审计。
 - Markdown 渲染与预览使用同一套允许的标签、属性和 URL 协议；不要执行原始 HTML 或远程资源探测。上传校验与私有、公开读取边界见 §4.3。
 - Secret 通过部署环境 Secret 管理，不提交到仓库。管理 API 不启用跨域凭证；对象存储直传 CORS 只允许后台 origin 和签名所需的方法、请求头。

@@ -130,11 +130,12 @@ fn assert_error(response: &Response, status: StatusCode, code: &str) {
     assert_eq!(response.json["error"]["code"], code, "{}", response.json);
     assert!(response.json["error"]["message"].is_string());
     assert!(response.json["error"]["details"].is_array());
-    let request_id = response.json["error"]["request_id"].as_str().unwrap();
+    // 请求 ID 只在响应头中返回，错误正文不重复携带。
+    assert!(response.json["error"].get("request_id").is_none());
+    let request_id = response.headers["x-request-id"].to_str().unwrap();
     let id = Uuid::parse_str(request_id).unwrap();
     assert_eq!(id.get_version_num(), 7);
     assert_eq!(id.get_variant(), Variant::RFC4122);
-    assert_eq!(response.headers["x-request-id"], request_id);
 }
 
 async fn login(app: &Router, email: &str) -> (String, String, Value) {
@@ -164,7 +165,12 @@ async fn login(app: &Router, email: &str) -> (String, String, Value) {
     assert!(!attributes.contains("domain="), "{cookie_header}");
     let cookie = cookie_header.split(';').next().unwrap().to_owned();
     let session = response.json["data"].clone();
-    let csrf = session["csrf_token"].as_str().unwrap().to_owned();
+    // CSRF token 只在响应头中返回，正文不携带。
+    assert!(session.get("csrf_token").is_none());
+    let csrf = response.headers["x-csrf-token"]
+        .to_str()
+        .unwrap()
+        .to_owned();
     assert!(!csrf.is_empty());
     assert!(session["permissions"].is_array());
     (cookie, csrf, session)
@@ -384,7 +390,8 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     )
     .await;
     assert_eq!(me.status, StatusCode::OK, "{}", me.json);
-    assert_eq!(me.json["data"]["csrf_token"], admin_csrf);
+    assert_eq!(me.headers["x-csrf-token"], admin_csrf.as_str());
+    assert!(me.json["data"].get("csrf_token").is_none());
     assert_eq!(me.json["data"]["user"]["id"], admin_id);
     assert_eq!(me.headers[header::CACHE_CONTROL], "no-store");
     let token = admin_cookie.split_once('=').unwrap().1;

@@ -4,7 +4,7 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再使用返回的 CSRF Token 进行写操作。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\", \"request_id\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
+        "description": "当前提供健康检查、身份认证、服务端会话、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。浏览器须通过后台同源 HTTPS 入口访问，不启用凭据式 CORS。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。浏览器先登录，再把登录或 GET /auth/me 响应头 X-CSRF-Token 的值放入写请求的同名请求头。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。完整规范见 server/docs/contracts/api-response.md。"
     },
     "servers": [
         {
@@ -190,6 +190,9 @@
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
+                            "X-CSRF-Token": {
+                                "$ref": "#/components/headers/CsrfToken"
+                            },
                             "Cache-Control": {
                                 "description": "认证及管理接口响应不缓存。",
                                 "schema": {
@@ -234,8 +237,7 @@
                                             "posts.submit_own",
                                             "media.manage_own",
                                             "jobs.read_own"
-                                        ],
-                                        "csrf_token": "example-session-bound-csrf-token"
+                                        ]
                                     }
                                 }
                             }
@@ -268,8 +270,7 @@
                                     "error": {
                                         "code": "rate_limited",
                                         "message": "Too many failed login attempts; try again later",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -300,8 +301,7 @@
                                     "error": {
                                         "code": "unsupported_media_type",
                                         "message": "Expected application/json",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -335,8 +335,7 @@
                                                 "code": "required",
                                                 "message": "field is required"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -364,8 +363,7 @@
                                     "error": {
                                         "code": "invalid_credentials",
                                         "message": "Invalid email or password",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -393,8 +391,7 @@
                                     "error": {
                                         "code": "origin_rejected",
                                         "message": "Origin must match the configured admin origin",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -422,8 +419,7 @@
                                     "error": {
                                         "code": "payload_too_large",
                                         "message": "Request body exceeds 64 KiB",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -456,7 +452,7 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从正文读取 csrf_token。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
+                "description": "仅接受 JSON。无需已有会话，但 Origin 仍须精确匹配配置。成功后浏览器保存 HttpOnly Cookie，并从响应头 X-CSRF-Token 读取 CSRF token。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
             }
         },
         "/api/v1/admin/auth/logout": {
@@ -529,6 +525,9 @@
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
+                            "X-CSRF-Token": {
+                                "$ref": "#/components/headers/CsrfToken"
+                            },
                             "Cache-Control": {
                                 "description": "认证及管理接口响应不缓存。",
                                 "schema": {
@@ -566,8 +565,7 @@
                                             "posts.submit_own",
                                             "media.manage_own",
                                             "jobs.read_own"
-                                        ],
-                                        "csrf_token": "example-session-bound-csrf-token"
+                                        ]
                                     }
                                 }
                             }
@@ -645,8 +643,7 @@
                                     "error": {
                                         "code": "unsupported_media_type",
                                         "message": "Expected application/json",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -680,8 +677,7 @@
                                                 "code": "incorrect",
                                                 "message": "current password is incorrect"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -709,8 +705,7 @@
                                     "error": {
                                         "code": "payload_too_large",
                                         "message": "Request body exceeds 64 KiB",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -840,8 +835,7 @@
                                                 "code": "invalid_value",
                                                 "message": "role must be one of: author, editor, admin"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -941,8 +935,7 @@
                                     "error": {
                                         "code": "unsupported_media_type",
                                         "message": "Expected application/json",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -976,8 +969,7 @@
                                                 "code": "invalid_format",
                                                 "message": "email must be a valid address of at most 254 bytes"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -1005,8 +997,7 @@
                                     "error": {
                                         "code": "email_in_use",
                                         "message": "Email is already in use",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1034,8 +1025,7 @@
                                     "error": {
                                         "code": "payload_too_large",
                                         "message": "Request body exceeds 64 KiB",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1155,8 +1145,7 @@
                                                 "code": "invalid_format",
                                                 "message": "id must be a hyphenated UUIDv7"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -1184,8 +1173,7 @@
                                     "error": {
                                         "code": "not_found",
                                         "message": "Resource not found",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1273,8 +1261,7 @@
                                     "error": {
                                         "code": "unsupported_media_type",
                                         "message": "Expected application/json",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1308,8 +1295,7 @@
                                                 "code": "duplicate",
                                                 "message": "role is listed more than once"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -1337,8 +1323,7 @@
                                     "error": {
                                         "code": "not_found",
                                         "message": "Resource not found",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1366,8 +1351,7 @@
                                     "error": {
                                         "code": "last_admin_required",
                                         "message": "At least one active administrator is required",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1395,8 +1379,7 @@
                                     "error": {
                                         "code": "payload_too_large",
                                         "message": "Request body exceeds 64 KiB",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1594,8 +1577,7 @@
                                                 "code": "out_of_range",
                                                 "message": "to must be later than from"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -1720,8 +1702,7 @@
                                                 "code": "invalid_format",
                                                 "message": "id must be a hyphenated UUIDv7"
                                             }
-                                        ],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        ]
                                     }
                                 }
                             }
@@ -1749,8 +1730,7 @@
                                     "error": {
                                         "code": "not_found",
                                         "message": "Resource not found",
-                                        "details": [],
-                                        "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                        "details": []
                                     }
                                 }
                             }
@@ -1845,6 +1825,13 @@
                     "pattern": "^[0-9a-f]{32}$"
                 },
                 "example": "12345678901234567890123456789012"
+            },
+            "CsrfToken": {
+                "description": "绑定当前会话的不透明 CSRF token。登录与读取当前会话时返回；后续管理写请求原样放入请求头 X-CSRF-Token。另一个会话的 token 不可复用。",
+                "schema": {
+                    "type": "string"
+                },
+                "example": "example-session-bound-csrf-token"
             }
         },
         "parameters": {
@@ -2052,8 +2039,7 @@
                             "error": {
                                 "code": "internal_error",
                                 "message": "Internal server error",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2078,8 +2064,7 @@
                             "error": {
                                 "code": "unauthorized",
                                 "message": "Authentication required",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2107,8 +2092,7 @@
                             "error": {
                                 "code": "forbidden",
                                 "message": "Permission denied",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2146,8 +2130,7 @@
                             "error": {
                                 "code": "rate_limited",
                                 "message": "Request limit exceeded",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2175,8 +2158,7 @@
                             "error": {
                                 "code": "service_unavailable",
                                 "message": "Service dependency unavailable",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2204,8 +2186,7 @@
                             "error": {
                                 "code": "malformed_json",
                                 "message": "Request body is not valid JSON",
-                                "details": [],
-                                "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                                "details": []
                             }
                         }
                     }
@@ -2924,17 +2905,12 @@
                                     "$ref": "#/components/schemas/FieldError"
                                 },
                                 "description": "字段级错误；没有时为空数组，永不省略。"
-                            },
-                            "request_id": {
-                                "$ref": "#/components/schemas/UuidV7",
-                                "description": "与响应头 X-Request-Id 相同，用于排障。"
                             }
                         },
                         "required": [
                             "code",
                             "message",
-                            "details",
-                            "request_id"
+                            "details"
                         ]
                     }
                 },
@@ -2946,8 +2922,7 @@
                         "error": {
                             "code": "unauthorized",
                             "message": "Authentication required",
-                            "details": [],
-                            "request_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                            "details": []
                         }
                     }
                 ]
@@ -3038,16 +3013,11 @@
                             "$ref": "#/components/schemas/Permission"
                         },
                         "description": "当前角色授予的权限键。"
-                    },
-                    "csrf_token": {
-                        "type": "string",
-                        "description": "绑定当前会话的不透明令牌，管理写操作通过 X-CSRF-Token 发送。"
                     }
                 },
                 "required": [
                     "user",
-                    "permissions",
-                    "csrf_token"
+                    "permissions"
                 ],
                 "examples": [
                     {
@@ -3070,8 +3040,7 @@
                             "posts.submit_own",
                             "media.manage_own",
                             "jobs.read_own"
-                        ],
-                        "csrf_token": "example-session-bound-csrf-token"
+                        ]
                     }
                 ],
                 "description": "当前会话视图。"
@@ -3110,8 +3079,7 @@
                                 "posts.submit_own",
                                 "media.manage_own",
                                 "jobs.read_own"
-                            ],
-                            "csrf_token": "example-session-bound-csrf-token"
+                            ]
                         }
                     }
                 ]
