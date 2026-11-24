@@ -4,12 +4,12 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "当前提供健康检查、身份认证（JWT access token + refresh token）、内置角色权限和账户管理。CMS、媒体、发布、资源目录和采集接口尚未开放。生产环境须通过 HTTPS 入口访问。响应头 X-Request-Id 为服务端生成的 UUIDv7，错误正文不重复携带；X-Trace-Id 为 32 位小写十六进制 W3C trace ID。先调用 POST /auth/login 取得 access_token 与 refresh_token，其他管理接口在请求头 Authorization: Bearer <access_token> 中携带 access token；access token 过期（401 token_expired）后调用 POST /auth/refresh 换取新令牌对。文档以本 OpenAPI JSON 文件交付，导入 Apifox 进行预览和调试。示例中的账户、密码与令牌均为虚构。 响应遵循统一结构：成功时为 {\"data\": ...}，分页列表另含 {\"meta\": {\"pagination\": ...}}；失败时为 {\"error\": {\"code\", \"message\", \"details\"}}；/health/*、/metrics、/openapi.json 为运维端点，不套用该结构。响应中的时间统一为北京时间（UTC+08:00）的 RFC 3339 字符串，带显式偏移；请求中的时间参数接受任意合法 RFC 3339 偏移，查询串中的 + 需编码为 %2B。完整规范见 server/docs/contracts/api-response.md。"
+        "description": "Silva 后台管理 API。\n\n**已开放**：健康检查、身份认证、内置角色权限、账户管理与审计。CMS、媒体、发布、资源目录和采集接口尚未开放。\n\n## 快速开始\n\n1. 调用 `POST /api/v1/admin/auth/login` 获取 `access_token` 与 `refresh_token`。\n2. 其他管理接口在请求头携带 `Authorization: Bearer <access_token>`。\n3. 收到 `401 token_expired` 后，调用 `POST /api/v1/admin/auth/refresh` 换取新令牌对。\n\n## 响应结构\n\n| 场景 | 正文 |\n| --- | --- |\n| 成功 | `{\"data\": ...}` |\n| 分页列表 | `{\"data\": [...], \"meta\": {\"pagination\": ...}}` |\n| 失败 | `{\"error\": {\"code\", \"message\", \"details\"}}` |\n\n运维端点 `/health/*`、`/metrics`、`/openapi.json` 不套用该结构。\n\n## 约定\n\n- **时间**：响应统一为北京时间（`+08:00`）的 RFC 3339 字符串；请求参数接受任意 RFC 3339 偏移，查询串中的 `+` 须编码为 `%2B`。\n- **请求追踪**：响应头 `X-Request-Id` 为服务端生成的 UUIDv7，错误正文不重复携带；`X-Trace-Id` 为 32 位小写十六进制 W3C trace ID。\n- **传输**：生产环境须通过 HTTPS 访问。\n- **调试**：导入 Apifox 预览和调试；示例中的账户、密码与令牌均为虚构。\n\n完整规范见 `server/docs/contracts/api-response.md`。"
     },
     "servers": [
         {
             "url": "/",
-            "description": "当前入口；管理接口使用 Authorization: Bearer <access_token> 认证。"
+            "description": "当前入口；管理接口使用 `Authorization: Bearer <access_token>` 认证。"
         }
     ],
     "security": [
@@ -65,7 +65,8 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "security": []
+                "security": [],
+                "description": "进程存活探针，不检查依赖。无需认证。"
             }
         },
         "/health/ready": {
@@ -105,7 +106,8 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "security": []
+                "security": [],
+                "description": "就绪探针，检查数据库连接；不可用时返回 **503**。无需认证。"
             }
         },
         "/metrics": {
@@ -117,7 +119,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Prometheus 文本指标，仅限运维网络访问。",
+                        "description": "Prometheus 文本指标。",
                         "content": {
                             "text/plain": {
                                 "schema": {
@@ -140,7 +142,7 @@
                     }
                 },
                 "security": [],
-                "description": "部署入口应限制此路径的访问。指标不包含密码或会话令牌；数据库故障时仍可读取。业务状态每 15 秒采样，读取队列值前先检查 silva_business_metrics_up 和最后成功时间。"
+                "description": "Prometheus 文本格式的运维指标。\n\n- **访问控制**：部署入口须限制此路径，仅供运维网络访问。\n- 指标不含密码或会话令牌；数据库故障时仍可读取。\n- 业务状态每 15 秒采样，读取队列值前先检查 `silva_business_metrics_up` 和最后成功时间。"
             }
         },
         "/openapi.json": {
@@ -173,7 +175,8 @@
                         "$ref": "#/components/responses/Error"
                     }
                 },
-                "security": []
+                "security": [],
+                "description": "下载当前运行版本的 OpenAPI 3.1 契约，可直接导入 Apifox。无需认证。"
             }
         },
         "/api/v1/admin/auth/login": {
@@ -185,13 +188,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "认证成功；创建服务端会话并返回 access token 与 refresh token。",
+                        "description": "登录成功，返回令牌对及过期时间。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
+                                "description": "认证相关响应不缓存。",
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
@@ -218,13 +221,13 @@
                         }
                     },
                     "429": {
-                        "description": "超过每 IP 的 API 或登录请求限额（message 为 Request limit exceeded，Retry-After 为 60），或该邮箱连续登录失败次数过多已被锁定（Retry-After 为剩余锁定秒数）。锁定按规范化邮箱计数，对存在与不存在的账户一致；锁定期内即使密码正确也拒绝。",
+                        "description": "请求被限流或邮箱已锁定：\n\n- **限流**：超过每 IP 的 API 或登录请求限额，`message` 为 `Request limit exceeded`，`Retry-After` 为 60。\n- **锁定**：该邮箱连续失败次数过多，`Retry-After` 为剩余锁定秒数。锁定按规范化邮箱计数，账户存在与否表现一致；锁定期内即使密码正确也拒绝。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Retry-After": {
-                                "description": "重试前需等待的秒数：固定窗口限流为 60；账户锁定为剩余锁定时长，向上取整且至少为 1。",
+                                "description": "重试前需等待的秒数：限流固定为 60；锁定为剩余时长，向上取整且至少为 1。",
                                 "schema": {
                                     "type": "integer",
                                     "minimum": 1
@@ -257,7 +260,7 @@
                         "$ref": "#/components/responses/Error"
                     },
                     "415": {
-                        "description": "Content-Type 必须为 application/json。",
+                        "description": "`Content-Type` 必须为 `application/json`。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -319,7 +322,7 @@
                         ]
                     },
                     "401": {
-                        "description": "账户不存在、已停用或密码错误，均返回相同错误；每次失败写入 auth.login_failed 审计并计入该邮箱的连续失败次数。",
+                        "description": "账户不存在、已停用或密码错误，统一返回 `invalid_credentials`。每次失败写入 `auth.login_failed` 审计，并计入该邮箱的连续失败次数。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -396,7 +399,7 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON，无需认证。成功后创建一条服务端会话，只返回 access_token、refresh_token 及两者的过期时间 access_token_expires_at、refresh_token_expires_at（UTC）；账户详情、角色与权限通过 GET /users/info 读取；服务端只保存 refresh token 的哈希。无公开注册接口；登录同时受 API 限流和登录限流约束；同一邮箱在 15 分钟内连续失败达到 SILVA_LOGIN_LOCKOUT_THRESHOLD 次（默认 5）后锁定 SILVA_LOGIN_LOCKOUT_SECONDS 秒（默认 900），成功登录清零。"
+                "description": "用邮箱和密码登录，创建服务端会话并签发令牌。**无需认证**，不提供公开注册。\n\n- **返回**：`access_token`、`refresh_token` 及各自的过期时间。账户详情、角色与权限请调用 `GET /api/v1/admin/users/info`。\n- **限流**：同时受每 IP 的 API 限流和登录限流约束。\n- **锁定**：同一邮箱 15 分钟内连续失败 `SILVA_LOGIN_LOCKOUT_THRESHOLD` 次（默认 5）后，锁定 `SILVA_LOGIN_LOCKOUT_SECONDS` 秒（默认 900）；登录成功后清零。\n- 服务端只保存 refresh token 的哈希。"
             }
         },
         "/api/v1/admin/auth/refresh": {
@@ -408,13 +411,13 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "轮换成功；返回新的 access token 与 refresh token，旧 refresh token 立即失效。",
+                        "description": "轮换成功，返回新令牌对；旧 refresh token 立即失效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
+                                "description": "认证相关响应不缓存。",
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
@@ -447,7 +450,7 @@
                         "$ref": "#/components/responses/Error"
                     },
                     "401": {
-                        "description": "refresh token 缺失、签名或声明无效、已过期、不是 refresh 种类，会话已撤销或过期，或账户已停用。提交已被轮换过的 refresh token 视为重放：整个会话被撤销（其全部令牌失效）并写入 auth.refresh_reuse 审计。客户端收到该错误后应重新登录。",
+                        "description": "refresh token 不可用，客户端应**重新登录**：\n\n- 缺失、签名或声明无效、已过期，或不是 refresh 令牌；\n- 会话已撤销或过期，或账户已停用；\n- **重放**：提交已轮换过的 refresh token，整个会话被撤销并写入 `auth.refresh_reuse` 审计。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -478,7 +481,7 @@
                         ]
                     },
                     "415": {
-                        "description": "Content-Type 必须为 application/json。",
+                        "description": "`Content-Type` 必须为 `application/json`。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -585,7 +588,7 @@
                         }
                     }
                 },
-                "description": "仅接受 JSON，无需 Authorization 请求头。校验 refresh token 后按其会话轮换：生成新的 access token 与 refresh token，会话有效期按 SILVA_REFRESH_TOKEN_TTL_SECONDS 从刷新时刻重新计算。同一 refresh token 只能成功使用一次，并发提交时至多一次成功；重复提交视为重放并撤销整个会话。正常刷新不写审计。"
+                "description": "用 refresh token 轮换令牌对。**无需** `Authorization` 请求头。\n\n- 返回新的 `access_token` 与 `refresh_token`，旧 refresh token **立即失效**。\n- 会话有效期按 `SILVA_REFRESH_TOKEN_TTL_SECONDS` 从刷新时刻重新计算。\n- **只能使用一次**：并发提交至多一次成功；重复提交视为重放，**撤销整个会话**。\n- 正常刷新不写审计。"
             }
         },
         "/api/v1/admin/auth/logout": {
@@ -597,13 +600,13 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "会话已删除；该会话的 access token 与 refresh token 立即失效。无响应正文。",
+                        "description": "已退出，无响应正文。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
+                                "description": "认证相关响应不缓存。",
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
@@ -624,7 +627,7 @@
                         "$ref": "#/components/responses/Unauthorized"
                     }
                 },
-                "description": "要求有效的 access token。删除该令牌所属的服务端会话并写入 auth.logout 审计；之后该会话的 access token 与 refresh token 均返回 401。无需请求正文。"
+                "description": "退出登录：删除当前 access token 所属的服务端会话。\n\n- 该会话的 access token 与 refresh token **立即失效**，之后均返回 401。\n- 无需请求正文；写入 `auth.logout` 审计。"
             }
         },
         "/api/v1/admin/auth/password": {
@@ -636,13 +639,13 @@
                 ],
                 "responses": {
                     "204": {
-                        "description": "密码已更新；当前会话保留，该账户的其他会话全部撤销，其令牌立即失效。无响应正文。",
+                        "description": "密码已更新，无响应正文。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
+                                "description": "认证相关响应不缓存。",
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
@@ -663,7 +666,7 @@
                         "$ref": "#/components/responses/Unauthorized"
                     },
                     "415": {
-                        "description": "Content-Type 必须为 application/json。",
+                        "description": "`Content-Type` 必须为 `application/json`。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -770,7 +773,7 @@
                         }
                     }
                 },
-                "description": "要求有效的 access token。与登录共用每 IP 登录限流额度。成功后保留当前会话及其令牌，撤销该账户其他会话的全部令牌。"
+                "description": "修改当前账户的密码。\n\n- **保留当前会话**，撤销该账户的**其他所有会话**。\n- 与登录共用每 IP 登录限流额度。"
             }
         },
         "/api/v1/admin/users": {
@@ -782,7 +785,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "账户按 created_at DESC、id DESC 排序。",
+                        "description": "账户列表，按 `created_at DESC, id DESC` 排序。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -893,7 +896,7 @@
                         "$ref": "#/components/parameters/UserStatusFilter"
                     }
                 ],
-                "description": "可按关键字 q、角色 role、状态 status 筛选，多个条件同时满足；分页 total 为筛选后的数量。参数重复返回 duplicate，未知查询参数忽略。 需要权限 `users.manage`。"
+                "description": "分页查询账户，按 `created_at`、`id` 倒序排列。\n\n- **筛选**：`q`（关键字）、`role`、`status`，多个条件同时满足；`total` 为筛选后的数量。\n- 参数重复返回 `duplicate`，未知参数忽略。\n\n**所需权限**：`users.manage`"
             },
             "post": {
                 "operationId": "createUser",
@@ -903,7 +906,7 @@
                 ],
                 "responses": {
                     "201": {
-                        "description": "账户创建成功，不返回密码及其哈希。",
+                        "description": "账户已创建，不返回密码及其哈希。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -947,7 +950,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "415": {
-                        "description": "Content-Type 必须为 application/json。",
+                        "description": "`Content-Type` 必须为 `application/json`。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1087,7 +1090,7 @@
                         }
                     }
                 },
-                "description": " 需要权限 `users.manage`。"
+                "description": "创建账户并分配内置角色。邮箱规范化（去首尾空白、转小写）后须唯一。\n\n**所需权限**：`users.manage`"
             }
         },
         "/api/v1/admin/users/info": {
@@ -1105,7 +1108,7 @@
                                 "$ref": "#/components/headers/RequestId"
                             },
                             "Cache-Control": {
-                                "description": "认证及管理接口响应不缓存。",
+                                "description": "认证相关响应不缓存。",
                                 "schema": {
                                     "type": "string",
                                     "const": "no-store"
@@ -1155,7 +1158,7 @@
                         "$ref": "#/components/responses/Unauthorized"
                     }
                 },
-                "description": "任何有效会话均可调用，不需要 users.manage。返回当前账户字段（含 roles、last_login_at）与当前角色授予的权限，每次按会话从数据库读取最新状态；角色变更立即生效。"
+                "description": "读取当前登录账户的详情、角色与权限。\n\n- 任何有效会话均可调用，**不需要** `users.manage`。\n- 每次请求从数据库读取最新状态，角色变更立即生效。"
             }
         },
         "/api/v1/admin/users/{id}": {
@@ -1167,7 +1170,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回账户详情，不含密码及其哈希。",
+                        "description": "账户详情，不含密码及其哈希。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1211,7 +1214,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "422": {
-                        "description": "路径 id 不是 UUIDv7。",
+                        "description": "路径 `id` 不是 UUIDv7。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1279,7 +1282,7 @@
                         "$ref": "#/components/parameters/UserId"
                     }
                 ],
-                "description": "按 ID 读取账户。 需要权限 `users.manage`。"
+                "description": "按 ID 读取账户。\n\n**所需权限**：`users.manage`"
             },
             "patch": {
                 "operationId": "updateUser",
@@ -1289,7 +1292,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "返回更新后的账户。停用账户或重置密码会原子撤销其全部会话，其令牌立即失效。",
+                        "description": "返回更新后的账户。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1333,7 +1336,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "415": {
-                        "description": "Content-Type 必须为 application/json。",
+                        "description": "`Content-Type` 必须为 `application/json`。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1361,7 +1364,7 @@
                         ]
                     },
                     "422": {
-                        "description": "路径 id 不是 UUIDv7，或输入字段无效。",
+                        "description": "路径 `id` 不是 UUIDv7，或输入字段无效。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1423,7 +1426,7 @@
                         ]
                     },
                     "409": {
-                        "description": "修改会导致系统不再有启用状态的管理员（停用最后一个管理员或移除其 admin 角色）。",
+                        "description": "操作会使系统没有启用的管理员（停用最后一个管理员或移除其 `admin` 角色）。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1505,7 +1508,7 @@
                         }
                     }
                 },
-                "description": "仅更新已提供的非 null 字段；省略或 null 保持原值。roles 会替换整组角色。后续请求按当前账户状态与角色授权，不使用登录时的权限快照。 需要权限 `users.manage`。"
+                "description": "部分更新账户的资料、状态、角色或密码。\n\n- 只更新提供的非 `null` 字段；省略或传 `null` 保持原值。\n- `roles` **整组替换**。\n- 停用账户或重置密码会**撤销该账户的全部会话**。\n- 变更立即生效，后续请求按最新状态与角色授权。\n- 不能停用最后一个启用的管理员，也不能移除其 `admin` 角色。\n\n**所需权限**：`users.manage`"
             }
         },
         "/api/v1/admin/roles": {
@@ -1517,7 +1520,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "内置 author、editor 和 admin 角色，含各自的账户数。",
+                        "description": "内置角色列表，未分页。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1566,7 +1569,7 @@
                     }
                 },
                 "x-required-permission": "roles.read",
-                "description": " 需要权限 `roles.read`。"
+                "description": "列出内置角色 `author`、`editor`、`admin` 及各自的权限和账户数。\n\n**所需权限**：`roles.read`"
             }
         },
         "/api/v1/admin/audit-logs": {
@@ -1578,7 +1581,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "审计记录按 created_at DESC、id DESC 排序，不包含凭据内容。",
+                        "description": "审计记录列表，按 `created_at DESC, id DESC` 排序，不含凭据内容。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1701,7 +1704,7 @@
                         "$ref": "#/components/parameters/AuditResourceType"
                     }
                 ],
-                "description": "筛选条件以 AND 组合，分页 total 为过滤后的总数；结果按 created_at DESC、id DESC 排序。同一参数重复返回 duplicate。 需要权限 `audit.read`。"
+                "description": "分页筛选审计日志，按 `created_at`、`id` 倒序排列。\n\n- 筛选条件以 AND 组合，`total` 为筛选后的数量。\n- 同一参数重复返回 `duplicate`。\n\n**所需权限**：`audit.read`"
             }
         },
         "/api/v1/admin/audit-logs/{id}": {
@@ -1762,7 +1765,7 @@
                         "$ref": "#/components/responses/Forbidden"
                     },
                     "422": {
-                        "description": "路径中的 id 不是 UUIDv7。",
+                        "description": "路径 `id` 不是 UUIDv7。",
                         "headers": {
                             "X-Request-Id": {
                                 "$ref": "#/components/headers/RequestId"
@@ -1830,7 +1833,7 @@
                         "$ref": "#/components/parameters/AuditLogId"
                     }
                 ],
-                "description": "返回包含请求 ID 与操作账户摘要的审计记录。 需要权限 `audit.read`。"
+                "description": "按 ID 读取审计记录，包含请求 ID 与操作账户摘要。\n\n**所需权限**：`audit.read`"
             }
         },
         "/api/v1/admin/system/health": {
@@ -1882,7 +1885,7 @@
                     }
                 },
                 "x-required-permission": "system.read",
-                "description": " 需要权限 `system.read`。"
+                "description": "读取 API 与数据库的健康状态；依赖不可用时返回 **503**。\n\n**所需权限**：`system.read`"
             }
         }
     },
@@ -1892,18 +1895,18 @@
                 "type": "http",
                 "scheme": "bearer",
                 "bearerFormat": "JWT",
-                "description": "在请求头 Authorization: Bearer <access_token> 中携带登录或刷新接口返回的 access token。令牌为 HS256 签名的 JWT，只含账户 ID 与会话 ID；每次请求都按会话读取账户当前状态、角色与权限，退出登录、停用账户、重置或修改密码撤销会话后令牌立即失效。access token 默认 900 秒过期，过期返回 401 token_expired，此时用 refresh token 调用 POST /api/v1/admin/auth/refresh。refresh token 不能用作 access token。"
+                "description": "在请求头携带 `Authorization: Bearer <access_token>`。\n\n- 令牌为 HS256 签名的 JWT，只含账户 ID 与会话 ID；每次请求按会话读取账户的最新状态、角色与权限。\n- access token 默认 **900 秒**过期，过期返回 `401 token_expired`，此时调用 `POST /api/v1/admin/auth/refresh`。\n- 退出登录、停用账户、重置或修改密码会撤销会话，令牌立即失效。\n- refresh token 不能用作 access token。"
             }
         },
         "headers": {
             "RequestId": {
-                "description": "服务端生成的 UUIDv7 请求标识，不信任调用方传入的标识。",
+                "description": "服务端生成的 UUIDv7 请求标识，忽略调用方传入的值。",
                 "schema": {
                     "$ref": "#/components/schemas/UuidV7"
                 }
             },
             "TraceId": {
-                "description": "W3C trace ID，来自有效 traceparent 或由服务端生成，用于链路查询，不是实体 ID 或 UUID。",
+                "description": "W3C trace ID，取自有效的 `traceparent` 或由服务端生成，用于链路查询；不是实体 ID。",
                 "schema": {
                     "type": "string",
                     "pattern": "^[0-9a-f]{32}$"
@@ -1911,7 +1914,7 @@
                 "example": "12345678901234567890123456789012"
             },
             "WwwAuthenticate": {
-                "description": "Bearer 认证质询。access token 过期时为 Bearer error=\"invalid_token\", error_description=\"The access token expired\"，其他 401 为 Bearer。",
+                "description": "Bearer 认证质询。access token 过期时为 `Bearer error=\"invalid_token\", error_description=\"The access token expired\"`，其他 401 为 `Bearer`。",
                 "schema": {
                     "type": "string",
                     "pattern": "^Bearer"
@@ -1924,7 +1927,7 @@
                 "name": "id",
                 "in": "path",
                 "required": true,
-                "description": "服务端分配的账户 UUIDv7；非标准格式、v4 或无效变体位返回 422 validation_error，字段错误为 id/invalid_format。",
+                "description": "账户 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -1936,7 +1939,7 @@
                 "name": "id",
                 "in": "path",
                 "required": true,
-                "description": "审计记录 UUIDv7；非标准格式、v4 或无效变体位返回 422 validation_error，字段错误为 id/invalid_format。",
+                "description": "审计记录 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -1972,7 +1975,7 @@
                 "name": "from",
                 "in": "query",
                 "required": false,
-                "description": "只返回 created_at 不早于该时间的记录（含）。RFC 3339 时间，查询字符串中的 + 需编码为 %2B；格式错误返回 from/invalid_format。",
+                "description": "起始时间（**含**），按 `created_at` 过滤。RFC 3339 格式，`+` 须编码为 `%2B`；格式错误返回 `from/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "date-time"
@@ -1983,7 +1986,7 @@
                 "name": "to",
                 "in": "query",
                 "required": false,
-                "description": "只返回 created_at 早于该时间的记录（不含）。RFC 3339 时间；格式错误返回 to/invalid_format，同时提供 from 且 from >= to 时返回 to/out_of_range。",
+                "description": "截止时间（**不含**），按 `created_at` 过滤。RFC 3339 格式；格式错误返回 `to/invalid_format`，`from >= to` 时返回 `to/out_of_range`。",
                 "schema": {
                     "type": "string",
                     "format": "date-time"
@@ -1994,7 +1997,7 @@
                 "name": "actor_user_id",
                 "in": "query",
                 "required": false,
-                "description": "只返回该账户执行的操作。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 actor_user_id/invalid_format。",
+                "description": "只返回该账户执行的操作。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `actor_user_id/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -2006,7 +2009,7 @@
                 "name": "resource_id",
                 "in": "query",
                 "required": false,
-                "description": "只返回目标实体为该 ID 的记录。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 resource_id/invalid_format。",
+                "description": "只返回目标资源为该 ID 的记录。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `resource_id/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -2018,7 +2021,7 @@
                 "name": "request_id",
                 "in": "query",
                 "required": false,
-                "description": "只返回该 HTTP 请求产生的记录，取值来自响应头 X-Request-Id。必须是带连字符的 UUIDv7；格式、版本位或变体位不符返回 422 validation_error，字段错误为 request_id/invalid_format。",
+                "description": "只返回该请求产生的记录，取值来自响应头 `X-Request-Id`。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `request_id/invalid_format`。",
                 "schema": {
                     "type": "string",
                     "format": "uuid",
@@ -2030,7 +2033,7 @@
                 "name": "action",
                 "in": "query",
                 "required": false,
-                "description": "操作类型筛选：精确匹配，或以 .* 结尾表示前缀匹配（如 auth.* 匹配 auth.login）。只允许 a-z、0-9、_、. 及末尾的 .*，长度 1..64；否则返回 action/invalid_value。",
+                "description": "操作类型。精确匹配，以 `.*` 结尾时为前缀匹配（如 `auth.*` 匹配 `auth.login`）。仅允许 `a-z`、`0-9`、`_`、`.`，长度 1–64；否则返回 `action/invalid_value`。",
                 "schema": {
                     "type": "string",
                     "minLength": 1,
@@ -2043,7 +2046,7 @@
                 "name": "resource_type",
                 "in": "query",
                 "required": false,
-                "description": "资源类型精确匹配。只允许 a-z、0-9、_，长度 1..64；否则返回 resource_type/invalid_value。",
+                "description": "资源类型，精确匹配。仅允许 `a-z`、`0-9`、`_`，长度 1–64；否则返回 `resource_type/invalid_value`。",
                 "schema": {
                     "type": "string",
                     "minLength": 1,
@@ -2056,7 +2059,7 @@
                 "name": "q",
                 "in": "query",
                 "required": false,
-                "description": "关键字。去首尾空白后按 email 或 display_name 做不区分大小写的子串匹配，%、_、\\ 按字面匹配；去空白后为空视为未提供。去空白后超过 100 UTF-8 字节返回 422 validation_error，字段错误为 q/out_of_range。",
+                "description": "关键字，对 `email` 或 `display_name` 做不区分大小写的子串匹配，`%`、`_`、`\\` 按字面匹配。去首尾空白后为空视为未提供，超过 100 字节返回 `q/out_of_range`。",
                 "schema": {
                     "type": "string",
                     "x-max-bytes": 100
@@ -2067,7 +2070,7 @@
                 "name": "role",
                 "in": "query",
                 "required": false,
-                "description": "只返回分配了该内置角色的账户。取值不是 author、editor、admin 时返回 422 validation_error，字段错误为 role/invalid_value。",
+                "description": "只返回拥有该角色的账户：`author`、`editor` 或 `admin`；其他值返回 `role/invalid_value`。",
                 "schema": {
                     "$ref": "#/components/schemas/RoleKey"
                 },
@@ -2077,7 +2080,7 @@
                 "name": "status",
                 "in": "query",
                 "required": false,
-                "description": "只返回该状态的账户。取值不是 active、disabled 时返回 422 validation_error，字段错误为 status/invalid_value。",
+                "description": "只返回该状态的账户：`active` 或 `disabled`；其他值返回 `status/invalid_value`。",
                 "schema": {
                     "$ref": "#/components/schemas/AccountStatus"
                 },
@@ -2086,7 +2089,7 @@
         },
         "responses": {
             "Error": {
-                "description": "统一 JSON 错误结构，见 ErrorResponse 与 ErrorCode。204 没有正文。",
+                "description": "统一错误结构，见 `ErrorResponse` 与 `ErrorCode`。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
@@ -2111,7 +2114,7 @@
                 }
             },
             "Unauthorized": {
-                "description": "缺少 Authorization 请求头或格式不是 Bearer <token>、令牌签名或声明无效、令牌种类不是 access、会话已撤销或过期、账户已停用时返回 unauthorized；access token 签名有效但已过期时返回 token_expired，客户端应调用 POST /auth/refresh 后重试。",
+                "description": "认证失败，按错误码处理：\n\n- `token_expired`：access token 已过期，调用 `POST /api/v1/admin/auth/refresh` 后重试。\n- `unauthorized`：缺少 `Authorization` 或格式不是 `Bearer <token>`、签名或声明无效、不是 access 令牌、会话已撤销或过期、账户已停用。",
                 "headers": {
                     "X-Request-Id": {
                         "$ref": "#/components/headers/RequestId"
@@ -2268,7 +2271,7 @@
                 "type": "string",
                 "format": "uuid",
                 "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
-                "description": "带连字符且具有 RFC 变体位的 RFC 9562 UUIDv7，由服务端通过 silva_shared::ids 生成。",
+                "description": "带连字符的 RFC 9562 UUIDv7（RFC 变体位），由服务端生成。",
                 "example": "019535d9-3df7-79fb-b466-fa907fa17f9e"
             },
             "NullableUuidV7": {
@@ -2301,7 +2304,7 @@
             },
             "Permission": {
                 "type": "string",
-                "description": "服务端权限键。Editor 包含 Author 权限，Admin 包含 Editor 权限。"
+                "description": "权限键。`editor` 包含 `author` 的全部权限，`admin` 包含 `editor` 的全部权限。"
             },
             "AccountStatus": {
                 "type": "string",
@@ -2321,14 +2324,14 @@
                 "properties": {
                     "email": {
                         "type": "string",
-                        "description": "查找前去除首尾空白并转为小写。过长输入按凭据错误处理。",
+                        "description": "登录邮箱，查找前去首尾空白并转小写。",
                         "example": "admin@example.com"
                     },
                     "password": {
                         "type": "string",
                         "format": "password",
                         "writeOnly": true,
-                        "description": "最多 1024 个 UTF-8 字节。账户不存在、已停用或密码错误均返回相同凭据错误。"
+                        "description": "密码，最多 1024 字节。"
                     }
                 },
                 "required": [
@@ -2348,7 +2351,7 @@
                 "properties": {
                     "email": {
                         "type": "string",
-                        "description": "有效非空邮箱，包含 @、不含空白，最多 254 个 UTF-8 字节；存储前去除首尾空白并转为小写。",
+                        "description": "有效邮箱，最多 254 字节；存储前去首尾空白并转小写。",
                         "x-max-bytes": 254,
                         "example": "author@example.com"
                     },
@@ -2360,7 +2363,7 @@
                         "type": "string",
                         "format": "password",
                         "writeOnly": true,
-                        "description": "12–1024 个 UTF-8 字节，使用 Argon2id 哈希保存。",
+                        "description": "初始密码，12–1024 字节，以 Argon2id 哈希保存。",
                         "x-min-bytes": 12,
                         "x-max-bytes": 1024
                     },
@@ -2394,13 +2397,13 @@
                         "type": "string",
                         "format": "password",
                         "writeOnly": true,
-                        "description": "当前密码，最多 1024 个 UTF-8 字节。"
+                        "description": "当前密码，最多 1024 字节。"
                     },
                     "new_password": {
                         "type": "string",
                         "format": "password",
                         "writeOnly": true,
-                        "description": "新密码，12–1024 个 UTF-8 字节，且不能与当前密码相同。",
+                        "description": "新密码，12–1024 字节，不能与当前密码相同。",
                         "x-min-bytes": 12,
                         "x-max-bytes": 1024
                     }
@@ -2429,7 +2432,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "省略或传 null 均保持原值。"
+                        "description": "省略或传 `null` 保持原值。"
                     },
                     "status": {
                         "anyOf": [
@@ -2440,7 +2443,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "省略或传 null 均保持原值。"
+                        "description": "省略或传 `null` 保持原值。"
                     },
                     "roles": {
                         "anyOf": [
@@ -2451,7 +2454,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "省略或传 null 均保持原值。"
+                        "description": "省略或传 `null` 保持原值。"
                     },
                     "password": {
                         "anyOf": [
@@ -2466,7 +2469,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "管理员重置密码，12–1024 个 UTF-8 字节；设置后撤销该账户全部会话。省略或传 null 保持原密码。"
+                        "description": "重置密码，12–1024 字节；设置后**撤销该账户全部会话**。省略或传 `null` 保持原密码。"
                     }
                 },
                 "required": [],
@@ -2498,7 +2501,7 @@
                     },
                     "status": {
                         "$ref": "#/components/schemas/AccountStatus",
-                        "description": "账户状态：active 为启用，disabled 为停用。"
+                        "description": "账户状态：`active` 启用，`disabled` 停用。"
                     },
                     "roles": {
                         "type": "array",
@@ -2510,12 +2513,12 @@
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                        "description": "创建时间。"
                     },
                     "updated_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "最后更新时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                        "description": "最后更新时间。"
                     },
                     "last_login_at": {
                         "anyOf": [
@@ -2527,7 +2530,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "最近一次登录成功的时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00；从未登录时为 null。字段总是存在。"
+                        "description": "最近一次登录成功的时间；从未登录时为 `null`，字段始终存在。"
                     }
                 },
                 "required": [
@@ -2648,7 +2651,7 @@
                     },
                     "actor_user_id": {
                         "$ref": "#/components/schemas/NullableUuidV7",
-                        "description": "执行操作的账户 ID；无关联账户时为 null。"
+                        "description": "执行操作的账户 ID；无关联账户时为 `null`。"
                     },
                     "actor": {
                         "anyOf": [
@@ -2659,7 +2662,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "执行操作的账户摘要；系统或 CLI 操作为 null。"
+                        "description": "执行操作的账户摘要；系统或 CLI 操作为 `null`。"
                     },
                     "action": {
                         "type": "string",
@@ -2671,18 +2674,18 @@
                     },
                     "resource_id": {
                         "$ref": "#/components/schemas/NullableUuidV7",
-                        "description": "关联资源 ID；无关联资源时为 null。"
+                        "description": "关联资源 ID；无关联资源时为 `null`。"
                     },
                     "request_id": {
                         "$ref": "#/components/schemas/NullableUuidV7",
-                        "description": "产生该记录的 HTTP 请求 ID，与该请求响应头 X-Request-Id 一致；CLI 等非 HTTP 操作为 null。"
+                        "description": "产生该记录的请求 ID，与响应头 `X-Request-Id` 一致；非 HTTP 操作为 `null`。"
                     },
                     "ip_address": {
                         "type": [
                             "string",
                             "null"
                         ],
-                        "description": "发起操作的直连客户端 IP；CLI 等非 HTTP 操作为 null。经反向代理部署时为代理地址。"
+                        "description": "直连客户端 IP，经反向代理部署时为代理地址；非 HTTP 操作为 `null`。"
                     },
                     "user_agent": {
                         "type": [
@@ -2690,16 +2693,16 @@
                             "null"
                         ],
                         "maxLength": 512,
-                        "description": "客户端报告的 User-Agent，超过 512 字节时截断；未提供时为 null。"
+                        "description": "客户端 `User-Agent`，超过 512 字节截断；未提供时为 `null`。"
                     },
                     "metadata": {
                         "type": "object",
-                        "description": "非敏感附加信息，例如 users.update 的变更字段名、状态和角色键；不包含密码或令牌。"
+                        "description": "非敏感附加信息，如 `users.update` 的变更字段名、状态和角色键；不含密码或令牌。"
                     },
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                        "description": "创建时间。"
                     }
                 },
                 "required": [
@@ -2913,7 +2916,7 @@
                     "status": {
                         "type": "string",
                         "const": "ok",
-                        "description": "服务状态，正常时为 ok。"
+                        "description": "服务状态，正常时为 `ok`。"
                     }
                 },
                 "required": [
@@ -2931,7 +2934,7 @@
                     "status": {
                         "type": "string",
                         "const": "ok",
-                        "description": "服务状态，正常时为 ok。"
+                        "description": "服务状态，正常时为 `ok`。"
                     },
                     "database": {
                         "type": "string",
@@ -2964,14 +2967,14 @@
                             },
                             "message": {
                                 "type": "string",
-                                "description": "面向开发者的英文说明，可能调整措辞，不作为分支条件，也不直接展示给终端用户。"
+                                "description": "面向开发者的英文说明，措辞可能调整；**不要**据此分支，也不要直接展示给终端用户。"
                             },
                             "details": {
                                 "type": "array",
                                 "items": {
                                     "$ref": "#/components/schemas/FieldError"
                                 },
-                                "description": "字段级错误；没有时为空数组，永不省略。"
+                                "description": "字段级错误；没有时为空数组，始终存在。"
                             }
                         },
                         "required": [
@@ -3013,7 +3016,7 @@
                     "internal_error",
                     "service_unavailable"
                 ],
-                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。客户端按错误码分支，不解析 message。新增错误码属于向后兼容变更，客户端须把未知错误码按 HTTP 状态兜底处理。\n\n- `malformed_json`：400：请求体不是合法 JSON。\n- `unauthorized`：401：令牌缺失、无效、已撤销，refresh token 重放，或账户已停用。\n- `token_expired`：401：access token 已过期，应使用 refresh token 刷新后重试。\n- `invalid_credentials`：401：登录邮箱或密码错误。\n- `forbidden`：403：当前账户缺少所需权限。\n- `not_found`：404：路径或资源不存在。\n- `method_not_allowed`：405：路径存在但不支持该方法。\n- `email_in_use`：409：规范化后的邮箱已被占用。\n- `last_admin_required`：409：操作会导致系统没有启用状态的管理员。\n- `payload_too_large`：413：请求体超过 64 KiB。\n- `unsupported_media_type`：415：Content-Type 不是 application/json。\n- `validation_error`：422：输入不满足约束，details 列出每个字段错误。\n- `rate_limited`：429：超过请求限额，按 Retry-After 等待。\n- `internal_error`：500：服务端内部错误，细节只记录在日志中。\n- `service_unavailable`：503：必要的服务依赖不可用。",
+                "description": "稳定的机器可读错误码，HTTP 状态由错误码唯一决定。\n\n- 客户端按 `code` 分支，不解析 `message`。\n- 新增错误码属于向后兼容变更，未知错误码按 HTTP 状态兜底处理。\n\n| 错误码 | HTTP | 含义 |\n| --- | --- | --- |\n| `malformed_json` | 400 | 请求体不是合法 JSON。 |\n| `unauthorized` | 401 | 令牌缺失、无效、已撤销，refresh token 重放，或账户已停用。 |\n| `token_expired` | 401 | access token 已过期，应使用 refresh token 刷新后重试。 |\n| `invalid_credentials` | 401 | 登录邮箱或密码错误。 |\n| `forbidden` | 403 | 当前账户缺少所需权限。 |\n| `not_found` | 404 | 路径或资源不存在。 |\n| `method_not_allowed` | 405 | 路径存在但不支持该方法。 |\n| `email_in_use` | 409 | 规范化后的邮箱已被占用。 |\n| `last_admin_required` | 409 | 操作会导致系统没有启用状态的管理员。 |\n| `payload_too_large` | 413 | 请求体超过 64 KiB。 |\n| `unsupported_media_type` | 415 | `Content-Type` 不是 `application/json`。 |\n| `validation_error` | 422 | 输入不满足约束，`details` 列出每个字段错误。 |\n| `rate_limited` | 429 | 超过请求限额，按 `Retry-After` 等待。 |\n| `internal_error` | 500 | 服务端内部错误，细节只记录在日志中。 |\n| `service_unavailable` | 503 | 必要的服务依赖不可用。 |",
                 "examples": [
                     "validation_error"
                 ]
@@ -3031,7 +3034,7 @@
                     "incorrect",
                     "unchanged"
                 ],
-                "description": "字段级错误码。\n\n- `required`：缺少必填字段。\n- `unknown_field`：出现未定义的字段。\n- `invalid_type`：JSON 类型不符。\n- `invalid_format`：格式不符，如邮箱或 UUIDv7。\n- `out_of_range`：长度、数量或数值超出范围。\n- `invalid_value`：不在允许的取值集合内。\n- `duplicate`：集合或查询参数中出现重复。\n- `incorrect`：与服务端保存的值不符，如当前密码错误。\n- `unchanged`：新值必须与原值不同。",
+                "description": "字段级错误码。\n\n| 错误码 | 含义 |\n| --- | --- |\n| `required` | 缺少必填字段。 |\n| `unknown_field` | 出现未定义的字段。 |\n| `invalid_type` | JSON 类型不符。 |\n| `invalid_format` | 格式不符，如邮箱或 UUIDv7。 |\n| `out_of_range` | 长度、数量或数值超出范围。 |\n| `invalid_value` | 不在允许的取值集合内。 |\n| `duplicate` | 集合或查询参数中出现重复。 |\n| `incorrect` | 与服务端保存的值不符，如当前密码错误。 |\n| `unchanged` | 新值必须与原值不同。 |",
                 "examples": [
                     "out_of_range"
                 ]
@@ -3039,11 +3042,11 @@
             "FieldError": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "字段级错误。目前只出现在 validation_error 中。",
+                "description": "字段级错误，目前只出现在 `validation_error` 中。",
                 "properties": {
                     "field": {
                         "type": "string",
-                        "description": "出错位置。请求体字段用点号与下标表示（如 `roles[1]`），查询参数和路径参数使用参数名（如 `per_page`、`id`）；空字符串表示整个请求体或查询串。"
+                        "description": "出错位置：请求体字段用点号与下标（如 `roles[1]`），查询和路径参数用参数名（如 `per_page`、`id`）；空字符串表示整个请求体或查询串。"
                     },
                     "code": {
                         "$ref": "#/components/schemas/FieldErrorCode"
@@ -3177,25 +3180,25 @@
             },
             "TokenPair": {
                 "type": "object",
-                "description": "一对新令牌。refresh token 每次刷新都会轮换，旧 refresh token 立即失效；已轮换的 refresh token 再次提交会撤销整个会话。",
+                "description": "一对新令牌。refresh token 每次刷新都会轮换，旧值立即失效；再次提交已轮换的 refresh token 会撤销整个会话。",
                 "properties": {
                     "access_token": {
                         "type": "string",
-                        "description": "HS256 签名的 JWT access token，放入 Authorization: Bearer 请求头。"
+                        "description": "JWT access token（HS256），放入 `Authorization: Bearer` 请求头。"
                     },
                     "refresh_token": {
                         "type": "string",
-                        "description": "HS256 签名的 JWT refresh token，只用于 POST /auth/refresh，不能访问其他接口。服务端只保存其 SHA-256 哈希。"
+                        "description": "JWT refresh token（HS256），**只能**用于 `POST /api/v1/admin/auth/refresh`。服务端只保存其 SHA-256 哈希。"
                     },
                     "access_token_expires_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "access token 过期时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00，精确到秒，与令牌 exp 声明一致；有效期由 SILVA_ACCESS_TOKEN_TTL_SECONDS 决定（默认 900 秒）。"
+                        "description": "access token 过期时间，精确到秒，与令牌 `exp` 一致。有效期由 `SILVA_ACCESS_TOKEN_TTL_SECONDS` 决定，默认 900 秒。"
                     },
                     "refresh_token_expires_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "refresh token 过期时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00，精确到秒，与令牌 exp 声明一致；有效期由 SILVA_REFRESH_TOKEN_TTL_SECONDS 决定（默认 604800 秒），每次刷新重新计算。"
+                        "description": "refresh token 过期时间，精确到秒，与令牌 `exp` 一致。有效期由 `SILVA_REFRESH_TOKEN_TTL_SECONDS` 决定，默认 604800 秒（7 天），每次刷新重新计算。"
                     }
                 },
                 "required": [
@@ -3217,7 +3220,7 @@
             "TokenResponse": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "登录与刷新令牌的响应：只含两个令牌及其过期时间。",
+                "description": "登录与刷新的响应，只含令牌对及其过期时间。",
                 "properties": {
                     "data": {
                         "$ref": "#/components/schemas/TokenPair"
@@ -3259,7 +3262,7 @@
             "UserInfo": {
                 "type": "object",
                 "additionalProperties": false,
-                "description": "当前登录账户的详情：账户字段、内置角色与当前角色授予的权限，每次请求按会话重新读取。",
+                "description": "当前账户的详情、内置角色与权限，每次请求按会话重新读取。",
                 "properties": {
                     "id": {
                         "$ref": "#/components/schemas/UuidV7",
@@ -3275,7 +3278,7 @@
                     },
                     "status": {
                         "$ref": "#/components/schemas/AccountStatus",
-                        "description": "账户状态：active 为启用，disabled 为停用。"
+                        "description": "账户状态：`active` 启用，`disabled` 停用。"
                     },
                     "roles": {
                         "type": "array",
@@ -3287,12 +3290,12 @@
                     "created_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "创建时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                        "description": "创建时间。"
                     },
                     "updated_at": {
                         "type": "string",
                         "format": "date-time",
-                        "description": "最后更新时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00。"
+                        "description": "最后更新时间。"
                     },
                     "last_login_at": {
                         "anyOf": [
@@ -3304,7 +3307,7 @@
                                 "type": "null"
                             }
                         ],
-                        "description": "最近一次登录成功的时间，北京时间（UTC+08:00）RFC 3339，带显式偏移，如 2026-11-24T14:45:38+08:00；从未登录时为 null。字段总是存在。"
+                        "description": "最近一次登录成功的时间；从未登录时为 `null`，字段始终存在。"
                     },
                     "permissions": {
                         "type": "array",
