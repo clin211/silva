@@ -12,6 +12,7 @@
 - 账户密码仅 Argon2id hash、session 仅当前 refresh token 的 SHA-256 hash（迁移 `20261124000001` 更新 `sessions` 注释）；角色和权限由 Rust seed 通过 `shared::ids` 分配 UUIDv7，SQL 不写固定业务实体 ID。
 - 媒体（迁移 `20261124000002`）：`media_assets` 增加客户端声明的 `declared_mime_type`、`declared_size_bytes`，拒绝原因 `rejection_reason`、拒绝时间 `rejected_at`（已拒绝记录的保留期按它计算），Worker 清理失败时间 `purge_attempted_at`（失败的记录排到后续批次末尾），以及由触发器维护的 `updated_at`。CHECK 约束限定声明与实际类型为 JPEG、PNG、WebP，大小不超过 10 MiB，`ready` 必须有尺寸，`rejection_reason` 与 `rejected_at` 当且仅当 `rejected` 时有值。对象存储键 `upload_key`（`uploads/{id}`）与 `storage_key`（`media/{id}`）只在服务端使用，不出现在 API 中。删除媒体时锁定媒体行，并检查 `post_revisions.cover_media_id`、`post_revision_media` 和 `profiles.avatar_media_id` 中的引用；这三列补充了索引。
 - 项目展览与工具导航（迁移 `20261124000003`）：产品已取消这两项功能，删除 `projects`、`project_technologies`、`project_links`、`tools`，它们对媒体的引用随之移除。引用媒体的表只剩 `post_revisions`、`post_revision_media` 和 `profiles`。
+- 文章与站点发布（迁移 `20261125000001`）：`posts.first_published_at` 记录首次被接受发布的时间（公开发布时间），曾发布的文章必须 `slug_locked`；`post_revisions.rendered_headings` 保存与 `rendered_html` 标题 id 对应的目录；分类、标签增加由触发器维护的 `updated_at`，slug 受格式 CHECK 约束；`post_reviews.submitted_by` 记录提交人，审核决定与 `reviewed_at`、`reviewer_id` 一致；`publish_jobs` 的租约字段当且仅当 `building` 时有值。新增 `site_generation_posts`，在线上切换时写入该 generation 公开的文章与修订，后台据此查询文章当前线上修订。
 - schema 不替代业务授权：账号停用的会话撤销、动态读取角色权限、JWT 校验与 refresh token 轮换、媒体就绪及归属、只追加 revision、generation 原子切换和租约 fencing 由对应 Rust 用例负责。
 
 ## 实施约束与待确认项
@@ -24,7 +25,7 @@
 ## 验证锚点
 
 1. 空 PostgreSQL 数据库执行全部 SQLx migration；再次 migrate 无操作，校验校验和。已有数据库追加执行清理迁移；已执行的历史迁移保留原版本与校验和。
-2. `tests/sql/schema_invariants.sql` 在事务内检查当前 27 张业务表、21 个 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录、项目展览与工具导航表仍存在时，输出对象名并使执行失败。同一脚本验证媒体状态约束（`ready` 缺尺寸、`rejected` 缺原因、`pending` 带原因、不允许的声明类型均被拒绝）和 `media_assets.updated_at` 触发器。
+2. `tests/sql/schema_invariants.sql` 在事务内检查当前 28 张业务表、21 个 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录、项目展览与工具导航表仍存在时，输出对象名并使执行失败。同一脚本验证媒体状态约束（`ready` 缺尺寸、`rejected` 缺原因、`pending` 带原因、不允许的声明类型均被拒绝）和 `media_assets.updated_at` 触发器。
 3. 验证 `is_uuid_v7` 接受合法 v7、拒绝 v4 及版本位为 7 但变体位错误的 UUID；逐个实体表通过实际 INSERT 或事务更新现有主键验证 v4/错误变体被 CHECK 拒绝。
 4. 验证实际 `users` v7 插入成功、v4 和错误变体失败；无外键 UUID 引用（outbox aggregate、audit resource）也拒绝非法 UUID。
 5. 检查全部 FK 的删除策略、两个 post revision 外键的延迟属性、唯一约束、site_state 单例和未上线初始状态。

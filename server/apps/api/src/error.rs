@@ -27,6 +27,17 @@ pub enum ErrorCode {
     UploadExpired,
     MediaNotReady,
     MediaInUse,
+    SlugInUse,
+    SlugLocked,
+    RevisionConflict,
+    ReviewAlreadySubmitted,
+    ReviewNotPending,
+    PublicationConflict,
+    RevisionNotApproved,
+    AlreadyUnpublished,
+    TaxonomyInUse,
+    PublishJobNotRetryable,
+    SiteGenerationChanged,
     PayloadTooLarge,
     UnsupportedMediaType,
     ValidationError,
@@ -34,10 +45,11 @@ pub enum ErrorCode {
     RateLimited,
     InternalError,
     StorageUnavailable,
+    SiteNotReady,
 }
 
 impl ErrorCode {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 32] = [
         Self::MalformedJson,
         Self::Unauthorized,
         Self::TokenExpired,
@@ -51,6 +63,17 @@ impl ErrorCode {
         Self::UploadExpired,
         Self::MediaNotReady,
         Self::MediaInUse,
+        Self::SlugInUse,
+        Self::SlugLocked,
+        Self::RevisionConflict,
+        Self::ReviewAlreadySubmitted,
+        Self::ReviewNotPending,
+        Self::PublicationConflict,
+        Self::RevisionNotApproved,
+        Self::AlreadyUnpublished,
+        Self::TaxonomyInUse,
+        Self::PublishJobNotRetryable,
+        Self::SiteGenerationChanged,
         Self::PayloadTooLarge,
         Self::UnsupportedMediaType,
         Self::ValidationError,
@@ -58,6 +81,7 @@ impl ErrorCode {
         Self::RateLimited,
         Self::InternalError,
         Self::StorageUnavailable,
+        Self::SiteNotReady,
     ];
 
     pub fn status(self) -> StatusCode {
@@ -74,13 +98,24 @@ impl ErrorCode {
             | Self::UploadIncomplete
             | Self::UploadExpired
             | Self::MediaNotReady
-            | Self::MediaInUse => StatusCode::CONFLICT,
+            | Self::MediaInUse
+            | Self::SlugInUse
+            | Self::SlugLocked
+            | Self::RevisionConflict
+            | Self::ReviewAlreadySubmitted
+            | Self::ReviewNotPending
+            | Self::PublicationConflict
+            | Self::RevisionNotApproved
+            | Self::AlreadyUnpublished
+            | Self::TaxonomyInUse
+            | Self::PublishJobNotRetryable
+            | Self::SiteGenerationChanged => StatusCode::CONFLICT,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::ValidationError | Self::MediaInvalid => StatusCode::UNPROCESSABLE_ENTITY,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::StorageUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            Self::StorageUnavailable | Self::SiteNotReady => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
@@ -92,6 +127,8 @@ pub(crate) struct ApiError {
     pub details: Vec<FieldError>,
     /// 设置时附带 `Retry-After` 响应头（秒）。
     pub retry_after: Option<u64>,
+    /// 设置时附带 `X-Site-Generation` 响应头，告知客户端当前线上版本。
+    pub generation: Option<i64>,
 }
 
 impl ApiError {
@@ -101,6 +138,7 @@ impl ApiError {
             message: message.into(),
             details: Vec::new(),
             retry_after: None,
+            generation: None,
         }
     }
 
@@ -111,6 +149,7 @@ impl ApiError {
             message: "Request validation failed".into(),
             details,
             retry_after: None,
+            generation: None,
         }
     }
 }
@@ -146,6 +185,22 @@ impl From<AppError> for ApiError {
             AppError::Conflict(Conflict::MediaInUse) => ErrorCode::MediaInUse,
             AppError::MediaInvalid { .. } => ErrorCode::MediaInvalid,
             AppError::StorageUnavailable => ErrorCode::StorageUnavailable,
+            AppError::SiteNotReady => ErrorCode::SiteNotReady,
+            AppError::Conflict(Conflict::SlugInUse) => ErrorCode::SlugInUse,
+            AppError::Conflict(Conflict::SlugLocked) => ErrorCode::SlugLocked,
+            AppError::Conflict(Conflict::RevisionConflict) => ErrorCode::RevisionConflict,
+            AppError::Conflict(Conflict::ReviewAlreadySubmitted) => {
+                ErrorCode::ReviewAlreadySubmitted
+            }
+            AppError::Conflict(Conflict::ReviewNotPending) => ErrorCode::ReviewNotPending,
+            AppError::Conflict(Conflict::PublicationConflict) => ErrorCode::PublicationConflict,
+            AppError::Conflict(Conflict::RevisionNotApproved) => ErrorCode::RevisionNotApproved,
+            AppError::Conflict(Conflict::AlreadyUnpublished) => ErrorCode::AlreadyUnpublished,
+            AppError::Conflict(Conflict::TaxonomyInUse) => ErrorCode::TaxonomyInUse,
+            AppError::Conflict(Conflict::PublishJobNotRetryable) => {
+                ErrorCode::PublishJobNotRetryable
+            }
+            AppError::Conflict(Conflict::SiteGenerationChanged) => ErrorCode::SiteGenerationChanged,
         };
         Self::new(code, error.to_string())
     }
@@ -185,6 +240,11 @@ impl IntoResponse for ApiError {
             response
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, challenge);
+        }
+        if let Some(generation) = self.generation {
+            response
+                .headers_mut()
+                .insert("x-site-generation", HeaderValue::from(generation));
         }
         if let Some(seconds) = self.retry_after {
             response

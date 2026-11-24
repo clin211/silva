@@ -1,13 +1,22 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use silva_domain::{
+    content::{
+        Category, Heading, Post, PostFilter, PostSummary, Review, ReviewDecision, Revision,
+        RevisionContent, RevisionSummary, Tag, TaxonomyInput,
+    },
     identity::{AuditLog, AuditLogFilter, Principal, Role, User},
     media::{Media, MediaStatus, RejectionReason, VerifiedImage},
+    site::{
+        PublicationAccepted, PublishJob, PublishJobFilter, SiteTarget, SnapshotCategory,
+        SnapshotImage, SnapshotLink, SnapshotMedia, SnapshotPost, SnapshotSkill, SnapshotTag,
+    },
 };
 use silva_shared::{
     error::Result,
     pagination::{Page, PageRequest},
 };
+use std::collections::HashMap;
 use std::net::IpAddr;
 use uuid::Uuid;
 
@@ -404,4 +413,326 @@ pub trait ImageInspector: Send + Sync {
         &self,
         bytes: Vec<u8>,
     ) -> Result<(Vec<u8>, std::result::Result<VerifiedImage, RejectionReason>)>;
+}
+
+/// 图片尺寸，渲染正文图片时写入 `width`、`height`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ImageSize {
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Markdown 渲染结果：消毒后的 HTML 与目录。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderedMarkdown {
+    pub html: String,
+    pub headings: Vec<Heading>,
+}
+
+/// Markdown 渲染与消毒。
+pub trait MarkdownRenderer: Send + Sync {
+    /// 提取正文引用的媒体 ID（去重、保持顺序）。图片不是 `media:<UUIDv7>` 时返回 `field` 上的校验错误。
+    fn media_references(&self, field: &'static str, markdown: &str) -> Result<Vec<Uuid>>;
+    /// 渲染并消毒；`media` 提供引用媒体的尺寸，缺失的媒体只保留说明文字。
+    fn render(&self, markdown: &str, media: &HashMap<Uuid, ImageSize>) -> RenderedMarkdown;
+}
+
+/// 修订可引用的媒体信息。
+#[derive(Clone, Debug)]
+pub struct MediaReference {
+    pub id: Uuid,
+    pub status: MediaStatus,
+    pub uploaded_by: Option<Uuid>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+}
+
+/// 待写入的修订。`revision_no` 由仓储在锁定文章后分配。
+pub struct NewRevision {
+    pub id: Uuid,
+    pub content: RevisionContent,
+    pub rendered: RenderedMarkdown,
+    /// 正文引用的媒体（不含封面）。
+    pub body_media_ids: Vec<Uuid>,
+    pub created_by: Uuid,
+}
+
+/// 新文章及其首条修订。
+pub struct NewPost {
+    pub id: Uuid,
+    pub slug: String,
+    pub author_id: Uuid,
+    pub revision: NewRevision,
+}
+
+/// 用于授权判断的文章摘要。
+#[derive(Clone, Debug)]
+pub struct PostAccess {
+    pub id: Uuid,
+    pub author_id: Option<Uuid>,
+    pub current_revision_id: Uuid,
+}
+
+/// 保存修订的结果。
+pub enum SavedRevision {
+    /// 创建了新修订。
+    Created(Revision),
+    /// 内容与当前编辑版本相同，未创建新修订，返回当前编辑版本。
+    Unchanged(Revision),
+}
+
+/// 内容操作的执行者与请求来源，用于审计。
+pub struct ContentActor<'a> {
+    pub user_id: Uuid,
+    pub meta: &'a RequestMeta,
+}
+
+#[async_trait]
+pub trait ContentRepository: Send + Sync {
+    /// 读取媒体的状态、归属与尺寸；不存在的 ID 不返回。
+    async fn media_references(&self, ids: &[Uuid]) -> Result<Vec<MediaReference>>;
+    /// 修订引用的全部媒体（封面与正文）。
+    async fn revision_media(&self, revision_id: Uuid) -> Result<Vec<Uuid>>;
+    /// 返回不存在的分类与标签 ID。
+    async fn missing_taxonomy(
+        &self,
+        category_ids: &[Uuid],
+        tag_ids: &[Uuid],
+    ) -> Result<(Vec<Uuid>, Vec<Uuid>)>;
+    /// 在一个事务内写入文章与首条修订；slug 已被使用时返回 `Conflict(SlugInUse)`。
+    async fn create_post(&self, post: NewPost, actor: &ContentActor<'_>) -> Result<Post>;
+    async fn post_access(&self, id: Uuid) -> Result<Option<PostAccess>>;
+    async fn post(&self, id: Uuid) -> Result<Option<Post>>;
+    /// 按筛选条件分页，按 `updated_at DESC, id DESC` 排序。
+    async fn list_posts(
+        &self,
+        page: &PageRequest,
+        filter: &PostFilter,
+    ) -> Result<Page<PostSummary>>;
+    /// 锁定文章并比较当前编辑版本：不一致返回 `Conflict(RevisionConflict)`；
+    /// 内容与当前版本相同时不创建修订。
+    async fn create_revision(
+        &self,
+        post_id: Uuid,
+        expected_revision_id: Uuid,
+        revision: NewRevision,
+        actor: &ContentActor<'_>,
+    ) -> Result<SavedRevision>;
+    /// 修改 slug；已锁定返回 `Conflict(SlugLocked)`，被占用返回 `Conflict(SlugInUse)`。
+    async fn update_slug(
+        &self,
+        post_id: Uuid,
+        slug: &str,
+        actor: &ContentActor<'_>,
+    ) -> Result<Post>;
+    async fn revisions(&self, post_id: Uuid, page: &PageRequest) -> Result<Page<RevisionSummary>>;
+    async fn revision(&self, post_id: Uuid, revision_id: Uuid) -> Result<Option<Revision>>;
+    /// 为修订创建待审核记录；已提交过返回 `Conflict(ReviewAlreadySubmitted)`。
+    async fn create_review(
+        &self,
+        post_id: Uuid,
+        revision_id: Uuid,
+        actor: &ContentActor<'_>,
+    ) -> Result<Review>;
+    /// 对待审核记录作出决定；不是待审核返回 `Conflict(ReviewNotPending)`。
+    async fn decide_review(
+        &self,
+        post_id: Uuid,
+        review_id: Uuid,
+        decision: ReviewDecision,
+        comment: Option<String>,
+        actor: &ContentActor<'_>,
+    ) -> Result<Review>;
+    async fn reviews(&self, post_id: Uuid, page: &PageRequest) -> Result<Page<Review>>;
+    async fn review(&self, post_id: Uuid, review_id: Uuid) -> Result<Option<Review>>;
+    /// 设置期望公开修订并登记站点目标。版本不一致返回 `Conflict(PublicationConflict)`；
+    /// 修订未获批准返回 `Conflict(RevisionNotApproved)`；修订不属于该文章返回 `NotFound`。
+    async fn publish(
+        &self,
+        post_id: Uuid,
+        revision_id: Uuid,
+        expected_version: i64,
+        actor: &ContentActor<'_>,
+    ) -> Result<PublicationAccepted>;
+    /// 清空期望公开修订并登记站点目标；没有发布目标返回 `Conflict(AlreadyUnpublished)`。
+    async fn unpublish(
+        &self,
+        post_id: Uuid,
+        expected_version: i64,
+        actor: &ContentActor<'_>,
+    ) -> Result<PublicationAccepted>;
+}
+
+/// 分类或标签。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TaxonomyKind {
+    Category,
+    Tag,
+}
+
+impl TaxonomyKind {
+    /// 审计的资源类型。
+    pub fn resource_type(self) -> &'static str {
+        match self {
+            Self::Category => "category",
+            Self::Tag => "tag",
+        }
+    }
+}
+
+/// 分类或标签的通用表示，序列化为对应资源本身。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
+pub enum TaxonomyItem {
+    Category(Category),
+    Tag(Tag),
+}
+
+#[async_trait]
+pub trait TaxonomyRepository: Send + Sync {
+    /// 全部条目，按名称、ID 排序。
+    async fn list(&self, kind: TaxonomyKind) -> Result<Vec<TaxonomyItem>>;
+    async fn find(&self, kind: TaxonomyKind, id: Uuid) -> Result<Option<TaxonomyItem>>;
+    /// slug 已被使用时返回 `Conflict(SlugInUse)`。
+    async fn create(
+        &self,
+        kind: TaxonomyKind,
+        id: Uuid,
+        slug: &str,
+        input: &TaxonomyInput,
+        actor: &ContentActor<'_>,
+    ) -> Result<TaxonomyItem>;
+    /// 更新名称与说明；条目被期望公开的修订引用时在同一事务登记站点目标。
+    async fn update(
+        &self,
+        kind: TaxonomyKind,
+        id: Uuid,
+        input: &TaxonomyInput,
+        actor: &ContentActor<'_>,
+    ) -> Result<(TaxonomyItem, Option<SiteTarget>)>;
+    /// 有修订引用时返回 `Conflict(TaxonomyInUse)`。
+    async fn delete(&self, kind: TaxonomyKind, id: Uuid, actor: &ContentActor<'_>) -> Result<()>;
+}
+
+/// Worker 领取的构建任务。
+#[derive(Clone, Debug)]
+pub struct ClaimedJob {
+    pub id: Uuid,
+    pub generation: i64,
+    /// 本次构建的序号（从 1 开始），用于隔离产物位置。
+    pub attempt: i32,
+    pub lease_token: Uuid,
+}
+
+/// 导出的站点数据；个人资料的 Markdown 由用例渲染。
+pub struct ExportedSite {
+    pub posts: Vec<SnapshotPost>,
+    pub categories: Vec<SnapshotCategory>,
+    pub tags: Vec<SnapshotTag>,
+    pub profile: Option<ExportedProfile>,
+    pub media: Vec<SnapshotMedia>,
+}
+
+/// 导出的个人资料原始内容。
+pub struct ExportedProfile {
+    pub display_name: String,
+    pub headline: Option<String>,
+    pub bio_md: Option<String>,
+    pub location: Option<String>,
+    pub avatar: Option<SnapshotImage>,
+    pub experiences: Vec<ExportedExperience>,
+    pub skills: Vec<SnapshotSkill>,
+    pub links: Vec<SnapshotLink>,
+}
+
+pub struct ExportedExperience {
+    pub organization: String,
+    pub role: String,
+    pub description_md: Option<String>,
+    pub started_on: Option<chrono::NaiveDate>,
+    pub ended_on: Option<chrono::NaiveDate>,
+}
+
+/// 线上切换的结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Activation {
+    /// 已成为线上版本。
+    Activated,
+    /// 期间已有更新的目标，任务标记为 superseded，未切换。
+    Superseded,
+    /// 租约已失效（超时被回收或已由其他 Worker 接手），未做任何修改。
+    LeaseLost,
+}
+
+/// 当前线上站点的位置。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActiveSite {
+    pub generation: i64,
+    pub manifest_key: String,
+    pub artifact_prefix: String,
+}
+
+#[async_trait]
+pub trait PublishingRepository: Send + Sync {
+    async fn jobs(&self, page: &PageRequest, filter: &PublishJobFilter)
+    -> Result<Page<PublishJob>>;
+    async fn job(&self, id: Uuid) -> Result<Option<PublishJob>>;
+    /// 登记一个新的站点目标（全站重建）。
+    async fn request_build(
+        &self,
+        trigger_type: &str,
+        actor: Option<&ContentActor<'_>>,
+    ) -> Result<SiteTarget>;
+    /// 把仍为最新目标的失败任务重新排队，再给一次构建机会（`attempts` 不清零，再次失败即为
+    /// failed）；否则返回 `Conflict(PublishJobNotRetryable)`。
+    async fn retry(&self, id: Uuid, actor: &ContentActor<'_>) -> Result<PublishJob>;
+    /// 领取最新目标的可构建任务：排队中，或租约已过期且未用尽重试。落后的未上线任务标记为
+    /// superseded。没有可领取的任务时返回 None。
+    async fn claim(
+        &self,
+        lease: std::time::Duration,
+        max_attempts: i32,
+    ) -> Result<Option<ClaimedJob>>;
+    /// 续租；租约已失效时返回 false。
+    async fn renew(&self, job: &ClaimedJob, lease: std::time::Duration) -> Result<bool>;
+    /// 在同一 `REPEATABLE READ` 视图中确认任务仍为最新目标并导出公开数据；
+    /// 已不是最新目标时返回 None。
+    async fn export(&self, job: &ClaimedJob) -> Result<Option<ExportedSite>>;
+    /// 锁定站点状态并原子切换线上版本，同时写入该 generation 的文章修订映射。
+    async fn activate(
+        &self,
+        job: &ClaimedJob,
+        manifest_key: &str,
+        artifact_prefix: &str,
+        posts: &[(Uuid, Uuid)],
+    ) -> Result<Activation>;
+    /// 标记已不是最新目标的任务为 superseded（仅当租约仍有效）。
+    async fn supersede(&self, job: &ClaimedJob) -> Result<()>;
+    /// 记录构建失败：未用尽重试且仍为最新目标时重新排队，并在 `retry_delay` 之后才允许再次
+    /// 领取；否则标记为 failed（落后任务为 superseded）。租约已失效时不做修改。
+    async fn fail(
+        &self,
+        job: &ClaimedJob,
+        error: &str,
+        max_attempts: i32,
+        retry_delay: std::time::Duration,
+    ) -> Result<()>;
+    async fn active_site(&self) -> Result<Option<ActiveSite>>;
+}
+
+/// 构建得到的单个文件。
+#[derive(Debug)]
+pub struct BuiltFile {
+    /// 相对产物根目录、以 `/` 分隔的路径。
+    pub path: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// 静态站点构建器。
+#[async_trait]
+pub trait SiteBuilder: Send + Sync {
+    /// 用快照构建站点并返回全部产物文件；失败时返回带原因的错误。
+    async fn build(&self, snapshot: &[u8], sha256: &str, generation: i64)
+    -> Result<Vec<BuiltFile>>;
 }

@@ -152,6 +152,7 @@ pub(crate) fn db(error: sqlx::Error) -> AppError {
 fn unique_conflict_code(constraint: Option<&str>) -> Option<Conflict> {
     match constraint? {
         "users_email_key" | "users_email_lower_unique" => Some(Conflict::EmailInUse),
+        "posts_slug_key" | "categories_slug_key" | "tags_slug_key" => Some(Conflict::SlugInUse),
         _ => None,
     }
 }
@@ -906,6 +907,10 @@ mod tests {
         assert_eq!(
             unique_conflict_code(Some("users_email_lower_unique")),
             Some(Conflict::EmailInUse)
+        );
+        assert_eq!(
+            unique_conflict_code(Some("posts_slug_key")),
+            Some(Conflict::SlugInUse)
         );
         assert_eq!(unique_conflict_code(Some("sessions_token_hash_key")), None);
         assert_eq!(unique_conflict_code(None), None);

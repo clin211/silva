@@ -1,6 +1,6 @@
 # Silva API 接入指南
 
-当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询和媒体上传。CMS、发布与采集接口尚未开放。
+当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询、媒体上传、文章与审核、分类标签、站点发布任务和 Public API。个人资料维护与 AI 采集接口尚未开放。
 
 ## OpenAPI 交付与 Apifox 导入
 
@@ -134,6 +134,28 @@ async function uploadImage(file: File, accessToken: string) {
 - **删除**：`DELETE /media/{id}` 删除记录和文件；仍被文章修订或个人资料引用时返回 `409 media_in_use`。
 - 过期未确认的上传在截止后约 1 小时由 Worker 删除，被拒绝的记录保留 7 天。
 
+## 文章、审核与发布
+
+文章的状态由三个独立指针表达：当前编辑版本（`current_revision_id`）、期望公开版本（`publication.desired_published_revision_id`）和线上版本（`publication.live_revision_id`）。不要用单一状态字段推断文章是否已上线。
+
+1. **创建**：`POST /api/v1/admin/posts` 提交 slug 与完整修订内容，返回文章详情（含第 1 条修订）。
+2. **保存与自动保存**：`POST /posts/{id}/revisions` 提交完整内容和 `expected_revision_id`（编辑器读取时的 `current_revision_id`）。
+   - 内容有变化时返回 201 和新修订，之后用它的 `id` 作为下一次的 `expected_revision_id`。
+   - 内容与当前版本相同时返回 200 和当前版本，自动保存可以放心按固定间隔提交。
+   - 返回 `409 revision_conflict` 时说明别人已经保存过：保留本地输入，重新读取文章，核对差异后再提交。
+3. **送审**：作者 `POST /posts/{id}/reviews` 提交 `{"revision_id": "..."}`。每个修订只能送审一次；被拒绝后保存新修订再送审。
+4. **审核**：Editor/Admin `PATCH /posts/{id}/reviews/{review_id}` 提交 `{"decision": "approved"}` 或 `rejected`，可附 `comment`。
+5. **上线**：Editor/Admin `PUT /posts/{id}/publication` 提交已批准的 `revision_id` 和读取到的 `expected_publication_version`，返回 202 与 `publish_job_id`。**202 不代表已上线**：页面显示「待上线」，用 `GET /publishing/jobs/{id}` 轮询，`active` 表示已上线，`failed` 显示 `error_message`，`superseded` 表示被更新的目标取代（重新读取文章即可）。
+6. **撤下**：`DELETE /posts/{id}/publication?expected_publication_version=N`，同样返回 202；新版本上线后文章在公开站点返回 404。slug 在首次上线后锁定，撤下也不解锁。
+
+正文图片写作 `![说明](media:<媒体 ID>)`，只能引用已就绪且本人上传（或持有 `media.manage`）的媒体；原始 HTML 会按文本显示。修订返回的 `rendered_html` 中图片指向公开媒体地址，后台预览时把 `/api/v1/public/media/{id}` 替换为通过 `GET /api/v1/admin/media/{id}/content` 读取的 blob 地址。请求正文上限为 1 MiB，Markdown 正文最多 512 KiB。
+
+分类与标签由 Editor/Admin 维护，所有内容角色都可以读取。修改已出现在线上文章中的分类或标签名称时，响应的 `publication` 给出新登记的发布任务。
+
+## Public API
+
+`/api/v1/public/*` 无需认证，只读取当前线上版本，每个响应带 `X-Site-Generation`。静态页面渲染时记录自己的 generation，之后的动态请求带上 `X-Expected-Generation`；返回 `409 site_generation_changed` 时清空页面中的旧数据并提示刷新，不要拼接两个版本的数据。站点尚未上线时返回 `503 site_not_ready`。
+
 ## 权限
 
 | 接口 | 要求 |
@@ -143,6 +165,13 @@ async function uploadImage(file: File, accessToken: string) {
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
+| 文章读取、保存修订、送审 | `posts.manage` 可访问全部文章；只有 `posts.read_own`、`posts.edit_own`、`posts.submit_own` 时只能访问本人文章，他人文章返回 404 |
+| 创建文章 | `posts.create` |
+| 审核决定 / 上线与撤下 | `posts.review` / `posts.publish`（Editor、Admin） |
+| 分类标签读取 / 维护 | 任一内容权限 / `taxonomy.manage`（Editor、Admin） |
+| 发布任务查询 | `jobs.read` 可查看全部；只有 `jobs.read_own` 时只返回本人触发的任务 |
+| 登记全站重建、重试失败任务 | `publishing.retry`（Admin） |
+| `/api/v1/public/*` | 无需认证 |
 | `/api/v1/admin/media` 下的全部接口 | `media.manage_own`（所有内置角色）只能看到和操作本人上传的媒体，他人媒体返回 404；`media.manage`（Editor、Admin）可操作全部媒体 |
 
 内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。账户、角色和审计接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
@@ -174,6 +203,13 @@ async function uploadImage(file: File, accessToken: string) {
 | 404 / 405 | `not_found` / `method_not_allowed` | 检查资源、路径或方法 |
 | 409 | `email_in_use` | 更换已存在的邮箱 |
 | 409 | `last_admin_required` | 至少保留一个启用状态的管理员，先为其他账户分配 admin 再停用或降级 |
+| 409 | `slug_in_use` / `slug_locked` | 更换 slug / 文章已上线过，slug 不能再改 |
+| 409 | `revision_conflict` | 重新读取文章，核对差异后再保存 |
+| 409 | `review_already_submitted` / `review_not_pending` | 该修订已送审 / 审核已有决定 |
+| 409 | `publication_conflict` / `revision_not_approved` / `already_unpublished` | 重新读取发布状态 / 先送审并批准 / 文章没有上线目标 |
+| 409 | `taxonomy_in_use` | 分类或标签仍被修订引用，不能删除 |
+| 409 | `publish_job_not_retryable` | 只能重试仍为最新目标的失败任务 |
+| 409 | `site_generation_changed` | 线上版本已更新，清空旧数据并提示刷新 |
 | 409 | `upload_incomplete` / `upload_expired` | 完成直传后重试确认 / 已超过截止时间，重新申请上传 |
 | 409 | `media_not_ready` / `media_in_use` | 媒体尚未通过校验 / 先解除文章或个人资料对该媒体的引用 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
@@ -181,6 +217,7 @@ async function uploadImage(file: File, accessToken: string) {
 | 422 | `media_invalid` | 文件未通过校验，原因见媒体的 `rejection_reason`；重新申请上传 |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 | `internal_error` | 记录请求标识并排查服务依赖 |
+| 503 | `site_not_ready` | 站点尚未有线上版本，稍后重试 |
 | 503 | `storage_unavailable` | 服务端未配置对象存储（仅开发环境），配置 `SILVA_STORAGE_*` 后重启 |
 
 响应头 `X-Request-Id` 是服务端生成的 UUIDv7，排障时提供它；错误正文不重复携带。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。

@@ -1,0 +1,156 @@
+//! 分类与标签维护。读取对所有内容角色开放（编辑文章时需要选择），写入需要 `taxonomy.manage`。
+//! slug 创建后不能修改；名称与说明修改后，若条目已出现在期望公开的文章中，同时登记站点目标。
+
+use crate::{
+    content::{POSTS_MANAGE, POSTS_READ_OWN},
+    ports::{ContentActor, RequestMeta, TaxonomyItem, TaxonomyKind, TaxonomyRepository},
+};
+use silva_domain::{
+    content::{TaxonomyInput, validate_slug},
+    identity::Principal,
+    site::SiteTarget,
+};
+use silva_shared::{
+    error::{AppError, FieldErrorCode, Result},
+    ids,
+};
+use std::sync::Arc;
+use uuid::Uuid;
+
+pub const TAXONOMY_MANAGE: &str = "taxonomy.manage";
+
+pub struct TaxonomyService {
+    repository: Arc<dyn TaxonomyRepository>,
+}
+
+impl TaxonomyService {
+    pub fn new(repository: Arc<dyn TaxonomyRepository>) -> Self {
+        Self { repository }
+    }
+
+    #[tracing::instrument(name = "taxonomy.list", skip_all)]
+    pub async fn list(
+        &self,
+        principal: &Principal,
+        kind: TaxonomyKind,
+    ) -> Result<Vec<TaxonomyItem>> {
+        require_read(principal)?;
+        self.repository.list(kind).await
+    }
+
+    #[tracing::instrument(name = "taxonomy.get", skip_all)]
+    pub async fn get(
+        &self,
+        principal: &Principal,
+        kind: TaxonomyKind,
+        id: Uuid,
+    ) -> Result<TaxonomyItem> {
+        require_read(principal)?;
+        self.repository
+            .find(kind, id)
+            .await?
+            .ok_or(AppError::NotFound)
+    }
+
+    #[tracing::instrument(name = "taxonomy.create", skip_all)]
+    pub async fn create(
+        &self,
+        principal: &Principal,
+        kind: TaxonomyKind,
+        slug: String,
+        input: TaxonomyInput,
+        meta: &RequestMeta,
+    ) -> Result<TaxonomyItem> {
+        principal.require(TAXONOMY_MANAGE)?;
+        let input = check_kind(kind, input)?;
+        let slug_error = validate_slug("slug", &slug).err();
+        let input = match (input.normalize(), slug_error) {
+            (Ok(input), None) => input,
+            (Ok(_), Some(error)) => return Err(AppError::Validation(vec![error])),
+            (Err(AppError::Validation(mut errors)), Some(error)) => {
+                errors.insert(0, error);
+                return Err(AppError::Validation(errors));
+            }
+            (Err(error), _) => return Err(error),
+        };
+        self.repository
+            .create(kind, ids::new_id(), &slug, &input, &actor(principal, meta))
+            .await
+    }
+
+    /// 部分更新名称与说明：字段为 None 时保持原值，说明传空白字符串时清除。
+    /// 返回更新后的条目，以及需要重新构建站点时登记的目标。
+    #[tracing::instrument(name = "taxonomy.update", skip_all)]
+    pub async fn update(
+        &self,
+        principal: &Principal,
+        kind: TaxonomyKind,
+        id: Uuid,
+        name: Option<String>,
+        description: Option<String>,
+        meta: &RequestMeta,
+    ) -> Result<(TaxonomyItem, Option<SiteTarget>)> {
+        principal.require(TAXONOMY_MANAGE)?;
+        let current = self
+            .repository
+            .find(kind, id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        let (current_name, current_description) = match current {
+            TaxonomyItem::Category(category) => (category.name, category.description),
+            TaxonomyItem::Tag(tag) => (tag.name, None),
+        };
+        let input = check_kind(
+            kind,
+            TaxonomyInput {
+                name: name.unwrap_or(current_name),
+                description: description.or(current_description),
+            },
+        )?
+        .normalize()?;
+        self.repository
+            .update(kind, id, &input, &actor(principal, meta))
+            .await
+    }
+
+    #[tracing::instrument(name = "taxonomy.delete", skip_all)]
+    pub async fn delete(
+        &self,
+        principal: &Principal,
+        kind: TaxonomyKind,
+        id: Uuid,
+        meta: &RequestMeta,
+    ) -> Result<()> {
+        principal.require(TAXONOMY_MANAGE)?;
+        self.repository
+            .delete(kind, id, &actor(principal, meta))
+            .await
+    }
+}
+
+/// 标签没有说明字段。
+fn check_kind(kind: TaxonomyKind, input: TaxonomyInput) -> Result<TaxonomyInput> {
+    if kind == TaxonomyKind::Tag && input.description.is_some() {
+        return Err(AppError::invalid(
+            "description",
+            FieldErrorCode::UnknownField,
+            "tags have no description",
+        ));
+    }
+    Ok(input)
+}
+
+fn require_read(principal: &Principal) -> Result<()> {
+    [POSTS_READ_OWN, POSTS_MANAGE, TAXONOMY_MANAGE]
+        .iter()
+        .any(|permission| principal.require(permission).is_ok())
+        .then_some(())
+        .ok_or(AppError::Forbidden)
+}
+
+fn actor<'a>(principal: &Principal, meta: &'a RequestMeta) -> ContentActor<'a> {
+    ContentActor {
+        user_id: principal.user.id,
+        meta,
+    }
+}

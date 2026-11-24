@@ -1,8 +1,12 @@
+mod content;
 mod error;
 mod http;
 mod media;
 mod metrics;
+mod public;
+mod publishing;
 mod response;
+mod taxonomy;
 pub use error::ErrorCode;
 pub use metrics::sample_metrics;
 pub use silva_shared::error::FieldErrorCode;
@@ -10,17 +14,25 @@ pub use silva_shared::error::FieldErrorCode;
 use axum::{
     Router,
     extract::DefaultBodyLimit,
+    handler::Handler,
     middleware,
     routing::{delete, get, post, put},
 };
 use silva_application::{
-    identity::IdentityService, login_lockout::LoginLockout, media::MediaService,
-    ports::ObjectStorage,
+    content::ContentService, identity::IdentityService, login_lockout::LoginLockout,
+    media::MediaService, ports::ObjectStorage, public_site::PublicSiteService,
+    publishing::PublishingService, taxonomy::TaxonomyService,
 };
-use silva_infrastructure::{TokenSettings, identity_service, media_service, object_storage};
+use silva_infrastructure::{
+    TokenSettings, content_service, identity_service, media_service, object_storage,
+    public_site_service, publishing_service, taxonomy_service,
+};
 use silva_shared::config::Config;
 use sqlx::PgPool;
 use std::sync::Arc;
+
+/// 文章与修订请求正文的上限：512 KiB Markdown 加 JSON 转义与其他字段。
+const CONTENT_BODY_LIMIT: usize = 1024 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -28,6 +40,10 @@ pub(crate) struct AppState {
     pub pool: PgPool,
     pub identity: Arc<IdentityService>,
     pub media: Arc<MediaService>,
+    pub content: Arc<ContentService>,
+    pub taxonomy: Arc<TaxonomyService>,
+    pub publishing: Arc<PublishingService>,
+    pub public_site: Arc<PublicSiteService>,
     pub metrics: &'static silva_shared::metrics::Metrics,
     pub limiter: Arc<http::RateLimiter>,
 }
@@ -50,7 +66,12 @@ pub async fn build_router_with_storage(
     pool: PgPool,
     storage: Option<Arc<dyn ObjectStorage>>,
 ) -> anyhow::Result<Router> {
-    let media = Arc::new(media_service(pool.clone(), storage, &config));
+    let media = Arc::new(media_service(pool.clone(), storage.clone(), &config));
+    let content = Arc::new(content_service(pool.clone()));
+    let taxonomy = Arc::new(taxonomy_service(pool.clone()));
+    // API 不构建站点，只查询与登记发布任务。
+    let publishing = Arc::new(publishing_service(pool.clone(), None, None));
+    let public_site = Arc::new(public_site_service(pool.clone(), storage));
     let tokens = TokenSettings {
         secret: config.resolve_jwt_secret()?,
         access_ttl: config.access_token_ttl,
@@ -69,6 +90,10 @@ pub async fn build_router_with_storage(
         pool,
         identity,
         media,
+        content,
+        taxonomy,
+        publishing,
+        public_site,
         metrics: &silva_shared::metrics::METRICS,
         limiter: Arc::default(),
     };
@@ -104,7 +129,87 @@ pub async fn build_router_with_storage(
             get(media::get).patch(media::update).delete(media::delete),
         )
         .route("/api/v1/admin/media/{id}/content", get(media::content))
-        .fallback(http::not_found)
+        .route(
+            "/api/v1/admin/posts",
+            get(content::list_posts)
+                .post(content::create_post.layer(DefaultBodyLimit::max(CONTENT_BODY_LIMIT))),
+        )
+        .route(
+            "/api/v1/admin/posts/{id}",
+            get(content::get_post).patch(content::update_post),
+        )
+        .route(
+            "/api/v1/admin/posts/{id}/revisions",
+            get(content::list_revisions)
+                .post(content::create_revision.layer(DefaultBodyLimit::max(CONTENT_BODY_LIMIT))),
+        )
+        .route(
+            "/api/v1/admin/posts/{id}/revisions/{revision_id}",
+            get(content::get_revision),
+        )
+        .route(
+            "/api/v1/admin/posts/{id}/reviews",
+            get(content::list_reviews).post(content::create_review),
+        )
+        .route(
+            "/api/v1/admin/posts/{id}/reviews/{review_id}",
+            get(content::get_review).patch(content::decide_review),
+        )
+        // 上线目标是文章下的单例资源：PUT 设置、DELETE 撤下。
+        .route(
+            "/api/v1/admin/posts/{id}/publication",
+            put(content::publish).delete(content::unpublish),
+        )
+        .route(
+            "/api/v1/admin/categories",
+            get(taxonomy::list_categories).post(taxonomy::create_category),
+        )
+        .route(
+            "/api/v1/admin/categories/{id}",
+            get(taxonomy::get_category)
+                .patch(taxonomy::update_category)
+                .delete(taxonomy::delete_category),
+        )
+        .route(
+            "/api/v1/admin/tags",
+            get(taxonomy::list_tags).post(taxonomy::create_tag),
+        )
+        .route(
+            "/api/v1/admin/tags/{id}",
+            get(taxonomy::get_tag)
+                .patch(taxonomy::update_tag)
+                .delete(taxonomy::delete_tag),
+        )
+        .route(
+            "/api/v1/admin/publishing/jobs",
+            get(publishing::list_jobs).post(publishing::create_job),
+        )
+        .route(
+            "/api/v1/admin/publishing/jobs/{id}",
+            get(publishing::get_job),
+        )
+        .route(
+            "/api/v1/admin/publishing/jobs/{id}/attempts",
+            post(publishing::create_attempt),
+        )
+        .route("/api/v1/public/site", get(public::site))
+        .route("/api/v1/public/posts", get(public::posts))
+        .route("/api/v1/public/posts/{slug}", get(public::post))
+        .route("/api/v1/public/categories", get(public::categories))
+        .route("/api/v1/public/tags", get(public::tags))
+        .route("/api/v1/public/profile", get(public::profile))
+        .route("/api/v1/public/ai-trending", get(public::ai_trending))
+        .route(
+            "/api/v1/public/ai-trending/{slug}",
+            get(public::ai_repository),
+        )
+        .route(
+            "/api/v1/public/ai-trending/{slug}/snapshots",
+            get(public::ai_repository),
+        )
+        .route("/api/v1/public/media/{id}", get(public::media))
+        // 开启 SILVA_SITE_SERVE 时，其余 GET/HEAD 路径由线上静态站点响应；否则返回 404。
+        .fallback(public::static_site)
         .method_not_allowed_fallback(http::method_not_allowed)
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), http::context))

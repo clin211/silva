@@ -1,7 +1,10 @@
 use axum::{Router, routing::get};
 use clap::Parser;
 use silva_application::media::MediaService;
-use silva_infrastructure::{media_service, object_storage, persistence};
+use silva_application::publishing::{PublishOutcome, PublishingService};
+use silva_infrastructure::{
+    media_service, object_storage, persistence, publishing_service, site_builder,
+};
 use silva_shared::{
     config::Config,
     metrics::{METRICS, WorkerRun},
@@ -43,12 +46,19 @@ async fn serve(pool: &sqlx::PgPool, config: &Config, once: bool) -> anyhow::Resu
     if storage.is_none() {
         tracing::warn!("object storage is not configured; stale media cleanup is skipped");
     }
-    let media = media_service(pool.clone(), storage, config);
+    let media = media_service(pool.clone(), storage.clone(), config);
+    let publishing = publishing_service(pool.clone(), storage, site_builder(config));
+    if !publishing.can_build() {
+        tracing::warn!(
+            "SILVA_SITE_BUILDER_DIR or object storage is not configured; site publish jobs are not processed"
+        );
+    }
     METRICS
         .worker_interval
         .set(config.worker_interval.as_secs() as i64);
     if once {
         maintain(pool, &media).await?;
+        publish_pending(&publishing).await?;
     } else {
         let bind: SocketAddr = std::env::var("SILVA_WORKER_METRICS_BIND")
             .unwrap_or_else(|_| "127.0.0.1:9091".into())
@@ -87,6 +97,7 @@ async fn serve(pool: &sqlx::PgPool, config: &Config, once: bool) -> anyhow::Resu
             tokio::select! {
                 () = pool.close_event() => {},
                 never = maintain_periodically(pool, &media, config.worker_interval) => never,
+                never = publish_periodically(&publishing, config.publish_poll_interval) => never,
             }
         };
         let (result, ()) = tokio::join!(serving, maintenance);
@@ -102,6 +113,41 @@ async fn maintain_periodically(pool: &sqlx::PgPool, media: &MediaService, interv
         tick.tick().await;
         if let Err(error) = maintain(pool, media).await {
             tracing::warn!(%error, "worker maintenance will retry next interval");
+        }
+    }
+}
+
+/// 定期处理站点发布任务；未配置构建时不领取任务。
+async fn publish_periodically(publishing: &PublishingService, interval: Duration) -> ! {
+    let mut tick = tokio::time::interval(interval);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tick.tick().await;
+        if let Err(error) = publish_pending(publishing).await {
+            tracing::warn!(%error, "site publishing will retry next interval");
+        }
+    }
+}
+
+/// 连续处理可领取的发布任务，直到没有任务为止。
+#[tracing::instrument(name = "worker.publish", skip_all, fields(otel.status_code = tracing::field::Empty))]
+async fn publish_pending(publishing: &PublishingService) -> anyhow::Result<()> {
+    if !publishing.can_build() {
+        return Ok(());
+    }
+    loop {
+        match publishing.run_once().await {
+            Ok(None) => return Ok(()),
+            // 失败的任务按退避时间重新排队；结束本轮，等下一个轮询周期再检查。
+            Ok(Some(PublishOutcome::Failed { .. })) => {
+                tracing::Span::current().record("otel.status_code", "ERROR");
+                return Ok(());
+            }
+            Ok(Some(_)) => {}
+            Err(error) => {
+                tracing::Span::current().record("otel.status_code", "ERROR");
+                return Err(error.into());
+            }
         }
     }
 }

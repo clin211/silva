@@ -23,7 +23,7 @@ test:
 	cargo test --workspace --locked
 
 test-db:
-	cargo test -p silva-api --test identity --test media --locked -- --ignored
+	cargo test -p silva-api --test identity --test media --test content --locked -- --ignored
 
 check: fmt-check lint build test
 

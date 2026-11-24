@@ -64,8 +64,8 @@ jobs:
         run: cargo run --locked -p silva-cli -- check-schema
       - name: Unit and contract tests
         run: cargo test --workspace --locked
-      - name: PostgreSQL identity and media integration tests
-        run: cargo test --locked -p silva-api --test identity --test media -- --ignored
+      - name: PostgreSQL identity, media and content integration tests
+        run: cargo test --locked -p silva-api --test identity --test media --test content -- --ignored
       - name: API process HTTP smoke test
         shell: bash
         run: |

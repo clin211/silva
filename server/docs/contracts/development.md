@@ -11,6 +11,7 @@
 ## 容器契约
 
 - 多阶段 Docker 构建，使用同一锁文件构建 release binary；默认运行镜像包含 API、Worker、CLI、CA 证书并使用非 root 用户。
+- `worker` 目标基于 Node 24，包含 `silva-worker`、pnpm 和已安装依赖的 `frontend/apps/website`（通过命名构建上下文 `frontend` 传入），设置 `SILVA_SITE_BUILDER_DIR=/site/apps/website`。Compose 的 Worker 使用该目标。
 - `observability-tools` 阶段额外包含 `silva-xtask`，供本地告警接收器使用；默认 `backend` 阶段保持三个业务 binary。
 - API 默认启动 `silva-api`，Worker 覆盖启动命令为 `silva-worker`，CLI 通过覆盖命令执行。
 - PostgreSQL 使用 17 系列镜像。Compose 数据库监听仅绑定本机，持久化具名卷并提供 `pg_isready` 健康检查。
@@ -20,7 +21,7 @@
 
 ## 配置契约
 
-配置由 `server/.env.example` 和 `crates/shared/src/config.rs` 冻结：`DATABASE_URL`、`SILVA_BIND`、`SILVA_ENV`、`SILVA_DB_MAX_CONNECTIONS`、`SILVA_JWT_SECRET`、`SILVA_ACCESS_TOKEN_TTL_SECONDS`、`SILVA_REFRESH_TOKEN_TTL_SECONDS`、`SILVA_WORKER_INTERVAL_SECONDS`、`SILVA_API_RATE_PER_MINUTE`、`SILVA_LOGIN_RATE_PER_MINUTE`、`SILVA_LOGIN_LOCKOUT_THRESHOLD`、`SILVA_LOGIN_LOCKOUT_SECONDS`、`SILVA_STORAGE_PROVIDER`、`SILVA_STORAGE_ENDPOINT`、`SILVA_STORAGE_BUCKET`、`SILVA_STORAGE_REGION`、`SILVA_STORAGE_ROOT`、`SILVA_STORAGE_ACCESS_KEY_ID`、`SILVA_STORAGE_ACCESS_KEY_SECRET`、`SILVA_MEDIA_UPLOAD_TTL_SECONDS`、`RUST_LOG`。
+配置由 `server/.env.example` 和 `crates/shared/src/config.rs` 冻结：`DATABASE_URL`、`SILVA_BIND`、`SILVA_ENV`、`SILVA_DB_MAX_CONNECTIONS`、`SILVA_JWT_SECRET`、`SILVA_ACCESS_TOKEN_TTL_SECONDS`、`SILVA_REFRESH_TOKEN_TTL_SECONDS`、`SILVA_WORKER_INTERVAL_SECONDS`、`SILVA_API_RATE_PER_MINUTE`、`SILVA_LOGIN_RATE_PER_MINUTE`、`SILVA_LOGIN_LOCKOUT_THRESHOLD`、`SILVA_LOGIN_LOCKOUT_SECONDS`、`SILVA_STORAGE_PROVIDER`、`SILVA_STORAGE_ENDPOINT`、`SILVA_STORAGE_BUCKET`、`SILVA_STORAGE_REGION`、`SILVA_STORAGE_ROOT`、`SILVA_STORAGE_ACCESS_KEY_ID`、`SILVA_STORAGE_ACCESS_KEY_SECRET`、`SILVA_MEDIA_UPLOAD_TTL_SECONDS`、`SILVA_SITE_BUILDER_DIR`、`SILVA_SITE_URL`、`SILVA_SITE_BUILD_COMMAND`、`SILVA_SITE_BUILD_TIMEOUT_SECONDS`、`SILVA_PUBLISH_POLL_SECONDS`、`SILVA_SITE_SERVE`、`RUST_LOG`。
 
 对象存储：`SILVA_STORAGE_PROVIDER` 为 `r2` 或 `oss`，设置后 endpoint、bucket 和两个密钥均必填，`oss` 还必须设置 `SILVA_STORAGE_REGION`（V4 签名）；`SILVA_MEDIA_UPLOAD_TTL_SECONDS` 不超过 86400；生产环境 API 未配置时启动失败，且只接受 HTTPS endpoint。访问密钥的 Debug 输出脱敏，不写入日志。Worker 未配置时跳过媒体清理，CLI 不使用。
 
@@ -42,6 +43,9 @@ CLI 管理员密码只通过 `SILVA_ADMIN_PASSWORD` 提供，不出现在命令�
 - `cargo test -p silva-api --test identity --test media -- --ignored`：读取 `SILVA_TEST_DATABASE_URL`，连接角色需 CREATEDB，用独立临时数据库测试后清理。CI URL 为 `postgres://silva:silva@localhost:5432/silva_test`。
 
 - `cargo test -p silva-infrastructure --test object_storage_live -- --ignored`：读取 `SILVA_STORAGE_*` 连接真实 R2 或 OSS bucket，验证预签名直传、禁止覆盖写入、读取与删除；不在 CI 中运行。
+
+- `cargo run -p silva-cli -- publish-site`：登记一次 `bootstrap` 全站构建，用于首次部署。
+- `cargo test -p silva-api --test content -- --ignored`：文章、审核、发布流水线、Public API 与静态站点的集成测试；设置 `SILVA_TEST_WEBSITE_DIR` 时使用真实的 Astro 构建。
 
 Makefile 封装构建、格式、静态检查、测试、数据库启动、迁移、schema 检查、开发 API/Worker 和容器构建。README 给出可复制的首次启动、管理员初始化、健康检查和登录请求示例。
 

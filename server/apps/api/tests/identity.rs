@@ -471,6 +471,9 @@ fn config(database_url: String) -> Config {
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
+        site_build: None,
+        publish_poll_interval: Duration::from_secs(5),
+        site_serve: false,
     }
 }
 

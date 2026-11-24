@@ -30,6 +30,9 @@ pub enum AppError {
     /// 对象存储未配置，媒体相关操作暂不可用。
     #[error("Object storage is not configured")]
     StorageUnavailable,
+    /// 站点尚无任何线上版本，公开接口不能假装数据为空。
+    #[error("The site has not been published yet")]
+    SiteNotReady,
     #[error("Infrastructure failure: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -60,6 +63,28 @@ pub enum Conflict {
     MediaNotReady,
     /// 媒体仍被文章修订或个人资料引用，不能删除。
     MediaInUse,
+    /// slug 已被同类资源使用。
+    SlugInUse,
+    /// 文章已被接受发布，slug 不能再修改。
+    SlugLocked,
+    /// 提交的 `expected_revision_id` 不是文章当前编辑版本。
+    RevisionConflict,
+    /// 该修订已经提交过审核。
+    ReviewAlreadySubmitted,
+    /// 审核记录不是待审核状态。
+    ReviewNotPending,
+    /// 提交的 `expected_publication_version` 不是文章当前发布版本号。
+    PublicationConflict,
+    /// 修订没有获得批准，不能发布。
+    RevisionNotApproved,
+    /// 文章没有发布目标，无需撤下。
+    AlreadyUnpublished,
+    /// 分类或标签仍被文章修订引用，不能删除。
+    TaxonomyInUse,
+    /// 发布任务不是仍为最新目标的失败任务，不能重试。
+    PublishJobNotRetryable,
+    /// 线上站点版本已与客户端期望的 `X-Expected-Generation` 不同。
+    SiteGenerationChanged,
 }
 
 impl Conflict {
@@ -71,6 +96,17 @@ impl Conflict {
             Self::UploadExpired => "The upload has expired; request a new upload",
             Self::MediaNotReady => "Media has not passed verification",
             Self::MediaInUse => "Media is still referenced",
+            Self::SlugInUse => "Slug is already in use",
+            Self::SlugLocked => "Slug is locked after the post was first published",
+            Self::RevisionConflict => "The post has a newer revision; reload before saving",
+            Self::ReviewAlreadySubmitted => "This revision has already been submitted for review",
+            Self::ReviewNotPending => "The review has already been decided",
+            Self::PublicationConflict => "The publication state has changed; reload and retry",
+            Self::RevisionNotApproved => "The revision has not been approved",
+            Self::AlreadyUnpublished => "The post has no publication target",
+            Self::TaxonomyInUse => "The category or tag is referenced by post revisions",
+            Self::PublishJobNotRetryable => "Only the latest failed publish job can be retried",
+            Self::SiteGenerationChanged => "The live site generation has changed",
         }
     }
 }

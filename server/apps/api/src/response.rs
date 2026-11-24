@@ -44,6 +44,11 @@ pub(crate) fn created_at<T: Serialize>(location: &str, data: T) -> Response {
     response
 }
 
+/// 202，请求已受理，结果稍后生效（如站点发布）。
+pub(crate) fn accepted<T: Serialize>(data: T) -> Response {
+    (StatusCode::ACCEPTED, Json(DataBody { data })).into_response()
+}
+
 /// 200，返回一页集合与分页元数据。
 pub(crate) fn page<T: Serialize>(page: Page<T>) -> Response {
     Json(ListBody {

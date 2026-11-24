@@ -2,7 +2,7 @@
 
 Rust + Axum + Tokio + SQLx + PostgreSQL 的模块化单体。API、Worker 和运维 CLI 共用领域与用例，分别运行。
 
-当前交付后端技术方案的第一里程碑，以及第二里程碑中的媒体上传：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理，以及经 Cloudflare R2 或阿里云 OSS 私有 bucket 直传、服务端校验的图片媒体。数据库已预建后续领域的 schema；CMS、站点构建与切换、资源目录和 GitHub 采集在后续里程碑实现。Worker 当前执行会话维护和过期媒体清理，不消费尚未实现的发布或采集任务。
+当前交付后端技术方案的前三个里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理；经 Cloudflare R2 或阿里云 OSS 私有 bucket 直传、服务端校验的图片媒体；文章的不可变修订、分类标签、审核、发布与取消发布；以及 Worker 导出快照、构建 Astro 站点、上传产物并原子切换线上版本，Public API 与静态站点入口只读取当前线上版本。个人资料维护与 GitHub 采集在后续里程碑实现。Worker 执行会话维护、过期媒体清理和站点发布。
 
 ## 本地启动
 
@@ -147,6 +147,12 @@ unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 | `SILVA_STORAGE_REGION` | R2 默认 `auto`；OSS 必填，为不含 `oss-` 前缀的地域 ID，如 `cn-hangzhou`（直传地址使用 OSS V4 签名） |
 | `SILVA_STORAGE_ROOT` | `/`；bucket 内的根前缀，多个环境共用一个 bucket 时用于隔离，如 `/silva/production/`；路径段只允许 `A-Za-z0-9._-` |
 | `SILVA_STORAGE_ACCESS_KEY_ID`、`SILVA_STORAGE_ACCESS_KEY_SECRET` | 设置服务商时必填；只读取显式配置，不读取云主机元数据或默认凭据文件 |
+| `SILVA_SITE_BUILDER_DIR` | 空；`frontend/apps/website` 的路径。设置后 Worker 处理发布任务，需要 Node 24、pnpm 与已安装的前端依赖；构建临时目录建在该目录的 `.astro/` 下 |
+| `SILVA_SITE_URL` | 设置 `SILVA_SITE_BUILDER_DIR` 时必填；公开站点的完整 origin，用于 canonical、RSS 与 sitemap |
+| `SILVA_SITE_BUILD_COMMAND` | `pnpm run build`，按空白分隔 |
+| `SILVA_SITE_BUILD_TIMEOUT_SECONDS` | `600`，正整数秒；超时视为构建失败 |
+| `SILVA_PUBLISH_POLL_SECONDS` | `5`，正整数秒；Worker 检查发布任务的间隔 |
+| `SILVA_SITE_SERVE` | `false`；为 `true` 时 API 在 `/api` 之外的路径提供当前线上的静态站点 |
 | `SILVA_MEDIA_UPLOAD_TTL_SECONDS` | `900`，正整数秒，最大 `86400`；直传地址与上传确认的有效期，需短于 `uploads/` 的生命周期规则 |
 | `RUST_LOG` | `.env.example` 使用 `info,silva_api=debug` |
 
@@ -194,6 +200,29 @@ cargo test -p silva-infrastructure --test object_storage_live -- --ignored
 
 该测试不经过浏览器，因此不检查 CORS；CORS 需在后台页面实际上传一次确认。
 
+## 文章与站点发布
+
+文章由不可变修订组成：每次保存（含自动保存）追加一条修订，文章只移动“当前编辑版本”指针。上线需要先对某个修订提交审核并获批准，再由 Editor/Admin 把它设为期望公开版本。设置或撤下上线目标都会登记一个新的站点 `generation`，返回 202，由 Worker 完成上线：
+
+1. 领取最新目标的任务并取得租约；落后的排队任务合并为 `superseded`。
+2. 在同一 `REPEATABLE READ` 视图中导出公开数据，生成构建快照（结构见 [站点构建快照契约](docs/contracts/site-snapshot.md)），上传到对象存储 `site/{generation}/{attempt}/snapshot.json`。
+3. 在 `SILVA_SITE_BUILDER_DIR` 中执行 Astro 构建，产物上传到 `site/{generation}/{attempt}/dist/`，最后写入清单 `manifest.json`。
+4. 锁定站点状态，确认仍为最新目标且租约有效后，原子切换 `active_generation`；旧版本标记为 `retired`。
+
+构建失败时线上版本保持不变，任务自动重试最多 3 次，之后标记为 `failed`，Admin 可以重试仍为最新目标的失败任务。处理期间有新目标时旧任务标记为 `superseded`，不会覆盖新版本。
+
+Public API（`/api/v1/public/*`）和静态站点入口只读取当前线上版本，每个响应都带 `X-Site-Generation`。尚未有线上版本时返回 `503 site_not_ready`。
+
+首次部署或本地开发时，先登记一次全站构建，再启动带构建配置的 Worker：
+
+```sh
+cargo run --locked -p silva-cli -- publish-site
+SILVA_SITE_BUILDER_DIR=../frontend/apps/website SILVA_SITE_URL=http://localhost:8088 make worker
+SILVA_SITE_SERVE=true make api   # 浏览 http://127.0.0.1:8088/
+```
+
+构建需要对象存储；前端依赖先在 `frontend/` 执行 `pnpm install --frozen-lockfile`。
+
 ## 检查与测试
 
 ```sh
@@ -204,13 +233,15 @@ SILVA_TEST_DATABASE_URL=postgres://silva:silva@127.0.0.1:55439/silva make test-d
 make worker-once
 ```
 
+`make test-db` 包含身份、媒体、文章与发布三组集成测试。文章与发布测试默认用按快照生成最小页面的构建器；设置 `SILVA_TEST_WEBSITE_DIR=../frontend/apps/website`（需要本机 Node 与 pnpm）时改用真实的 Astro 构建。
+
 `make check` 执行格式、Clippy（警告视为错误）、Workspace 构建和普通测试，其中包括 Rust OpenAPI 契约、Schema 及示例校验。`make api-docs-check` 可单独运行契约测试。`make test-db` 显式执行数据库集成测试，并按契约校验真实接口的状态、媒体类型、响应头和 JSON Schema：连接角色需有 `CREATEDB`，测试创建独立临时数据库并在结束后清理。缺少测试 URL 或数据库不可用会失败，不把数据库测试静默当作成功。
 
 `check-schema` 在迁移后的真实数据库检查业务表/字段非空注释、UUIDv7 约束及媒体状态约束；测试覆盖 UUIDv7 写入、v4/错误变体拒绝和 API 非 v7 ID 拒绝，登录、JWT 校验与刷新轮换、RBAC、账户停用和会话撤销，以及媒体申请、确认、拒绝、过期、归属、引用保护和清理（对象存储用内存实现，图片解码为真实实现）。GitHub Actions 使用临时 PostgreSQL 执行相同门禁。
 
 所有业务实体、事件、审计和 request ID 都通过 `silva_shared::ids` 生成 UUIDv7。新增或变更数据库字段时，在同一次迁移维护 `COMMENT ON TABLE/COLUMN`；已执行的迁移不修改，追加新迁移。
 
-数据库当前保留 27 张业务表。旧开发库执行 `make migrate` 后会删除已取消的目录功能对应的四张表，以及项目展览与工具导航对应的四张表（`projects`、`project_technologies`、`project_links`、`tools`）及其数据，再运行 `make check-schema` 验证；历史迁移保留原校验和。
+数据库当前保留 28 张业务表。旧开发库执行 `make migrate` 后会删除已取消的目录功能对应的四张表，以及项目展览与工具导航对应的四张表（`projects`、`project_technologies`、`project_links`、`tools`）及其数据，再运行 `make check-schema` 验证；历史迁移保留原校验和。
 
 ## 容器运行
 
@@ -220,7 +251,7 @@ make worker-once
 make up
 ```
 
-这会构建同一镜像的三个 binary，等待 PostgreSQL 健康和一次性迁移成功后启动 API、Worker。镜像运行用户为非 root，支持 SIGTERM 优雅退出。完整栈使用 Compose 的 `app` profile；`make db-up` 仅启动数据库，适合在宿主机开发。
+这会构建两个镜像并等待 PostgreSQL 健康和一次性迁移成功后启动 API、Worker：API 与 CLI 使用默认目标 `backend`；Worker 使用目标 `worker`，包含 Node 24、pnpm 和已安装依赖的网站工程，构建时通过命名上下文传入前端目录（Compose 已配置 `additional_contexts`，手动构建为 `docker build --build-context frontend=../frontend --target worker .`）。Compose 中的 API 默认开启 `SILVA_SITE_SERVE`。镜像运行用户为非 root，支持 SIGTERM 优雅退出。完整栈使用 Compose 的 `app` profile；`make db-up` 仅启动数据库，适合在宿主机开发。
 
 在容器栈初始化管理员时，先按前文交互设置三个管理员环境变量，再运行：
 

@@ -52,7 +52,7 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Input<T> {
         }
         let bytes = Bytes::from_request(req, state).await.map_err(|rejection| {
             if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                ApiError::new(ErrorCode::PayloadTooLarge, "Request body exceeds 64 KiB")
+                ApiError::new(ErrorCode::PayloadTooLarge, "Request body is too large")
             } else {
                 ApiError::new(ErrorCode::MalformedJson, "Request body could not be read")
             }
@@ -111,7 +111,13 @@ fn json_field_error(path: &str, message: &str) -> FieldError {
             .strip_prefix(prefix)
             .and_then(|rest| rest.split('`').next())
     };
-    if let Some(name) = named("missing field `") {
+    if message.starts_with("invalid_uuid_v7") {
+        FieldError::new(
+            parent.unwrap_or("").to_owned(),
+            FieldErrorCode::InvalidFormat,
+            "value must be a hyphenated UUIDv7",
+        )
+    } else if let Some(name) = named("missing field `") {
         FieldError::new(join(name), FieldErrorCode::Required, "field is required")
     } else if let Some(name) = named("unknown field `") {
         FieldError::new(
@@ -305,7 +311,7 @@ fn parse_time(field: &'static str, value: &str) -> Result<DateTime<Utc>, FieldEr
 }
 
 /// 解析带连字符的 UUIDv7，格式、版本位或变体位不符时返回 `invalid_format`。
-fn parse_uuid(field: &'static str, value: &str) -> Result<Uuid, FieldError> {
+pub(crate) fn parse_uuid(field: &'static str, value: &str) -> Result<Uuid, FieldError> {
     value
         .parse::<EntityId>()
         .map(EntityId::as_uuid)
@@ -493,9 +499,11 @@ pub(crate) async fn context(
             HeaderValue::from_str(&request_id.to_string())
                 .map_err(|error| AppError::Internal(error.into()))?,
         );
+        // 默认不缓存；处理器显式设置的缓存策略（如带哈希的静态资源）保留。
         response
             .headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            .entry(header::CACHE_CONTROL)
+            .or_insert(HeaderValue::from_static("no-store"));
         response.headers_mut().insert(
             "x-content-type-options",
             HeaderValue::from_static("nosniff"),
@@ -780,9 +788,6 @@ pub(crate) async fn audit_log(
 // `/health/live` 是给负载均衡与编排系统的存活探针，按惯例返回裸 JSON，不套 `data` 信封。
 pub(crate) async fn live() -> Json<Value> {
     Json(json!({"status":"ok"}))
-}
-pub(crate) async fn not_found() -> ApiError {
-    ApiError::new(ErrorCode::NotFound, "Resource not found")
 }
 pub(crate) async fn method_not_allowed() -> ApiError {
     ApiError::new(ErrorCode::MethodNotAllowed, "Method not allowed")

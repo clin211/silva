@@ -852,7 +852,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 }
 ```
 
-创建返回 201，含 `post_id`、`revision_id`、`revision_no`。`POST /posts/{id}/revisions` 采用同样的完整修订内容，去掉 `slug`，新增必填 `expected_revision_id`。事务中校验文章权限、锁定文章行并比较当前指针，再追加 revision 和更新指针；不一致返回 `409 revision_conflict`（`details` 提供实际 `current_revision_id`），不创建修订。
+创建返回 201、`Location` 与文章详情（含首条修订）。`POST /posts/{id}/revisions` 采用同样的完整修订内容，去掉 `slug`，新增必填 `expected_revision_id`。事务中校验文章权限、锁定文章行并比较当前指针，再追加 revision 和更新指针；不一致返回 `409 revision_conflict`，不创建修订，客户端重新读取文章取得当前指针。内容与当前编辑版本相同时不追加修订，返回 200 与当前版本，供自动保存使用。
 
 `POST /posts/{id}/reviews` 传 `revision_id`，创建 `pending` 审核并返回 201 与 `Location`；重复提交返回 `409 review_already_submitted`。`PATCH /posts/{id}/reviews/{review_id}` 传 `decision`（`approved` 或 `rejected`）及可选 `comment`，返回审核记录；不是待审核状态时返回 `409 review_not_pending`。文章详情返回 `current_revision_id`、可空的 `desired_published_revision_id` 和 `live_revision_id`、`publication_version` 及 `desired_generation`、`active_generation`。
 

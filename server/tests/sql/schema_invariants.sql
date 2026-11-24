@@ -26,7 +26,7 @@ BEGIN
     'posts', 'post_revisions', 'categories', 'tags', 'post_revision_categories',
     'post_revision_tags', 'post_reviews', 'media_assets', 'post_revision_media', 'profiles',
     'experiences', 'skills', 'social_links', 'ai_sources', 'ai_repositories',
-    'ai_ingestion_runs', 'ai_repository_snapshots', 'publish_jobs', 'site_state',
+    'ai_ingestion_runs', 'ai_repository_snapshots', 'publish_jobs', 'site_state', 'site_generation_posts',
     'outbox_events', 'audit_logs'
   ]) AS expected(expected_name)
   WHERE to_regclass(format('public.%I', expected_name)) IS NULL;

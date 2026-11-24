@@ -30,6 +30,8 @@ enum Command {
         #[arg(long = "role", value_enum, required = true)]
         roles: Vec<RoleKey>,
     },
+    /// 登记一次全站构建（`bootstrap`），用于首次部署：站点在首次构建上线前，公开接口返回 503。
+    PublishSite,
 }
 
 /// CLI 可分配的内置角色，取值与 `silva_domain::identity::ROLE_KEYS` 一致。
@@ -103,6 +105,15 @@ async fn execute(pool: &sqlx::PgPool, config: &Config, command: Command) -> anyh
                     .await,
             )?;
             tracing::info!(user_id = %user.id, roles = ?user.roles, "user created");
+        }
+        Command::PublishSite => {
+            let service = silva_infrastructure::publishing_service(pool.clone(), None, None);
+            let target = service.bootstrap().await?;
+            tracing::info!(
+                publish_job_id = %target.publish_job_id,
+                generation = target.desired_generation,
+                "site build requested"
+            );
         }
     }
     Ok(())
