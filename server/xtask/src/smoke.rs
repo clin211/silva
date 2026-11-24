@@ -50,7 +50,7 @@ impl Smoke {
             "silva-worker",
             "otel-collector",
             "postgres",
-            "readiness",
+            "liveness",
             "loki",
             "tempo",
         ] {
@@ -187,14 +187,14 @@ impl Smoke {
         }
         let root = spans
             .iter()
-            .find(|span| span["name"] == "GET /health/ready")
-            .context("缺少 readiness 根 span")?;
+            .find(|span| span["name"] == "POST /api/v1/admin/auth/login")
+            .context("缺少登录请求根 span")?;
         let root_id = string(&root["spanId"])?;
         ensure!(
             spans
                 .iter()
-                .any(|span| span["name"] == "db.ready" && span["parentSpanId"] == root_id),
-            "缺少关联的 db.ready 子 span"
+                .any(|span| span["name"] == "db.find_login" && span["parentSpanId"] == root_id),
+            "缺少关联的 db.find_login 子 span"
         );
         Ok(())
     }
@@ -236,7 +236,7 @@ fn navigation_queries(dashboard: &Value, start_ms: i64, end_ms: i64) -> Result<H
     let mut route_queries = HashSet::new();
     for url in urls.into_iter().filter(|url| url.starts_with("/explore?")) {
         let route_link = url.contains("${__field.labels.route:percentencode}");
-        let route: String = url::form_urlencoded::byte_serialize(b"/health/ready").collect();
+        let route: String = url::form_urlencoded::byte_serialize(b"/api/v1/admin/auth/login").collect();
         let expanded = url
             .replace("${__from}", &start_ms.to_string())
             .replace("${__to}", &end_ms.to_string())
@@ -263,7 +263,7 @@ fn navigation_queries(dashboard: &Value, start_ms: i64, end_ms: i64) -> Result<H
         if route_link {
             let expr = string(&pane["queries"][0]["expr"])?;
             ensure!(
-                expr.contains("| route=\"/health/ready\""),
+                expr.contains("| route=\"/api/v1/admin/auth/login\""),
                 "Explore 丢失路由过滤"
             );
             route_queries.insert(expr.to_owned());
@@ -287,13 +287,19 @@ pub async fn run() -> Result<()> {
     smoke.overview_queries(&overview).await?;
 
     let trace_id = Uuid::now_v7().simple().to_string();
+    // 使用不存在的账户登录：无需凭据即可触发一次数据库查询，返回 401。
     let response = smoke
         .client
-        .get(format!("{}/health/ready", smoke.api))
+        .post(format!("{}/api/v1/admin/auth/login", smoke.api))
         .header("traceparent", format!("00-{trace_id}-1234567890123456-01"))
+        .json(&json!({"email": "smoke@example.test", "password": "smoke-password"}))
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+    ensure!(
+        response.status() == reqwest::StatusCode::UNAUTHORIZED,
+        "登录探测应返回 401，实际为 {}",
+        response.status()
+    );
     ensure!(
         response
             .headers()

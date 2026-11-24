@@ -87,9 +87,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
 
     let expected = [
         ("/health/live", "get"),
-        ("/health/ready", "get"),
         ("/metrics", "get"),
-        ("/openapi.json", "get"),
         ("/api/v1/admin/auth/login", "post"),
         ("/api/v1/admin/auth/refresh", "post"),
         ("/api/v1/admin/auth/logout", "post"),
@@ -102,7 +100,6 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/roles", "get"),
         ("/api/v1/admin/audit-logs", "get"),
         ("/api/v1/admin/audit-logs/{id}", "get"),
-        ("/api/v1/admin/system/health", "get"),
     ];
     let paths = spec["paths"].as_object().expect("paths object");
     let actual: BTreeSet<_> = paths
@@ -217,7 +214,6 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
         ("/api/v1/admin/roles", "get", "roles.read"),
         ("/api/v1/admin/audit-logs", "get", "audit.read"),
         ("/api/v1/admin/audit-logs/{id}", "get", "audit.read"),
-        ("/api/v1/admin/system/health", "get", "system.read"),
     ] {
         assert_eq!(
             spec["paths"][path][method]["x-required-permission"],
@@ -360,9 +356,7 @@ fn documented_examples_match_their_schemas() {
                     let code = &response["content"]["application/json"]["example"]["error"]["code"];
                     assert!(codes.contains(code), "{path}: 示例错误码不符合响应定义");
                 }
-                if path != "/openapi.json"
-                    && let Some(content) = response["content"].as_object()
-                {
+                if let Some(content) = response["content"].as_object() {
                     for media in content.values() {
                         assert!(media.get("example").is_some(), "{path}: 缺少响应示例");
                     }
@@ -528,10 +522,6 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
                 .await
                 .unwrap();
             support::assert_response(&method, &path, status, &headers, &bytes);
-            if path == "/openapi.json" {
-                assert_eq!(status, StatusCode::OK);
-                assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), spec);
-            }
         }
     }
 

@@ -39,7 +39,7 @@ Grafana 本地默认用户名 `admin`，密码 `silva-observability-local`；首
 
 五张看板位于 Silva 文件夹：总览、API、数据库、Worker、发布与采集。它们和数据源由仓库配置自动创建。默认首页为 Silva 总览，也可直接访问 http://localhost:3001/d/silva-overview 。已有用户或组织若自行设置了首页偏好，需在 Grafana 中清除该偏好或选择总览。
 
-日常排障从总览开始：确认 API 就绪、数据库连接、Worker 最近成功时间、业务采集新鲜度及告警，再进入专项看板。顶部导航保留所选时间范围；点击 API 请求量、P95、P99 曲线数据点可选择「查看该路由日志」，携带路由模板与时间范围进入 Loki。其他指标面板可查看同时间范围的服务日志；数据库面板关联调用数据库的 API 日志，Worker 数据库问题从 Worker 日志排查。日志 `trace_id` 可跳转 Tempo 链路，链路可跳转关联日志。
+日常排障从总览开始：确认 API 存活、数据库连接、Worker 最近成功时间、业务采集新鲜度及告警，再进入专项看板。顶部导航保留所选时间范围；点击 API 请求量、P95、P99 曲线数据点可选择「查看该路由日志」，携带路由模板与时间范围进入 Loki。其他指标面板可查看同时间范围的服务日志；数据库面板关联调用数据库的 API 日志，Worker 数据库问题从 Worker 日志排查。日志 `trace_id` 可跳转 Tempo 链路，链路可跳转关联日志。
 
 总览包含监控目标抓取状态、Collector 导出失败速率和队列使用率、通知投递失败速率。顶部卡片与表格查询所选时间范围终点的即时值；无业务流量时错误率和延迟可能无值，无数据不等于正常。Collector 某些失败计数器仅在发生失败后出现，无值时需结合抓取状态与其他导出指标排查。队列总览仅展示采集成功且一分钟内更新的快照，过期值不展示；发布、采集和 Outbox 消费仍未实现，空队列不代表链路就绪。
 
@@ -119,14 +119,15 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 
 ## 告警与排障
 
-规则在 `alerts.yaml`，行为测试在 `alerts.test.yaml`。当前 14 条规则覆盖抓取失败/目标消失、API readiness、业务 5xx 和 P95、数据库不可连接/获取超时、Worker 停滞/连续失败、业务指标陈旧、发布延迟、遥测导出失败/队列饱和、通知投递失败。
+规则在 `alerts.yaml`，行为测试在 `alerts.test.yaml`。当前 14 条规则覆盖抓取失败/目标消失、API 存活探测、业务 5xx 和 P95、数据库不可连接/获取超时、Worker 停滞/连续失败、业务指标陈旧、发布延迟、遥测导出失败/队列饱和、通知投递失败。
 
 错误率和延迟告警要求五分钟内至少 100 个业务请求，持续五分钟超标才触发。Worker 停滞从进程启动或上次成功执行起计算，超过三个配置周期并持续一分钟触发。各阈值是初始配置，需按真实流量调整。
 
 | 现象 / 告警 | 排查顺序 | 恢复条件 |
 | --- | --- | --- |
 | `SilvaTargetDown` / `SilvaTargetsMissing` | Prometheus Targets → Compose 状态 → 监听和网络 | 目标出现且 up=1 |
-| `SilvaReadinessFailed` / `SilvaDatabaseDown` | 数据库容器 → 连接配置 → 迁移版本 → API 日志 | pg_up=1 且 readiness 返回 200 |
+| `SilvaLivenessFailed` | API 容器状态 → 监听和网络 → API 日志 | /health/live 返回 200 |
+| `SilvaDatabaseDown` | 数据库容器 → 连接配置 → 迁移版本 → API 日志 | pg_up=1 |
 | `SilvaHighErrorRate` / `SilvaHighLatency` | API 看板定位路由 → Loki 错误 → Tempo 子链路 → 数据库看板 | 五分钟窗口指标回到阈值内 |
 | `SilvaDatabaseAcquireTimeout` | 连接池 → 长事务/慢操作 → 数据库连接上限 | 五分钟没有新增超时 |
 | `SilvaWorkerStalled` / `SilvaWorkerFailures` | Worker 看板 → Worker 日志 → 数据库可用性 | 心跳恢复，错误窗口清空 |

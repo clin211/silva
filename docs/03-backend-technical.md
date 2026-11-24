@@ -821,7 +821,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | POST        | `/publishing/jobs/{id}/retry`                                                                             | Admin 重试仍为最新目标的失败任务，202          |
 | GET, POST   | `/users`                                                                                                  | Admin 列表和创建账户                           |
 | PATCH       | `/users/{id}`                                                                                             | Admin 停用、启用及分配内置角色                 |
-| GET         | `/roles`、`/audit-logs`、`/system/health`                                                                 | Admin 读取内置角色、审计及系统健康             |
+| GET         | `/roles`、`/audit-logs`                                                                                   | Admin 读取内置角色及审计                       |
 
 默认由 Editor/Admin 维护个人资料和分类标签。Author 仅可操作自己名下的文章与媒体，以及读取自己有权访问的任务。个人资料、公开分类标签和 AI 榜单展示设置保存成功后，响应包含 `publish_job_id` 和 `desired_generation`，供后台单独显示上线状态。
 

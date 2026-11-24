@@ -63,7 +63,7 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8088/health/ready]
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8088/health/live]
       interval: 10s
       timeout: 5s
       retries: 3

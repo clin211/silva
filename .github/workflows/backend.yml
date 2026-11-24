@@ -73,7 +73,7 @@ jobs:
           silva_api_pid=$!
           trap 'kill "$silva_api_pid" 2>/dev/null || true; wait "$silva_api_pid" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:8088/health/ready > /dev/null; then
+            if curl --fail --silent http://127.0.0.1:8088/health/live > /dev/null; then
               break
             fi
             if ! kill -0 "$silva_api_pid" 2>/dev/null; then
@@ -83,10 +83,7 @@ jobs:
             sleep 1
           done
           curl --fail --silent --show-error http://127.0.0.1:8088/health/live
-          curl --fail --silent --show-error http://127.0.0.1:8088/health/ready
           curl --fail --silent --show-error http://127.0.0.1:8088/metrics > /dev/null
-          curl --fail --silent --show-error http://127.0.0.1:8088/openapi.json \
-            | jq --exit-status '.paths | has("/api/v1/admin/auth/login")'
       - name: Worker maintenance smoke test
         run: cargo run --locked -p silva-worker -- --once
 

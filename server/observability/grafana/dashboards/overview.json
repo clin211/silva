@@ -69,7 +69,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "API 就绪",
+      "title": "API 存活",
       "type": "stat",
       "description": "",
       "datasource": {
@@ -84,7 +84,7 @@
       },
       "targets": [
         {
-          "expr": "probe_success{job=\"readiness\"}",
+          "expr": "probe_success{job=\"liveness\"}",
           "refId": "A",
           "legendFormat": "",
           "instant": true,

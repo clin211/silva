@@ -81,11 +81,8 @@
 
 | 端点 | 正文 |
 | --- | --- |
-| `GET /health/live`、`GET /health/ready` | 裸 JSON，如 `{"status": "ok"}`；失败时仍返回第 4 节的错误结构 |
+| `GET /health/live` | 裸 JSON，如 `{"status": "ok"}` |
 | `GET /metrics` | Prometheus 文本格式 |
-| `GET /openapi.json` | OpenAPI 文档本身 |
-
-需要登录的 `GET /api/v1/admin/system/health` 属于业务接口，返回 `{"data": {"status": "ok", "database": "up"}}`。
 
 ## 4. 失败响应
 
@@ -151,7 +148,6 @@
 | 422 | `validation_error` | 输入不满足约束，`details` 中列出具体字段 | 按 `details` 标注表单 |
 | 429 | `rate_limited` | 超过请求频率限制 | 按 `Retry-After` 秒数等待后重试 |
 | 500 | `internal_error` | 服务端内部错误 | 展示通用错误和响应头 `X-Request-Id` |
-| 503 | `service_unavailable` | 数据库等必要依赖不可用 | 稍后重试 |
 
 [后端技术方案](../../../docs/03-backend-technical.md)中规划的 `revision_conflict`、`site_generation_changed`、`site_not_ready` 等错误码，要等对应接口实现时再按第 8 节的流程登记。
 
@@ -177,7 +173,7 @@
 - **409：** 请求本身合法，但与资源当前状态冲突，例如唯一性约束、并发版本或业务不变量。每种冲突使用单独的错误码。
 - **422 中的业务规则：** 只涉及请求自身字段的规则（如“新密码不能与当前密码相同”）返回 422，并在 `details` 中指明字段；需要依赖其他资源状态的规则返回 409。
 - **429：** 必须带 `Retry-After` 响应头。
-- **500 和 503：** 依赖暂时不可用、调用方重试可能成功时返回 503；其他未预期的错误返回 500。
+- **500：** 未预期的错误返回 500。需要表达“依赖暂时不可用、重试可能成功”（503）的接口，实现时再按第 8 节登记错误码。
 
 ## 7. 响应头
 

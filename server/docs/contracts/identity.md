@@ -48,7 +48,6 @@
 | GET | `/roles` | Admin；内置角色。 |
 | GET | `/audit-logs` | Admin；审计记录，支持筛选。 |
 | GET | `/audit-logs/{id}` | Admin；单条审计记录。 |
-| GET | `/system/health` | Admin；系统健康状态。 |
 
 以下为主线程根据原文边界冻结的第一里程碑实现约定（原文没有指定这些名称和阈值）：
 
@@ -81,7 +80,7 @@
   - `status`：`active` 或 `disabled`；其他取值返回 422（`status`/`invalid_value`）。
   - 与分页参数相同：同一参数重复返回 422（`duplicate`），未知查询参数忽略，多个字段错误一次返回。
 - 角色列表返回 `{"data":[{id,key,name,permissions,user_count}]}`；`user_count` 为分配了该角色的账户数，包含启用和停用账户。
-- `/health/live` 验证进程；`/health/ready` 验证数据库与迁移版本；`/openapi.json` 提供运行时契约；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
+- `/health/live` 验证进程存活；每个 HTTP 响应返回服务端生成的 UUIDv7 `X-Request-Id` 和 W3C `X-Trace-Id`；后者为 32 位十六进制链路标识，不是业务实体 ID。有效 `traceparent` 可传入上游追踪上下文。
 
 ## UUIDv7 和响应契约
 

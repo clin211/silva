@@ -39,12 +39,12 @@ scrape_configs:
   - job_name: blackbox
     static_configs:
       - targets: [blackbox:9115]
-  - job_name: readiness
+  - job_name: liveness
     metrics_path: /probe
     params:
       module: [http_2xx]
     static_configs:
-      - targets: [http://api:8088/health/ready]
+      - targets: [http://api:8088/health/live]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

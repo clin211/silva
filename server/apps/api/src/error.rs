@@ -28,11 +28,10 @@ pub enum ErrorCode {
     ValidationError,
     RateLimited,
     InternalError,
-    ServiceUnavailable,
 }
 
 impl ErrorCode {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 14] = [
         Self::MalformedJson,
         Self::Unauthorized,
         Self::TokenExpired,
@@ -47,7 +46,6 @@ impl ErrorCode {
         Self::ValidationError,
         Self::RateLimited,
         Self::InternalError,
-        Self::ServiceUnavailable,
     ];
 
     pub fn status(self) -> StatusCode {
@@ -65,7 +63,6 @@ impl ErrorCode {
             Self::ValidationError => StatusCode::UNPROCESSABLE_ENTITY,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
@@ -97,13 +94,6 @@ impl ApiError {
             details,
             retry_after: None,
         }
-    }
-
-    pub fn unavailable() -> Self {
-        Self::new(
-            ErrorCode::ServiceUnavailable,
-            "Service dependency unavailable",
-        )
     }
 }
 

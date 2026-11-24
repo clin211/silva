@@ -97,7 +97,6 @@ impl Fault {
         for (name, job) in [
             ("SilvaTargetDown", "silva-worker"),
             ("SilvaDatabaseDown", "postgres"),
-            ("SilvaReadinessFailed", "readiness"),
         ] {
             ensure!(
                 has_notification(events, name, status, job, self.started),
@@ -127,22 +126,30 @@ impl Fault {
         .await?;
         println!("PASS：数据库离线时 /metrics 仍返回 200，业务状态标记失败");
         eventually("告警投递", 180, || self.notifications("firing")).await?;
-        println!("PASS：Worker、数据库和就绪探测告警已通过 Alertmanager 投递到本地接收器");
+        println!("PASS：Worker 与数据库告警已通过 Alertmanager 投递到本地接收器");
         Ok(())
     }
 
     async fn check_recovery(&self) -> Result<()> {
-        eventually("API 恢复就绪", 180, || async {
-            self.client
-                .get(format!("{}/health/ready", self.api))
+        eventually("业务采集恢复", 180, || async {
+            let body = self
+                .client
+                .get(format!("{}/metrics", self.api))
                 .send()
                 .await?
-                .error_for_status()?;
+                .error_for_status()?
+                .text()
+                .await?;
+            ensure!(
+                body.lines()
+                    .any(|line| line == "silva_business_metrics_up 1"),
+                "数据库恢复后业务采集状态尚未恢复为 1"
+            );
             Ok(())
         })
         .await?;
         eventually("恢复通知", 180, || self.notifications("resolved")).await?;
-        println!("PASS：API 恢复就绪，三类告警均已发送恢复通知");
+        println!("PASS：API 恢复数据库访问，两类告警均已发送恢复通知");
         Ok(())
     }
 }

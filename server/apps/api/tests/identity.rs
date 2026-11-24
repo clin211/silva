@@ -528,24 +528,9 @@ async fn identity_security_and_account_lifecycle() {
 }
 
 async fn run_acceptance(app: &Router, pool: &PgPool) {
-    for path in ["/health/live", "/health/ready"] {
-        let response = request(app, Method::GET, path, None, None).await;
-        assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.json);
-        assert_eq!(response.json["status"], "ok");
-    }
-    let openapi = request(app, Method::GET, "/openapi.json", None, None).await;
-    assert_eq!(openapi.status, StatusCode::OK);
-    assert_eq!(openapi.json["openapi"], "3.1.0");
-    for path in [
-        "/api/v1/admin/auth/login",
-        "/api/v1/admin/users/{id}",
-        "/api/v1/admin/roles",
-    ] {
-        assert!(
-            openapi.json["paths"][path].is_object(),
-            "missing OpenAPI path: {path}"
-        );
-    }
+    let live = request(app, Method::GET, "/health/live", None, None).await;
+    assert_eq!(live.status, StatusCode::OK, "{}", live.json);
+    assert_eq!(live.json["status"], "ok");
     // 缺失或格式错误的 Authorization 请求头一律 401 unauthorized，并带 Bearer 质询。
     assert_unauthorized(&request(app, Method::GET, "/api/v1/admin/users/info", None, None).await);
     for authorization in [
@@ -947,7 +932,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
         "/api/v1/admin/users",
         "/api/v1/admin/roles",
         "/api/v1/admin/audit-logs",
-        "/api/v1/admin/system/health",
     ] {
         let response = request(app, Method::GET, path, None, Some(&author_access)).await;
         assert_eq!(
@@ -980,16 +964,6 @@ async fn run_acceptance(app: &Router, pool: &PgPool) {
     assert_eq!(pagination["total"], 2);
     assert_eq!(pagination["total_pages"], 1);
     assert_eq!(users.json["data"].as_array().unwrap().len(), 2);
-    let healthy = request(
-        app,
-        Method::GET,
-        "/api/v1/admin/system/health",
-        None,
-        Some(&admin_access),
-    )
-    .await;
-    assert_eq!(healthy.status, StatusCode::OK, "{}", healthy.json);
-    assert_eq!(healthy.json["data"]["database"], "up");
     for (query, field, code) in [
         ("page=0", "page", "out_of_range"),
         ("per_page=0", "per_page", "out_of_range"),

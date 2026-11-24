@@ -50,8 +50,6 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
     };
     Ok(Router::new()
         .route("/health/live", get(http::live))
-        .route("/health/ready", get(http::ready))
-        .route("/openapi.json", get(http::openapi))
         .route("/metrics", get(metrics::endpoint))
         .route("/api/v1/admin/auth/login", post(http::login))
         .route("/api/v1/admin/auth/refresh", post(http::refresh))
@@ -70,7 +68,6 @@ pub async fn build_router(config: Config, pool: PgPool) -> anyhow::Result<Router
         .route("/api/v1/admin/roles", get(http::roles))
         .route("/api/v1/admin/audit-logs", get(http::audit_logs))
         .route("/api/v1/admin/audit-logs/{id}", get(http::audit_log))
-        .route("/api/v1/admin/system/health", get(http::system_health))
         .fallback(http::not_found)
         .method_not_allowed_fallback(http::method_not_allowed)
         .layer(DefaultBodyLimit::max(64 * 1024))

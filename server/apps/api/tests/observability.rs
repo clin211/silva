@@ -33,7 +33,7 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/health/ready")
+                .uri("/health/live")
                 .header(
                     "traceparent",
                     "00-12345678901234567890123456789012-1234567890123456-01",
@@ -43,7 +43,7 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers()["x-trace-id"],
         "12345678901234567890123456789012"
@@ -58,6 +58,23 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
             .get_version_num(),
         7
     );
+
+    // 数据库不可用时业务接口返回错误结构，正文不重复携带请求 ID。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/admin/auth/login")
+                .method("POST")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"email":"admin@example.test","password":"unused-password"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response.status().is_server_error());
     let body = to_bytes(response.into_body(), 1_000_000).await.unwrap();
     let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(error["error"].get("request_id").is_none());

@@ -59,15 +59,14 @@ API 默认监听 `127.0.0.1:8088`。管理接口使用 `Authorization: Bearer <a
 
 ```sh
 curl --fail http://127.0.0.1:8088/health/live
-curl --fail http://127.0.0.1:8088/health/ready
-curl --fail http://127.0.0.1:8088/openapi.json
+curl --fail http://127.0.0.1:8088/metrics
 ```
 
-`/health/live` 检查进程，`/health/ready` 检查数据库就绪；`/metrics` 提供 Prometheus 运维指标。生产入口应限制健康详情、OpenAPI 和 metrics 的外部访问。业务路径及 DTO 以 `/openapi.json` 为准，未实现的业务端点不在契约中承诺。
+`/health/live` 检查进程存活，`/metrics` 提供 Prometheus 运维指标；生产入口应限制 metrics 的外部访问。业务路径及 DTO 以 [OpenAPI 文件](apps/api/openapi.json) 为准，未实现的业务端点不在契约中承诺。
 
 ## API 文档
 
-API 文档交付为 [OpenAPI 3.1 JSON](apps/api/openapi.json)，导入 Apifox 进行在线预览和调试。运行时 `/openapi.json` 返回同一份契约。[中文接入指南](docs/api/README.md) 说明导入、登录与令牌刷新、分页、权限和错误处理。
+API 文档交付为 [OpenAPI 3.1 JSON](apps/api/openapi.json)，导入 Apifox 进行在线预览和调试。[中文接入指南](docs/api/README.md) 说明导入、登录与令牌刷新、分页、权限和错误处理。
 
 ## 可观测性
 

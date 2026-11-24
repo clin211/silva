@@ -20,15 +20,15 @@ groups:
           summary: Silva 核心监控目标配置或数据缺失
           description: "检查 prometheus.yaml 目标及抓取状态；恢复条件为目标重新出现。"
           runbook: server/observability/README.md
-      - alert: SilvaReadinessFailed
-        expr: probe_success{job="readiness"} == 0
+      - alert: SilvaLivenessFailed
+        expr: probe_success{job="liveness"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: Silva API 就绪探测失败
-          description: "检查数据库、迁移版本及 API 日志；恢复条件为 /health/ready 返回 200。"
-          dashboard: http://localhost:3001/d/silva-db
+          summary: Silva API 存活探测失败
+          description: "检查 API 容器状态、监听端口及日志；恢复条件为 /health/live 返回 200。"
+          dashboard: http://localhost:3001/d/silva-api
           runbook: server/observability/README.md
       - alert: SilvaHighErrorRate
         expr: (sum(rate(silva_http_requests_total{job="silva-api",traffic="application",status=~"5.."}[5m])) / sum(rate(silva_http_requests_total{job="silva-api",traffic="application"}[5m])) > 0.01) and (sum(increase(silva_http_requests_total{job="silva-api",traffic="application"}[5m])) >= 100)

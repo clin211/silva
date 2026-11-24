@@ -777,36 +777,9 @@ pub(crate) async fn audit_log(
     ))
 }
 
-pub(crate) async fn system_health(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> HttpResult<Response> {
-    let principal = authorize(&state, &headers).await?;
-    principal.require("system.read")?;
-    Ok(response::ok(dependency_health(&state).await?))
-}
-
-// `/health/*` 是给负载均衡与编排系统的探针，按惯例返回裸 JSON，不套 `data` 信封。
+// `/health/live` 是给负载均衡与编排系统的存活探针，按惯例返回裸 JSON，不套 `data` 信封。
 pub(crate) async fn live() -> Json<Value> {
     Json(json!({"status":"ok"}))
-}
-pub(crate) async fn ready(State(state): State<AppState>) -> HttpResult<Json<Value>> {
-    Ok(Json(dependency_health(&state).await?))
-}
-
-async fn dependency_health(state: &AppState) -> HttpResult<Value> {
-    persistence::ready(&state.pool).await.map_err(|error| {
-        tracing::warn!(%error, "readiness check failed");
-        ApiError::unavailable()
-    })?;
-    Ok(json!({"status":"ok", "database":"up"}))
-}
-
-pub(crate) async fn openapi() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "application/json")],
-        include_str!("../openapi.json"),
-    )
 }
 pub(crate) async fn not_found() -> ApiError {
     ApiError::new(ErrorCode::NotFound, "Resource not found")

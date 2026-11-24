@@ -304,7 +304,7 @@
       }
     },
     {
-      "title": "API 就绪探测",
+      "title": "API 存活探测",
       "type": "timeseries",
       "description": "",
       "datasource": {
@@ -313,7 +313,7 @@
       },
       "targets": [
         {
-          "expr": "probe_success{job=\"readiness\"}",
+          "expr": "probe_success{job=\"liveness\"}",
           "refId": "A",
           "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
         }

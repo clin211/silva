@@ -6,12 +6,6 @@
 
 接口字段、约束和请求/响应示例统一维护在 [OpenAPI 文件](../../apps/api/openapi.json) 中。成功与失败的响应结构、错误码登记表见 [API 响应结构规范](../contracts/api-response.md)。将 `server/apps/api/openapi.json` 作为 OpenAPI 3.1 文件导入 Apifox，进行预览与调试。
 
-运行服务后，也可从 `/openapi.json` 下载当前运行版本的契约：
-
-```sh
-curl --fail --output silva-openapi.json http://127.0.0.1:8088/openapi.json
-```
-
 `info.version` 表示当前 API 发布版本；`openapi` 表示文档规范版本。变更接口时同步更新该文件，再重新导入 Apifox。
 
 ## 客户端认证
@@ -21,7 +15,7 @@ curl --fail --output silva-openapi.json http://127.0.0.1:8088/openapi.json
 - access token 默认 900 秒过期（`SILVA_ACCESS_TOKEN_TTL_SECONDS`），过期后返回 401 `token_expired`，此时调用 `POST /api/v1/admin/auth/refresh` 提交 `{"refresh_token": "..."}` 换取新令牌对，再重试原请求。
 - refresh token 默认 7 天过期（`SILVA_REFRESH_TOKEN_TTL_SECONDS`），每次刷新都会轮换：旧 refresh token 立即失效，必须保存新返回的 refresh token。已用过的 refresh token 再次提交视为重放，整个会话被撤销，需要重新登录。
 - 每次请求都按令牌中的会话读取账户当前状态、角色和权限。退出登录、账户停用、管理员重置密码或本人修改密码（其他会话）后，相关令牌立即返回 401 `unauthorized`。
-- 令牌等同于凭据：不要写入日志、URL 或共享的调试环境；生产环境只通过 HTTPS 传输。生产入口应限制 `/openapi.json` 和运维接口的外部访问。
+- 令牌等同于凭据：不要写入日志、URL 或共享的调试环境；生产环境只通过 HTTPS 传输。生产入口应限制运维接口的外部访问。
 
 ## 登录、读取当前账户、刷新和退出
 
@@ -113,9 +107,8 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
-| `GET /api/v1/admin/system/health` | `system.read` |
 
-内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。目前账户、角色、审计和系统健康接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
+内置角色为 `author`、`editor`、`admin`；Editor 包含 Author 权限，Admin 包含 Editor 权限。目前账户、角色和审计接口需要 Admin 对应权限。登录不会授予额外权限。OpenAPI 的 `x-required-permission` 记录每个接口的权限要求。
 
 ## 响应结构与排障
 
@@ -147,7 +140,7 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
 | 422 | `validation_error` | 按 `details` 中的字段与字段错误码修正输入；路径 ID 不是 UUIDv7 时 `field` 为 `id` |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
-| 500 / 503 | `internal_error` / `service_unavailable` | 记录请求标识并排查服务依赖 |
+| 500 | `internal_error` | 记录请求标识并排查服务依赖 |
 
 响应头 `X-Request-Id` 是服务端生成的 UUIDv7，排障时提供它；错误正文不重复携带。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。
 

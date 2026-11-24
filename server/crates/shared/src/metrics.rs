@@ -177,10 +177,7 @@ impl Metrics {
             | "TRACE" => method,
             _ => "OTHER",
         };
-        let traffic = if matches!(
-            route,
-            "/health/live" | "/health/ready" | "/metrics" | "/openapi.json"
-        ) {
+        let traffic = if matches!(route, "/health/live" | "/metrics") {
             "operations"
         } else {
             "application"
@@ -243,7 +240,7 @@ mod tests {
     fn histogram_separates_operations_and_bounds_method_cardinality() {
         let metrics = Metrics::default();
         metrics.record_http("GET", "/api/v1/admin/users/{id}", 500, 0.2);
-        metrics.record_http("GET", "/health/ready", 503, 0.01);
+        metrics.record_http("GET", "/health/live", 200, 0.01);
         metrics.record_http("UNTRUSTED-METHOD", "unmatched", 405, 0.01);
         let body = metrics.render();
         assert!(body.contains("silva_http_request_duration_seconds_bucket"));
