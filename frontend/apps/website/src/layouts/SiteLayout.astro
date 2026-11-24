@@ -5,6 +5,7 @@ import '../styles/tokens.css';
 import '../styles/site.css';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import { getGeneration } from '../lib/data';
 import { siteDescription, siteName, type Section } from '../lib/site';
 
 interface Props {
@@ -32,6 +33,7 @@ const {
     structuredData,
     image,
 } = Astro.props;
+const generation = await getGeneration();
 const pageTitle = `${title} · ${siteName}`;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
 const imageUrl = image && new URL(image.path, Astro.site ?? Astro.url).href;
@@ -48,6 +50,7 @@ const canIndex = Boolean(
         <title>{pageTitle}</title>
         <meta name="description" content={description} />
         <meta name="theme-color" content="#F4F8F7" />
+        {generation !== undefined && <meta name="silva:generation" content={String(generation)} />}
         {(noindex || !canIndex) && <meta name="robots" content="noindex" />}
         {!noindex && <link rel="canonical" href={canonical} />}
         <link rel="alternate" type="application/rss+xml" title="Silva 文章订阅" href="/rss.xml" />

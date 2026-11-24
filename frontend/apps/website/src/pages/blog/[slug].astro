@@ -1,79 +1,81 @@
 ---
 import type { GetStaticPaths } from 'astro';
-import { render } from 'astro:content';
 import ArticleToc from '../../components/ArticleToc.astro';
+import Body from '../../components/Body.astro';
 import Breadcrumb from '../../components/Breadcrumb.astro';
 import Cover from '../../components/Cover.astro';
 import Icon from '../../components/Icon.astro';
 import ShareDialog from '../../components/ShareDialog.astro';
-import { categories, tags } from '../../data/taxonomy';
 import SiteLayout from '../../layouts/SiteLayout.astro';
-import { getProfile, listPosts, readingStats } from '../../lib/content';
-import { number } from '../../lib/format';
+import { getProfile, listPosts } from '../../lib/data';
+import { day, number } from '../../lib/format';
 import { categoryUrl, postUrl, tagUrl } from '../../lib/site';
 
 export const getStaticPaths = (async () => {
     const posts = await listPosts();
     return posts.map((post, index) => ({
-        params: { slug: post.id },
+        params: { slug: post.slug },
         props: { post, newer: posts[index - 1], older: posts[index + 1] },
     }));
 }) satisfies GetStaticPaths;
 
 const { post, newer, older } = Astro.props;
-const { title, summary, published, category, tags: postTags, cover } = post.data;
-const updated = post.data.updated !== published ? post.data.updated : undefined;
-const [profile, rendered] = await Promise.all([getProfile(), render(post)]);
-const { Content } = rendered;
-const headings = rendered.headings.filter(({ depth }) => depth === 2 || depth === 3);
-const { count, minutes } = readingStats(post.body);
+const { title, summary, published, updated, tags, cover } = post;
+const category = post.categories[0];
+const description = post.seoDescription ?? summary;
+const profile = await getProfile();
+const headings = post.headings.filter(({ depth }) => depth === 2 || depth === 3);
+const { count, minutes } = post.reading;
 const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: title,
-    description: summary,
+    description,
     datePublished: published,
     dateModified: updated ?? published,
-    mainEntityOfPage: new URL(postUrl(post.id), Astro.site ?? Astro.url).href,
-    author: profile && { '@type': 'Person', name: profile.data.name },
+    mainEntityOfPage: new URL(postUrl(post.slug), Astro.site ?? Astro.url).href,
+    author: profile && { '@type': 'Person', name: profile.name },
 };
 ---
 
 <SiteLayout
-    {title}
-    description={summary}
+    title={post.seoTitle ?? title}
+    {description}
     active="blog"
     type="article"
     {published}
     {updated}
     {structuredData}
+    image={cover?.kind === 'image' ? { path: cover.src, alt: cover.alt } : undefined}
 >
     <div class="wrap article-page">
         <Breadcrumb section={{ href: '/blog/', label: '文章' }} current={title} />
         <article>
             <header class="article-header">
-                <a href={categoryUrl(category)} class:list={['chip', categories[category].color]}>
-                    {categories[category].name}
-                </a>
+                {category && (
+                    <a href={categoryUrl(category.slug)} class:list={['chip', category.color]}>
+                        {category.name}
+                    </a>
+                )}
                 <h1>{title}</h1>
                 <div class="article-meta">
                     <div class="metadata">
                         {profile && (
                             <a class="hover-accent" href="/about/">
-                                {profile.data.name}
+                                {profile.name}
                             </a>
                         )}
                         <span>
                             发布于{' '}
                             <time datetime={published} class="num">
-                                {published}
+                                {day(published)}
                             </time>
                         </span>
                         {updated && (
                             <span>
                                 更新于{' '}
                                 <time datetime={updated} class="num">
-                                    {updated}
+                                    {day(updated)}
                                 </time>
                             </span>
                         )}
@@ -82,12 +84,12 @@ const structuredData = {
                             {minutes} 分钟阅读
                         </span>
                         <span>{number(count)} 字</span>
-                        {postTags.length > 0 && (
+                        {tags.length > 0 && (
                             <ul class="chips" aria-label="文章标签">
-                                {postTags.map((slug) => (
+                                {tags.map(({ slug, name }) => (
                                     <li>
                                         <a href={tagUrl(slug)} class="chip hash">
-                                            {tags[slug]}
+                                            {name}
                                         </a>
                                     </li>
                                 ))}
@@ -107,9 +109,7 @@ const structuredData = {
                     </button>
                 </div>
                 <p class="article-summary t-lead ink-2">{summary}</p>
-                {cover && (
-                    <Cover cover={cover} label={categories[category].name} class="article-cover" />
-                )}
+                {cover && <Cover cover={cover} label={category?.name} class="article-cover" />}
             </header>
 
             <div class="reading-layout">
@@ -121,7 +121,7 @@ const structuredData = {
                         </details>
                     )}
                     <div class="prose article-body">
-                        <Content />
+                        <Body body={post.body} />
                     </div>
                     <div class="article-actions">
                         <a class="btn btn-ghost btn-sm" href="/blog/">
@@ -142,15 +142,15 @@ const structuredData = {
                     {(newer || older) && (
                         <nav aria-label="相邻文章" class="article-neighbors">
                             {newer && (
-                                <a href={postUrl(newer.id)} class="hover-accent">
+                                <a href={postUrl(newer.slug)} class="hover-accent">
                                     <span class="muted">上一篇</span>
-                                    {newer.data.title}
+                                    {newer.title}
                                 </a>
                             )}
                             {older && (
-                                <a href={postUrl(older.id)} class="hover-accent">
+                                <a href={postUrl(older.slug)} class="hover-accent">
                                     <span class="muted">下一篇</span>
-                                    {older.data.title}
+                                    {older.title}
                                 </a>
                             )}
                         </nav>

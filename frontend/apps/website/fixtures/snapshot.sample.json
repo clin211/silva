@@ -1,0 +1,136 @@
+{
+    "schema_version": 1,
+    "generation": 12,
+    "generated_at": "2026-11-24T16:00:00+08:00",
+    "posts": [
+        {
+            "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+            "revision_id": "019535da-0000-7000-8000-000000000001",
+            "slug": "immutable-cms-revisions",
+            "title": "用不可变 revision 重写 CMS 的发布流程",
+            "excerpt": "把编辑版本、期望公开版本和当前线上版本分别记录。",
+            "html": "<p>写到一半的草稿可以反复修改，审核通过的文本则需要有稳定的身份。每次保存创建新的 revision，可以把这两种需求放进同一套模型。</p>\n<h2 id=\"三个版本指针\">三个版本指针</h2>\n<p>编辑指针指向最后一次保存，发布指针指向管理员选择的修订，线上指针绑定当前激活的构建快照。</p>\n<h3 id=\"并发写入\">并发写入</h3>\n<p>编辑器随保存提交自己读取的修订编号，写入冲突时返回 <code>409</code>：</p>\n<pre><code class=\"language-sql\">UPDATE posts\nSET head_revision_id = $1\nWHERE id = $2 AND head_revision_id = $3\n  AND title &lt;&gt; &#39;&#39;;\n</code></pre>\n<h2 id=\"构建与验证\">构建与验证</h2>\n<p>用固定快照构建文章、分类、标签、Sitemap 和 RSS，参见 <a href=\"https://www.postgresql.org/docs/\" rel=\"noopener noreferrer\">PostgreSQL 文档</a>。</p>\n<p><img src=\"/api/v1/public/media/019535db-0000-7000-8000-000000000003\" width=\"1200\" height=\"675\" alt=\"发布流程示意\" loading=\"lazy\" decoding=\"async\"></p>\n",
+            "headings": [
+                {
+                    "depth": 2,
+                    "slug": "三个版本指针",
+                    "text": "三个版本指针"
+                },
+                {
+                    "depth": 3,
+                    "slug": "并发写入",
+                    "text": "并发写入"
+                },
+                {
+                    "depth": 2,
+                    "slug": "构建与验证",
+                    "text": "构建与验证"
+                }
+            ],
+            "categories": ["backend"],
+            "tags": ["cms", "postgresql"],
+            "featured": true,
+            "cover": {
+                "media_id": "019535db-0000-7000-8000-000000000002",
+                "mime_type": "image/png",
+                "width": 1600,
+                "height": 900,
+                "alt": null
+            },
+            "seo_title": null,
+            "seo_description": null,
+            "published_at": "2026-11-10T09:00:00+08:00",
+            "updated_at": "2026-11-12T18:30:00+08:00"
+        },
+        {
+            "id": "019535d9-3df7-79fb-b466-fa907fa17fa0",
+            "revision_id": "019535da-0000-7000-8000-000000000004",
+            "slug": "rust-axum-error-handling",
+            "title": "在 Axum 中统一错误响应",
+            "excerpt": null,
+            "html": "<p>接口层的错误需要稳定的结构：机器可读的错误码、给人看的说明，以及可以追踪的请求 ID。下面的写法把领域错误映射为 HTTP 响应。</p>\n<h2 id=\"错误类型\">错误类型</h2>\n<pre><code class=\"language-rust\">impl IntoResponse for AppError {\n    fn into_response(self) -&gt; Response {\n        let status = self.status();\n        (status, Json(self.body())).into_response()\n    }\n}\n</code></pre>\n<h2 id=\"约定\">约定</h2>\n<ul>\n<li>4xx 返回字段级错误。</li>\n<li>5xx 只返回请求 ID。</li>\n</ul>\n<pre><code>plain text block\n</code></pre>\n",
+            "headings": [
+                {
+                    "depth": 2,
+                    "slug": "错误类型",
+                    "text": "错误类型"
+                },
+                {
+                    "depth": 2,
+                    "slug": "约定",
+                    "text": "约定"
+                }
+            ],
+            "categories": ["backend", "devops"],
+            "tags": ["rust"],
+            "featured": false,
+            "cover": null,
+            "seo_title": "Axum 统一错误响应",
+            "seo_description": "用 IntoResponse 把领域错误映射为稳定的 HTTP 响应。",
+            "published_at": "2026-10-28T20:15:00+08:00",
+            "updated_at": "2026-10-28T20:15:00+08:00"
+        },
+        {
+            "id": "019535d9-3df7-79fb-b466-fa907fa17fa1",
+            "revision_id": "019535da-0000-7000-8000-000000000005",
+            "slug": "weekly-notes-2026-41",
+            "title": "第 41 周学习笔记",
+            "excerpt": null,
+            "html": "<p>这周读完了关于构建缓存的两篇文章，记录几个要点。</p>\n<ol>\n<li>缓存键要包含全部输入。</li>\n<li>产物按内容寻址，避免覆盖。</li>\n</ol>\n",
+            "headings": [],
+            "categories": [],
+            "tags": [],
+            "featured": false,
+            "cover": null,
+            "seo_title": null,
+            "seo_description": null,
+            "published_at": "2026-10-12T08:00:00+08:00",
+            "updated_at": "2026-10-12T08:00:00+08:00"
+        }
+    ],
+    "categories": [
+        {
+            "slug": "backend",
+            "name": "后端",
+            "description": "服务端架构与工程实践。"
+        },
+        {
+            "slug": "devops",
+            "name": "工程化",
+            "description": null
+        }
+    ],
+    "tags": [
+        {
+            "slug": "cms",
+            "name": "CMS"
+        },
+        {
+            "slug": "postgresql",
+            "name": "PostgreSQL"
+        },
+        {
+            "slug": "rust",
+            "name": "Rust"
+        }
+    ],
+    "profile": null,
+    "ai_trending": {
+        "data_date": null,
+        "repositories": []
+    },
+    "media": [
+        {
+            "id": "019535db-0000-7000-8000-000000000002",
+            "mime_type": "image/png",
+            "width": 1600,
+            "height": 900
+        },
+        {
+            "id": "019535db-0000-7000-8000-000000000003",
+            "mime_type": "image/webp",
+            "width": 1200,
+            "height": 675
+        }
+    ]
+}

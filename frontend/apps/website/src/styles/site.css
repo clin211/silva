@@ -985,6 +985,9 @@ a.chip {
     font-weight: 600;
     margin-bottom: 0.8rem;
 }
+img.profile-monogram {
+    object-fit: cover;
+}
 .profile-location {
     display: flex;
     align-items: center;

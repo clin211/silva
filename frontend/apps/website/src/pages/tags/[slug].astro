@@ -1,26 +1,25 @@
 ---
 import type { GetStaticPaths } from 'astro';
 import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
-import { tags, tagSlugs } from '../../data/taxonomy';
-import { listPosts } from '../../lib/content';
+import { listPosts, listTags } from '../../lib/data';
 
 export const getStaticPaths = (async () => {
-    const posts = await listPosts();
-    return tagSlugs.flatMap((slug) => {
-        const entries = posts.filter((post) => post.data.tags.includes(slug));
-        return entries.length ? [{ params: { slug }, props: { posts, entries } }] : [];
+    const [posts, tags] = await Promise.all([listPosts(), listTags()]);
+    return tags.flatMap((tag) => {
+        const entries = posts.filter((post) => post.tags.some((item) => item.slug === tag.slug));
+        return entries.length
+            ? [{ params: { slug: tag.slug }, props: { tag, posts, entries } }]
+            : [];
     });
 }) satisfies GetStaticPaths;
 
-const slug = Astro.params.slug as keyof typeof tags;
-const { posts, entries } = Astro.props;
-const tag = tags[slug];
+const { tag, posts, entries } = Astro.props;
 ---
 
 <ArchiveLayout
-    title={`#${tag}`}
-    description={`带有「${tag}」标签的文章。`}
+    title={`#${tag.name}`}
+    description={`带有「${tag.name}」标签的文章。`}
     {posts}
     {entries}
-    tag={slug}
+    tag={tag.slug}
 />

@@ -1,13 +1,11 @@
 ---
-import { render } from 'astro:content';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import Body from '../components/Body.astro';
 import Icon from '../components/Icon.astro';
 import PageIntro from '../components/PageIntro.astro';
-import { getProfile } from '../lib/content';
+import { getProfile } from '../lib/data';
 
-const entry = await getProfile();
-const profile = entry?.data;
-const Content = entry ? (await render(entry)).Content : undefined;
+const profile = await getProfile();
 const structuredData = profile && {
     '@context': 'https://schema.org',
     '@type': 'Person',
@@ -18,7 +16,12 @@ const structuredData = profile && {
 };
 ---
 
-<SiteLayout title="关于我" description={profile?.summary} active="about" {structuredData}>
+<SiteLayout
+    title={profile ? '关于我' : '关于这个站点'}
+    description={profile?.summary}
+    active="about"
+    {structuredData}
+>
     <div class="wrap page-content">
         <PageIntro
             title={profile ? '关于我' : '关于这个站点'}
@@ -38,11 +41,21 @@ const structuredData = profile && {
             <div class="about-layout">
                 <aside class="about-identity" aria-label="个人档案">
                     <div class="profile-sticky">
-                        <span class="profile-monogram" aria-hidden="true">
-                            {profile.initials}
-                        </span>
+                        {profile.avatar ? (
+                            <img
+                                class="profile-monogram"
+                                src={profile.avatar.src}
+                                width={profile.avatar.width}
+                                height={profile.avatar.height}
+                                alt={profile.avatar.alt}
+                            />
+                        ) : (
+                            <span class="profile-monogram" aria-hidden="true">
+                                {profile.initials}
+                            </span>
+                        )}
                         <h2 class="t-h3">{profile.name}</h2>
-                        <p class="muted">{profile.title}</p>
+                        {profile.title && <p class="muted">{profile.title}</p>}
                         {profile.location && (
                             <p class="profile-location ink-2">
                                 <Icon name="pin" size={16} />
@@ -61,13 +74,13 @@ const structuredData = profile && {
                     </div>
                 </aside>
                 <div class="about-body">
-                    {Content && entry.body?.trim() && (
+                    {profile.bio && (
                         <section aria-labelledby="bio-title">
                             <h2 id="bio-title" class="t-h2">
                                 个人简介
                             </h2>
                             <div class="prose">
-                                <Content />
+                                <Body body={profile.bio} />
                             </div>
                         </section>
                     )}
@@ -78,7 +91,13 @@ const structuredData = profile && {
                             </h2>
                             <ol class="rows jobs">
                                 {profile.experience.map(
-                                    ({ period, role, organization, description }) => (
+                                    ({
+                                        period,
+                                        role,
+                                        organization,
+                                        description,
+                                        descriptionHtml,
+                                    }) => (
                                         <li>
                                             <p class="num t-small muted">{period}</p>
                                             <div>
@@ -86,7 +105,10 @@ const structuredData = profile && {
                                                 {organization && (
                                                     <p class="t-small muted">{organization}</p>
                                                 )}
-                                                <p class="ink-2">{description}</p>
+                                                {description && <p class="ink-2">{description}</p>}
+                                                {descriptionHtml && (
+                                                    <div class="ink-2" set:html={descriptionHtml} />
+                                                )}
                                             </div>
                                         </li>
                                     ),

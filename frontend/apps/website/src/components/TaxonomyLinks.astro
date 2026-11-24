@@ -1,7 +1,6 @@
 ---
-import { categories, categorySlugs, tags, tagSlugs } from '../data/taxonomy';
+import { listCategories, listTags, type Post } from '../lib/data';
 import { categoryUrl, tagUrl } from '../lib/site';
-import type { Post } from '../lib/content';
 
 interface Props {
     posts: Post[];
@@ -10,12 +9,11 @@ interface Props {
 }
 
 const { posts, category, tag } = Astro.props;
-const categoryCounts = categorySlugs.map(
-    (slug) => [slug, posts.filter((post) => post.data.category === slug).length] as const,
-);
-const tagCounts = tagSlugs.map(
-    (slug) => [slug, posts.filter((post) => post.data.tags.includes(slug)).length] as const,
-);
+const [categories, tags] = await Promise.all([listCategories(), listTags()]);
+const count = (key: 'categories' | 'tags', slug: string) =>
+    posts.filter((post) => post[key].some((item) => item.slug === slug)).length;
+const categoryCounts = categories.map((item) => [item, count('categories', item.slug)] as const);
+const tagCounts = tags.map((item) => [item, count('tags', item.slug)] as const);
 ---
 
 <aside class="archive-aside" aria-label="分类与标签">
@@ -33,13 +31,13 @@ const tagCounts = tagSlugs.map(
                         </li>
                         {categoryCounts
                             .filter(([, count]) => count > 0)
-                            .map(([slug, count]) => (
+                            .map(([{ slug, name }, count]) => (
                                 <li>
                                     <a
                                         href={categoryUrl(slug)}
                                         aria-current={category === slug ? 'page' : undefined}
                                     >
-                                        {categories[slug].name}
+                                        {name}
                                         <span class="num">{count}</span>
                                     </a>
                                 </li>
@@ -51,14 +49,14 @@ const tagCounts = tagSlugs.map(
                     <ul class="chips">
                         {tagCounts
                             .filter(([, count]) => count > 0)
-                            .map(([slug, count]) => (
+                            .map(([{ slug, name }, count]) => (
                                 <li>
                                     <a
                                         class:list={['chip hash', { 'chip-teal': tag === slug }]}
                                         href={tagUrl(slug)}
                                         aria-current={tag === slug ? 'page' : undefined}
                                     >
-                                        {tags[slug]} <span class="taxonomy-count num">{count}</span>
+                                        {name} <span class="taxonomy-count num">{count}</span>
                                     </a>
                                 </li>
                             ))}

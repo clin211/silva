@@ -1,5 +1,5 @@
 ---
-import { getProfile } from '../lib/content';
+import { getProfile } from '../lib/data';
 import { navigation, siteDescription } from '../lib/site';
 
 const profile = await getProfile();
@@ -10,7 +10,7 @@ const profile = await getProfile();
         <div class="foot-grid">
             <div class="foot-brand">
                 <a class="foot-title hover-accent" href="/">
-                    Silva{profile ? ` · ${profile.data.name}` : ''}
+                    Silva{profile ? ` · ${profile.name}` : ''}
                 </a>
                 <p class="t-small muted">{siteDescription}</p>
             </div>
@@ -41,11 +41,11 @@ const profile = await getProfile();
                     </li>
                 </ul>
             </div>
-            {profile?.data.links.length ? (
+            {profile?.links.length ? (
                 <div>
                     <h2>联系</h2>
                     <ul>
-                        {profile.data.links.map(({ label, url }) => (
+                        {profile.links.map(({ label, url }) => (
                             <li>
                                 <a class="hover-accent" href={url}>
                                     {label}
@@ -53,12 +53,12 @@ const profile = await getProfile();
                             </li>
                         ))}
                     </ul>
-                    {profile.data.location && <p class="t-small muted">{profile.data.location}</p>}
+                    {profile.location && <p class="t-small muted">{profile.location}</p>}
                 </div>
             ) : null}
         </div>
         <p class="foot-note t-small muted">
-            © {new Date().getUTCFullYear()} {profile?.data.name ?? 'Silva'}
+            © {new Date().getUTCFullYear()} {profile?.name ?? 'Silva'}
         </p>
     </div>
 </footer>

@@ -4,24 +4,27 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 import Icon from '../components/Icon.astro';
 import Cover from '../components/Cover.astro';
 import hero from '../assets/hero-balloon.webp';
-import { categories } from '../data/taxonomy';
-import { loadTrending } from '../data/trending';
-import { getProfile, listPosts } from '../lib/content';
+import { getGeneration, getProfile, getTrending, listPosts } from '../lib/data';
 import { categoryUrl, postUrl, repoUrl, siteDescription } from '../lib/site';
-import { growth } from '../lib/format';
+import { day, growth } from '../lib/format';
 import { defaultFilters, rank } from '../lib/ranking';
 
-const [profileEntry, posts] = await Promise.all([getProfile(), listPosts()]);
-const profile = profileEntry?.data;
-const primary = posts.find((post) => post.data.featured) ?? posts[0];
-const recent = posts.filter((post) => post.id !== primary?.id).slice(0, 2);
-const snapshot = loadTrending();
-const top = snapshot ? rank(snapshot.repos, defaultFilters).slice(0, 3) : [];
+const [profile, posts, trending, generation] = await Promise.all([
+    getProfile(),
+    listPosts(),
+    getTrending(),
+    getGeneration(),
+]);
+const primary = posts.find((post) => post.featured) ?? posts[0];
+const recent = posts.filter((post) => post !== primary).slice(0, 2);
+const top = trending ? rank(trending.repos, defaultFilters).slice(0, 3) : [];
+const distinct = (key: 'categories' | 'tags') =>
+    new Set(posts.flatMap((post) => post[key].map((item) => item.slug))).size;
 const stats = [
     { label: '文章', value: posts.length },
-    { label: '分类', value: new Set(posts.map((post) => post.data.category)).size },
-    { label: '标签', value: new Set(posts.flatMap((post) => post.data.tags)).size },
-    { label: '榜单收录', value: snapshot?.repos.length ?? '—' },
+    { label: '分类', value: distinct('categories') },
+    { label: '标签', value: distinct('tags') },
+    { label: '榜单收录', value: trending?.repos.length ?? '—' },
 ];
 ---
 
@@ -84,7 +87,9 @@ const stats = [
                 <div class="snapshot-surface">
                     <header>
                         <h2 id="snapshot-title">站点快照</h2>
-                        <span class="snapshot-label">本地预览</span>
+                        <span class="snapshot-label">
+                            {generation === undefined ? '本地预览' : `第 ${generation} 版`}
+                        </span>
                     </header>
                     <dl>
                         {stats.map(({ label, value }) => (
@@ -121,49 +126,49 @@ const stats = [
             {primary ? (
                 <div class:list={['recent-grid', { 'only-feature': !recent.length }]}>
                     <article class="bezel lift">
-                        <a class="face feature-post" href={postUrl(primary.id)}>
-                            {primary.data.cover && (
+                        <a class="face feature-post" href={postUrl(primary.slug)}>
+                            {primary.cover && (
                                 <Cover
-                                    cover={primary.data.cover}
-                                    label={categories[primary.data.category].name}
+                                    cover={primary.cover}
+                                    label={primary.categories[0]?.name}
                                     class="feature-cover"
                                 />
                             )}
                             <div class="feature-copy">
                                 <div class="metadata">
-                                    {primary.data.featured && (
-                                        <span class="chip chip-sun">精选</span>
-                                    )}
-                                    <time class="num" datetime={primary.data.published}>
-                                        {primary.data.published}
+                                    {primary.featured && <span class="chip chip-sun">精选</span>}
+                                    <time class="num" datetime={primary.published}>
+                                        {day(primary.published)}
                                     </time>
                                 </div>
-                                <h3 class="t-h2 hover-accent">{primary.data.title}</h3>
-                                <p class="ink-2">{primary.data.summary}</p>
+                                <h3 class="t-h2 hover-accent">{primary.title}</h3>
+                                <p class="ink-2">{primary.summary}</p>
                             </div>
                         </a>
                     </article>
                     {recent.length > 0 && (
                         <ul class="home-list rows">
-                            {recent.map(({ id, data }) => (
+                            {recent.map(({ slug, title, summary, published, categories }) => (
                                 <li>
                                     <div class="metadata">
-                                        <a
-                                            href={categoryUrl(data.category)}
-                                            class:list={['chip', categories[data.category].color]}
-                                        >
-                                            {categories[data.category].name}
-                                        </a>
-                                        <time datetime={data.published} class="num">
-                                            {data.published}
+                                        {categories[0] && (
+                                            <a
+                                                href={categoryUrl(categories[0].slug)}
+                                                class:list={['chip', categories[0].color]}
+                                            >
+                                                {categories[0].name}
+                                            </a>
+                                        )}
+                                        <time datetime={published} class="num">
+                                            {day(published)}
                                         </time>
                                     </div>
                                     <h3 class="t-h3">
-                                        <a class="hover-accent" href={postUrl(id)}>
-                                            {data.title}
+                                        <a class="hover-accent" href={postUrl(slug)}>
+                                            {title}
                                         </a>
                                     </h3>
-                                    <p class="ink-2">{data.summary}</p>
+                                    <p class="ink-2">{summary}</p>
                                 </li>
                             ))}
                         </ul>
@@ -188,14 +193,14 @@ const stats = [
             </div>
             <div class="bezel">
                 <div class="face dark-ranking">
-                    {snapshot && top.length ? (
+                    {trending && top.length ? (
                         <>
                             <header>
                                 <h3 class="t-h3">近 7 天 Stars 净增长</h3>
                                 <p class="t-small muted">
                                     示例数据 ·{' '}
-                                    <time class="num" datetime={snapshot.date}>
-                                        {snapshot.date}
+                                    <time class="num" datetime={trending.date}>
+                                        {trending.date}
                                     </time>{' '}
                                     UTC
                                 </p>
@@ -217,7 +222,7 @@ const stats = [
                             </ol>
                         </>
                     ) : (
-                        <p class="ink-2">暂无榜单数据。</p>
+                        <p class="ink-2">暂无数据。</p>
                     )}
                 </div>
             </div>

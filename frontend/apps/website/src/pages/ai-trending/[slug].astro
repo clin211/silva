@@ -2,13 +2,14 @@
 import type { GetStaticPaths } from 'astro';
 import Breadcrumb from '../../components/Breadcrumb.astro';
 import SampleTable from '../../components/SampleTable.astro';
-import { historyFor, loadTrending } from '../../data/trending';
+
 import TrendChart from '../../islands/TrendChart';
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import { getRepositoryHistory, getTrending } from '../../lib/data';
 import { growth, growthClass, number } from '../../lib/format';
 
-export const getStaticPaths = (() => {
-    const snapshot = loadTrending();
+export const getStaticPaths = (async () => {
+    const snapshot = await getTrending();
     if (!snapshot) return [];
     return snapshot.repos.map((repo) => ({
         params: { slug: repo.slug },
@@ -17,7 +18,7 @@ export const getStaticPaths = (() => {
 }) satisfies GetStaticPaths;
 
 const { repo, date } = Astro.props;
-const samples = historyFor(repo.slug);
+const samples = await getRepositoryHistory(repo.slug);
 const recent = samples.slice(-14).reverse();
 const older = samples.slice(0, -14).reverse();
 const metrics = [

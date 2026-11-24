@@ -1,8 +1,8 @@
 ---
-import type { Post } from '../lib/content';
+import type { Cover } from '../lib/data';
 
 interface Props {
-    cover: NonNullable<Post['data']['cover']>;
+    cover: Cover;
     label?: string;
     small?: boolean;
     class?: string;
@@ -10,7 +10,19 @@ interface Props {
 const { cover, label, small, class: className } = Astro.props;
 ---
 
-<div class:list={['cover', `c-${cover.color}`, className, { small }]} aria-hidden="true">
-    {label && <span class="cover-tag">{label}</span>}
-    <span class="cover-mark">{cover.mark}</span>
-</div>
+{cover.kind === 'image' ? (
+    <img
+        class:list={['cover', 'cover-image', className]}
+        src={cover.src}
+        width={cover.width}
+        height={cover.height}
+        alt={cover.alt}
+        loading="lazy"
+        decoding="async"
+    />
+) : (
+    <div class:list={['cover', `c-${cover.color}`, className, { small }]} aria-hidden="true">
+        {label && <span class="cover-tag">{label}</span>}
+        <span class="cover-mark">{cover.mark}</span>
+    </div>
+)}

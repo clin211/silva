@@ -463,6 +463,12 @@ a.chip:hover {
     letter-spacing: 0.04em;
     opacity: 0.85;
 }
+.cover-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+}
 a:hover .cover .cover-mark {
     transform: translate(-6px, -4px);
 }
