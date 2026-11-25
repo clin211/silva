@@ -5,17 +5,16 @@
 
 use crate::persistence::{acquire, audit_resource, begin, db};
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::json;
 use silva_application::ports::{
-    Activation, ActiveSite, ClaimedJob, ContentActor, ExportedExperience, ExportedProfile,
-    ExportedSite, PublishingRepository,
+    Activation, ActiveSite, ClaimedJob, ContentActor, ExportedSite, PublishingRepository,
 };
 use silva_domain::{
     content::{Heading, UserRef},
     site::{
         PublishJob, PublishJobFilter, PublishJobStatus, SiteTarget, SnapshotCategory,
-        SnapshotImage, SnapshotLink, SnapshotMedia, SnapshotPost, SnapshotSkill, SnapshotTag,
+        SnapshotImage, SnapshotMedia, SnapshotPost, SnapshotTag,
     },
 };
 use silva_shared::{
@@ -173,14 +172,6 @@ async fn finish(
 
 fn lease_interval(lease: Duration) -> String {
     format!("{} milliseconds", lease.as_millis())
-}
-
-#[derive(serde::Deserialize)]
-struct ProfileRow {
-    display_name: String,
-    headline: Option<String>,
-    bio_md: Option<String>,
-    location_label: Option<String>,
 }
 
 #[async_trait]
@@ -476,13 +467,14 @@ impl PublishingRepository for PgPublishingRepository {
         .into_iter()
         .map(|(slug, name)| SnapshotTag { slug, name })
         .collect();
-        let profile = export_profile(&mut tx).await?;
+        let profile = crate::profile::export_profile(&mut tx).await?;
         let media = sqlx::query_as::<_, (Uuid, String, i32, i32)>(
             "SELECT m.id, m.mime_type, m.width, m.height FROM media_assets m WHERE m.status='ready' AND m.id IN ( \
                SELECT r.cover_media_id FROM posts p JOIN post_revisions r ON r.id=p.desired_published_revision_id \
                UNION SELECT pm.media_id FROM posts p JOIN post_revision_media pm ON pm.revision_id=p.desired_published_revision_id \
-               UNION SELECT avatar_media_id FROM profiles) ORDER BY m.id",
+               UNION SELECT $1::uuid) ORDER BY m.id",
         )
+        .bind(profile.as_ref().and_then(|p| p.avatar.as_ref()).map(|image| image.media_id))
         .fetch_all(&mut *tx)
         .await
         .map_err(db)?
@@ -549,7 +541,9 @@ impl PublishingRepository for PgPublishingRepository {
         .await
         .map_err(db)?;
         sqlx::query(
-            "UPDATE site_state SET active_generation=$1, activated_at=now() WHERE singleton",
+            "UPDATE site_state SET active_generation=$1, activated_at=now(),
+               active_avatar_media_id=(SELECT p.avatar_media_id FROM profiles p ORDER BY p.updated_at DESC, p.id LIMIT 1)
+             WHERE singleton",
         )
         .bind(claimed.generation)
         .execute(&mut *tx)
@@ -625,97 +619,4 @@ impl PublishingRepository for PgPublishingRepository {
             _ => None,
         })
     }
-}
-
-/// 导出最近更新的个人资料；尚未录入时为 None。
-async fn export_profile(connection: &mut PgConnection) -> Result<Option<ExportedProfile>> {
-    let Some(row) = sqlx::query(
-        "SELECT p.id, p.display_name, p.headline, p.bio_md, p.location_label, \
-           m.id AS avatar_id, m.mime_type AS avatar_mime, m.width AS avatar_width, m.height AS avatar_height, m.alt_text AS avatar_alt \
-         FROM profiles p LEFT JOIN media_assets m ON m.id=p.avatar_media_id AND m.status='ready' \
-         ORDER BY p.updated_at DESC, p.id LIMIT 1",
-    )
-    .fetch_optional(&mut *connection)
-    .await
-    .map_err(db)?
-    else {
-        return Ok(None);
-    };
-    let read = || -> std::result::Result<(Uuid, ProfileRow, Option<SnapshotImage>), sqlx::Error> {
-        let avatar_id: Option<Uuid> = row.try_get("avatar_id")?;
-        Ok((
-            row.try_get("id")?,
-            ProfileRow {
-                display_name: row.try_get("display_name")?,
-                headline: row.try_get("headline")?,
-                bio_md: row.try_get("bio_md")?,
-                location_label: row.try_get("location_label")?,
-            },
-            match avatar_id {
-                Some(media_id) => Some(SnapshotImage {
-                    media_id,
-                    mime_type: row.try_get("avatar_mime")?,
-                    width: row.try_get("avatar_width")?,
-                    height: row.try_get("avatar_height")?,
-                    alt: row.try_get("avatar_alt")?,
-                }),
-                None => None,
-            },
-        ))
-    };
-    let (id, profile, avatar) = read().map_err(db)?;
-    let experiences = sqlx::query_as::<_, (String, String, Option<String>, Option<NaiveDate>, Option<NaiveDate>)>(
-        "SELECT organization, role, description_md, started_on, ended_on FROM experiences WHERE profile_id=$1 ORDER BY position, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(db)?
-    .into_iter()
-    .map(|(organization, role, description_md, started_on, ended_on)| ExportedExperience {
-        organization,
-        role,
-        description_md,
-        started_on,
-        ended_on,
-    })
-    .collect();
-    let skills = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
-        "SELECT name, category, proficiency_label FROM skills WHERE profile_id=$1 ORDER BY position, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(db)?
-    .into_iter()
-    .map(|(name, category, proficiency)| SnapshotSkill {
-        name,
-        category,
-        proficiency,
-    })
-    .collect();
-    let links = sqlx::query_as::<_, (String, Option<String>, String)>(
-        "SELECT platform, label, url FROM social_links WHERE profile_id=$1 ORDER BY position, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(db)?
-    .into_iter()
-    .map(|(platform, label, url)| SnapshotLink {
-        platform,
-        label,
-        url,
-    })
-    .collect();
-    Ok(Some(ExportedProfile {
-        display_name: profile.display_name,
-        headline: profile.headline,
-        bio_md: profile.bio_md,
-        location: profile.location_label,
-        avatar,
-        experiences,
-        skills,
-        links,
-    }))
 }

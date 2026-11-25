@@ -21,6 +21,7 @@ use silva_application::{
 use silva_domain::identity::{
     AuditLogFilter, Principal, User, parse_audit_action, parse_audit_resource_type,
 };
+use silva_domain::profile::Profile;
 use silva_shared::{
     error::{AppError, FieldError, FieldErrorCode},
     ids::{self, EntityId},
@@ -665,6 +666,19 @@ pub(crate) async fn change_password(
         )
         .await?;
     Ok(response::no_content())
+}
+
+/// 保存 About 页面的单例个人资料，并返回站点发布目标。
+pub(crate) async fn save_profile(
+    State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
+    headers: HeaderMap,
+    Input(profile): Input<Profile>,
+) -> HttpResult<Response> {
+    let principal = authorize(&state, &headers).await?;
+    Ok(response::ok(
+        state.profile.save(&principal, profile, &meta).await?,
+    ))
 }
 
 pub(crate) async fn users(

@@ -9,7 +9,7 @@ use silva_domain::{
     media::{Media, MediaStatus, RejectionReason, VerifiedImage},
     site::{
         PublicationAccepted, PublishJob, PublishJobFilter, SiteTarget, SnapshotCategory,
-        SnapshotImage, SnapshotLink, SnapshotMedia, SnapshotPost, SnapshotSkill, SnapshotTag,
+        SnapshotImage, SnapshotMedia, SnapshotPost, SnapshotTag,
     },
 };
 use silva_shared::{
@@ -628,22 +628,8 @@ pub struct ExportedSite {
 
 /// 导出的个人资料原始内容。
 pub struct ExportedProfile {
-    pub display_name: String,
-    pub headline: Option<String>,
-    pub bio_md: Option<String>,
-    pub location: Option<String>,
+    pub profile: silva_domain::profile::Profile,
     pub avatar: Option<SnapshotImage>,
-    pub experiences: Vec<ExportedExperience>,
-    pub skills: Vec<SnapshotSkill>,
-    pub links: Vec<SnapshotLink>,
-}
-
-pub struct ExportedExperience {
-    pub organization: String,
-    pub role: String,
-    pub description_md: Option<String>,
-    pub started_on: Option<chrono::NaiveDate>,
-    pub ended_on: Option<chrono::NaiveDate>,
 }
 
 /// 线上切换的结果。

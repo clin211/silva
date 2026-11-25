@@ -20,12 +20,12 @@ use axum::{
 };
 use silva_application::{
     content::ContentService, identity::IdentityService, login_lockout::LoginLockout,
-    media::MediaService, ports::ObjectStorage, public_site::PublicSiteService,
-    publishing::PublishingService, taxonomy::TaxonomyService,
+    media::MediaService, ports::ObjectStorage, profile::ProfileService,
+    public_site::PublicSiteService, publishing::PublishingService, taxonomy::TaxonomyService,
 };
 use silva_infrastructure::{
     TokenSettings, content_service, identity_service, media_service, object_storage,
-    public_site_service, publishing_service, taxonomy_service,
+    profile_service, public_site_service, publishing_service, taxonomy_service,
 };
 use silva_shared::config::Config;
 use sqlx::PgPool;
@@ -41,6 +41,7 @@ pub(crate) struct AppState {
     pub identity: Arc<IdentityService>,
     pub media: Arc<MediaService>,
     pub content: Arc<ContentService>,
+    pub profile: Arc<ProfileService>,
     pub taxonomy: Arc<TaxonomyService>,
     pub publishing: Arc<PublishingService>,
     pub public_site: Arc<PublicSiteService>,
@@ -87,6 +88,7 @@ pub async fn build_router_with_storage(
     );
     let state = AppState {
         config: Arc::new(config),
+        profile: Arc::new(profile_service(pool.clone())),
         pool,
         identity,
         media,
@@ -109,6 +111,7 @@ pub async fn build_router_with_storage(
             "/api/v1/admin/users",
             get(http::users).post(http::create_user),
         )
+        .route("/api/v1/admin/users/profile", put(http::save_profile))
         // 静态路径 `me` 优先于 `{id}` 参数匹配，表示当前登录账户。
         .route("/api/v1/admin/users/me", get(http::user_info))
         .route(

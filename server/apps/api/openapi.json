@@ -4,7 +4,7 @@
     "info": {
         "title": "Silva 后台 API",
         "version": "0.1.0",
-        "description": "Silva 后台管理 API。\n\n**已开放**：运维监控、身份认证、内置角色权限、账户管理与审计。CMS、媒体、发布、资源目录和采集接口尚未开放。\n\n## 快速开始\n\n1. 调用 `POST /api/v1/admin/sessions` 获取 `access_token` 与 `refresh_token`。\n2. 其他管理接口在请求头携带 `Authorization: Bearer <access_token>`。\n3. 收到 `401 token_expired` 后，调用 `POST /api/v1/admin/tokens` 换取新令牌对。\n\n## 响应结构\n\n| 场景 | 正文 |\n| --- | --- |\n| 成功 | `{\"data\": ...}` |\n| 分页列表 | `{\"data\": [...], \"meta\": {\"pagination\": ...}}` |\n| 失败 | `{\"error\": {\"code\", \"message\", \"details\"}}` |\n\n运维端点 `/health/live`、`/metrics` 不套用该结构。\n\n## 约定\n\n- **时间**：响应统一为北京时间（`+08:00`）的 RFC 3339 字符串；请求参数接受任意 RFC 3339 偏移，查询串中的 `+` 须编码为 `%2B`。\n- **请求追踪**：响应头 `X-Request-Id` 为服务端生成的 UUIDv7，错误正文不重复携带；`X-Trace-Id` 为 32 位小写十六进制 W3C trace ID。\n- **传输**：生产环境须通过 HTTPS 访问。\n- **调试**：导入 Apifox 预览和调试；示例中的账户、密码与令牌均为虚构。\n\n完整规范见 `server/docs/contracts/api-response.md`。"
+        "description": "Silva 后台管理 API。\n\n**已开放**：运维监控、身份认证、内置角色权限、账户与审计、媒体、文章、分类标签、个人资料、站点发布和公开数据读取。\n\n## 快速开始\n\n1. 调用 `POST /api/v1/admin/sessions` 获取 `access_token` 与 `refresh_token`。\n2. 其他管理接口在请求头携带 `Authorization: Bearer <access_token>`。\n3. 收到 `401 token_expired` 后，调用 `POST /api/v1/admin/tokens` 换取新令牌对。\n\n## 响应结构\n\n| 场景 | 正文 |\n| --- | --- |\n| 成功 | `{\"data\": ...}` |\n| 分页列表 | `{\"data\": [...], \"meta\": {\"pagination\": ...}}` |\n| 失败 | `{\"error\": {\"code\", \"message\", \"details\"}}` |\n\n运维端点 `/health/live`、`/metrics` 不套用该结构。\n\n## 约定\n\n- **时间**：响应统一为北京时间（`+08:00`）的 RFC 3339 字符串；请求参数接受任意 RFC 3339 偏移，查询串中的 `+` 须编码为 `%2B`。\n- **请求追踪**：响应头 `X-Request-Id` 为服务端生成的 UUIDv7，错误正文不重复携带；`X-Trace-Id` 为 32 位小写十六进制 W3C trace ID。\n- **传输**：生产环境须通过 HTTPS 访问。\n- **调试**：导入 Apifox 预览和调试；示例中的账户、密码与令牌均为虚构。\n\n完整规范见 `server/docs/contracts/api-response.md`。"
     },
     "servers": [
         {
@@ -1112,6 +1112,202 @@
                     }
                 },
                 "description": "修改当前账户的密码。\n\n- **保留当前会话**，撤销该账户的**其他所有会话**。\n- 与登录共用每 IP 登录限流额度。"
+            }
+        },
+        "/api/v1/admin/users/profile": {
+            "put": {
+                "operationId": "replaceAdminProfile",
+                "summary": "整体保存个人资料",
+                "description": "首次保存创建资料。三个数组必填，按数组顺序展示；可选字段省略或传 null 时清除。内容相同时复用当前站点目标。资料随构建成功上线。",
+                "tags": [
+                    "账户管理"
+                ],
+                "x-required-permission": "profile.manage",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProfileInput"
+                            },
+                            "example": {
+                                "display_name": "林",
+                                "headline": null,
+                                "bio_md": "我在做 Silva。",
+                                "location": null,
+                                "avatar_media_id": null,
+                                "experiences": [],
+                                "skills": [
+                                    {
+                                        "name": "Rust",
+                                        "category": "后端",
+                                        "proficiency": null
+                                    }
+                                ],
+                                "links": []
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "资料已保存，返回对应的发布目标。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SiteTargetResponse"
+                                },
+                                "example": {
+                                    "data": {
+                                        "publish_job_id": "019535db-2222-7333-9444-555566667777",
+                                        "desired_generation": 12
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/MalformedJson"
+                    },
+                    "409": {
+                        "description": "头像媒体尚未通过校验。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "media_not_ready",
+                                        "message": "Media is not ready",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "media_not_ready"
+                        ]
+                    },
+                    "413": {
+                        "description": "JSON 请求正文超过 64 KiB。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "payload_too_large",
+                                        "message": "Request body is too large",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "payload_too_large"
+                        ]
+                    },
+                    "415": {
+                        "description": "`Content-Type` 必须为 `application/json`。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "unsupported_media_type",
+                                        "message": "Expected application/json",
+                                        "details": []
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "unsupported_media_type"
+                        ]
+                    },
+                    "422": {
+                        "description": "资料字段无效或头像媒体不存在。",
+                        "headers": {
+                            "X-Request-Id": {
+                                "$ref": "#/components/headers/RequestId"
+                            },
+                            "X-Trace-Id": {
+                                "$ref": "#/components/headers/TraceId"
+                            }
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": {
+                                        "code": "validation_error",
+                                        "message": "Request validation failed",
+                                        "details": [
+                                            {
+                                                "field": "avatar_media_id",
+                                                "code": "invalid_value",
+                                                "message": "avatar media does not exist"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "x-error-codes": [
+                            "validation_error"
+                        ]
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    },
+                    "default": {
+                        "$ref": "#/components/responses/Error"
+                    }
+                }
             }
         },
         "/api/v1/admin/users/{id}": {
@@ -13918,6 +14114,182 @@
                             "featured": []
                         }
                     }
+                ]
+            },
+            "ProfileInput": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "display_name": {
+                        "type": "string",
+                        "pattern": "\\S"
+                    },
+                    "headline": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "bio_md": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "location": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "avatar_media_id": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/UuidV7"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "experiences": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "organization": {
+                                    "type": "string",
+                                    "pattern": "\\S"
+                                },
+                                "role": {
+                                    "type": "string",
+                                    "pattern": "\\S"
+                                },
+                                "description_md": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "started_on": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "ended_on": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string",
+                                            "format": "date"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "organization",
+                                "role"
+                            ]
+                        }
+                    },
+                    "skills": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "pattern": "\\S"
+                                },
+                                "category": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "proficiency": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "name"
+                            ]
+                        }
+                    },
+                    "links": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "platform": {
+                                    "type": "string",
+                                    "pattern": "\\S"
+                                },
+                                "label": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string"
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                }
+                            },
+                            "required": [
+                                "platform",
+                                "url"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "display_name",
+                    "experiences",
+                    "skills",
+                    "links"
                 ]
             }
         }

@@ -1,6 +1,6 @@
 # Silva API 接入指南
 
-当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询、媒体上传、文章与审核、分类标签、站点发布任务和 Public API。个人资料维护与 AI 采集接口尚未开放。
+当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询、媒体上传、文章与审核、分类标签、个人资料维护、站点发布任务和 Public API。AI 采集接口尚未开放。
 
 ## OpenAPI 交付与 Apifox 导入
 
@@ -61,6 +61,13 @@ SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/refresh.json")
 ```
 
 刷新同样返回 201，正文与登录相同：`{"data": {"access_token", "refresh_token", "access_token_expires_at", "refresh_token_expires_at"}}`。同一 refresh token 并发提交时只有一次成功。
+
+## 管理个人资料
+
+Editor 和 Admin 使用 `profile.manage` 维护 About 页面的资料。首次启用时运行标准迁移命令 `make migrate`，为现有内置角色同步权限。
+
+- `PUT /api/v1/admin/users/profile` 整体替换资料。提交 `display_name` 和有序数组 `experiences`、`skills`、`links`。空数组清空该列表，省略可选字段或传入 null 会清除原值。头像引用已校验的媒体 ID。
+- 保存返回 200，`data.publish_job_id` 和 `data.desired_generation` 可用于查询发布进度。重复提交相同内容会返回包含该资料的当前站点目标。站点版本激活后，`/about` 和 `GET /api/v1/public/profile` 才展示更新。
 
 ## 查询列表与更新账户
 
@@ -155,6 +162,7 @@ async function uploadImage(file: File, accessToken: string) {
 | 文章读取、保存修订、送审 | `posts.manage` 可访问全部文章；只有 `posts.read_own`、`posts.edit_own`、`posts.submit_own` 时只能访问本人文章，他人文章返回 404 |
 | 创建文章 | `posts.create` |
 | 审核决定 / 上线与撤下 | `posts.review` / `posts.publish`（Editor、Admin） |
+| 整体保存个人资料 | `profile.manage`（Editor、Admin） |
 | 分类标签读取 / 维护 | 任一内容权限 / `taxonomy.manage`（Editor、Admin） |
 | 发布任务查询 | `jobs.read` 可查看全部；只有 `jobs.read_own` 时只返回本人触发的任务 |
 | 登记全站重建、重试失败任务 | `publishing.retry`（Admin） |

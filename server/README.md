@@ -2,7 +2,7 @@
 
 Rust + Axum + Tokio + SQLx + PostgreSQL 的模块化单体。API、Worker 和运维 CLI 共用领域与用例，分别运行。
 
-当前交付后端技术方案的前三个里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理；经服务端流式上传到 Cloudflare R2 或阿里云 OSS 的图片媒体；文章的不可变修订、分类标签、审核、发布与取消发布；以及 Worker 导出快照、构建 Astro 站点、上传产物并原子切换线上版本，Public API 与静态站点入口只读取当前线上版本。个人资料维护与 GitHub 采集在后续里程碑实现。Worker 执行会话维护、过期媒体清理和站点发布。
+当前交付后端技术方案的前四个里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理；经服务端流式上传到 Cloudflare R2 或阿里云 OSS 的图片媒体；文章的不可变修订、分类标签、审核、发布与取消发布；以及 Worker 导出快照、构建 Astro 站点、上传产物并原子切换线上版本，Public API 与静态站点入口只读取当前线上版本。Editor/Admin 可整体保存个人资料，由同一发布流程更新 About 页面与公开 API。GitHub 采集排在后续里程碑。Worker 执行会话维护、过期媒体清理和站点发布。
 
 ## 本地启动
 

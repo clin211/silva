@@ -179,6 +179,7 @@ pub struct SnapshotExperience {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotSkill {
     pub name: String,
     pub category: Option<String>,
@@ -186,6 +187,7 @@ pub struct SnapshotSkill {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotLink {
     pub platform: String,
     pub label: Option<String>,

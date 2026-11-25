@@ -6,7 +6,7 @@
 
 1. **路径只由名词组成。** 路径表示资源，动作由 HTTP 方法表达。路径中不出现 `login`、`logout`、`refresh`、`info`、`create`、`update`、`delete`、`submit`、`publish`、`retry`、`complete` 之类的动词。
 2. **集合用复数名词**：`/users`、`/audit-logs`。集合中的单个资源用 ID 定位：`/users/{id}`。
-3. **单例资源用单数名词**：一个父资源下只有一份的资源，如 `/profile`、`/posts/{id}/publication`、`/users/me/password`。
+3. **单例资源用单数名词**：一个父资源下只有一份的资源，如 `/users/profile`、`/posts/{id}/publication`、`/users/me/password`。
 4. **命名：** 路径段使用小写 kebab-case（`audit-logs`）；查询参数和 JSON 字段使用 `snake_case`。路径不带尾斜杠，不带扩展名。
 5. **层级：** 只有从属关系才嵌套，最多嵌套到 `/{父集合}/{id}/{子集合}/{子id}`。能独立定位的资源不要嵌套。
 6. **别名：** `me` 表示当前登录账户（`/users/me`），`current` 表示当前会话（`/sessions/current`）。别名是静态路径段，路由中优先于 `{id}` 匹配。

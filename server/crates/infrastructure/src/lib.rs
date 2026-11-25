@@ -5,6 +5,7 @@ pub mod markdown;
 pub mod media;
 pub mod object_storage;
 pub mod persistence;
+pub mod profile;
 pub mod publishing;
 pub mod site_builder;
 pub mod taxonomy;
@@ -61,6 +62,12 @@ pub fn content_service(pool: sqlx::PgPool) -> ContentService {
         Arc::new(content::PgContentRepository::new(pool)),
         Arc::new(markdown::CommonMarkRenderer),
     )
+}
+
+pub fn profile_service(pool: sqlx::PgPool) -> silva_application::profile::ProfileService {
+    silva_application::profile::ProfileService::new(Arc::new(profile::PgProfileRepository::new(
+        pool,
+    )))
 }
 
 pub fn taxonomy_service(pool: sqlx::PgPool) -> TaxonomyService {

@@ -66,6 +66,14 @@ impl SiteBuilder for SnapshotPages {
                 format!("posts:{}", snapshot.posts.len()),
             ),
             page("404.html".into(), "not found".into()),
+            page(
+                "about/index.html".into(),
+                snapshot
+                    .profile
+                    .as_ref()
+                    .map(|p| p.display_name.clone())
+                    .unwrap_or_default(),
+            ),
             BuiltFile {
                 path: "_astro/site.css".into(),
                 content_type: "text/css; charset=utf-8".into(),
@@ -1260,4 +1268,169 @@ async fn run(pool: &PgPool, database_url: String) {
             "缺少审计 {expected}: {actions:?}"
         );
     }
+    profile_publishing(
+        pool,
+        &app,
+        &site_app,
+        &worker,
+        &builder,
+        (&admin, &editor, &author),
+    )
+    .await;
+}
+
+async fn profile_publishing(
+    pool: &PgPool,
+    app: &Router,
+    site_app: &Router,
+    worker: &silva_application::publishing::PublishingService,
+    builder: &Switchable,
+    (admin, editor, author): (&str, &str, &str),
+) {
+    let path = "/api/v1/admin/users/profile";
+    let public = "/api/v1/public/profile";
+    let avatar = ready_media(app, author).await;
+    let first = json!({
+        "display_name": "Profile One", "avatar_media_id": avatar, "bio_md": "**hello**",
+        "experiences": [{"organization": "Silva", "role": "维护者", "description_md": "**经验**",
+            "started_on": "2024-02-29", "ended_on": null}],
+        "skills": [{"name":"Rust"}, {"name":"Go", "category":"后端"}],
+        "links": [{"platform":"mail", "url":"mailto:hello@example.test"}]
+    });
+    assert_error(
+        &get(app, "/api/v1/admin/profile", admin).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+    assert_error(
+        &get(app, path, admin).await,
+        StatusCode::METHOD_NOT_ALLOWED,
+        "method_not_allowed",
+    );
+    assert_error(
+        &api(app, Method::PUT, path, Some(first.clone()), author).await,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+    );
+
+    // 并发首次保存只能创建一份资料，且共用同一发布任务。
+    let (a, b) = tokio::join!(
+        api(app, Method::PUT, path, Some(first.clone()), editor),
+        api(app, Method::PUT, path, Some(first.clone()), admin)
+    );
+    assert_eq!(a.status, StatusCode::OK, "{}", a.json);
+    assert_eq!(b.status, StatusCode::OK, "{}", b.json);
+    assert_eq!(a.json, b.json);
+    let generation = a.json["data"]["desired_generation"].as_i64().unwrap();
+    let job = a.json["data"]["publish_job_id"].as_str().unwrap();
+    assert_eq!(
+        get(app, &format!("/api/v1/admin/publishing/jobs/{job}"), editor)
+            .await
+            .json["data"]["trigger_type"],
+        "profile.update"
+    );
+    assert_error(
+        &get(app, public, author).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+
+    let mut invalid = first.clone();
+    invalid["experiences"][0]["ended_on"] = json!("2020-01-01");
+    invalid["links"][0]["url"] = json!("relative");
+    let response = api(app, Method::PUT, path, Some(invalid), editor).await;
+    assert_field(&response, "experiences[0].ended_on", "invalid_value");
+    assert_field(&response, "links[0].url", "invalid_format");
+    let mut invalid = first.clone();
+    let pending = ids::new_id();
+    invalid["avatar_media_id"] = json!(pending);
+    assert_field(
+        &api(app, Method::PUT, path, Some(invalid.clone()), editor).await,
+        "avatar_media_id",
+        "invalid_value",
+    );
+    sqlx::query("INSERT INTO media_assets (id, upload_key, original_filename, declared_mime_type, declared_size_bytes, upload_expires_at) VALUES ($1,'pending-avatar','avatar.png','image/png',1,now())")
+        .bind(pending).execute(pool).await.unwrap();
+    assert_error(
+        &api(app, Method::PUT, path, Some(invalid), editor).await,
+        StatusCode::CONFLICT,
+        "media_not_ready",
+    );
+
+    assert_eq!(
+        worker.run_once().await.unwrap(),
+        Some(PublishOutcome::Activated { generation })
+    );
+    let live = get(app, public, author).await;
+    assert_eq!(live.generation(), Some(generation));
+    assert_eq!(live.json["data"]["avatar"]["media_id"], avatar);
+    assert_eq!(live.json["data"]["skills"][1]["name"], "Go");
+    assert!(
+        live.json["data"]["bio_html"]
+            .as_str()
+            .unwrap()
+            .contains("<strong>hello</strong>")
+    );
+    assert!(
+        live.json["data"]["experiences"][0]["description_html"]
+            .as_str()
+            .unwrap()
+            .contains("<strong>经验</strong>")
+    );
+    let second =
+        json!({"display_name": "Profile Two", "experiences": [], "skills": [], "links": []});
+    let saved = api(app, Method::PUT, path, Some(second), admin).await;
+    let next = saved.json["data"]["desired_generation"].as_i64().unwrap();
+    assert_eq!(next, generation + 1);
+    let media_path = format!("/api/v1/admin/media/{avatar}");
+    builder.fail.store(true, Ordering::SeqCst);
+    assert!(
+        matches!(worker.run_once().await.unwrap(), Some(PublishOutcome::Failed {generation, ..}) if generation==next)
+    );
+    assert_error(
+        &api(app, Method::DELETE, &media_path, None, editor).await,
+        StatusCode::CONFLICT,
+        "media_in_use",
+    );
+    assert_eq!(
+        get(app, &format!("/api/v1/public/media/{avatar}"), author)
+            .await
+            .bytes,
+        png()
+    );
+    assert_eq!(get(app, public, author).await.json, live.json);
+    let about = get(site_app, "/about/", author).await;
+    assert!(about.text().contains("Profile One"));
+    assert_eq!(about.generation(), Some(generation));
+    builder.fail.store(false, Ordering::SeqCst);
+    sqlx::query("UPDATE publish_jobs SET retry_after=now() WHERE generation=$1")
+        .bind(next)
+        .execute(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        worker.run_once().await.unwrap(),
+        Some(PublishOutcome::Activated { generation: next })
+    );
+    let refreshed = get(app, public, author).await;
+    assert_eq!(refreshed.generation(), Some(next));
+    assert_eq!(refreshed.json["data"]["display_name"], "Profile Two");
+    assert!(refreshed.json["data"]["avatar"].is_null());
+    assert_eq!(refreshed.json["data"]["skills"], json!([]));
+    assert_eq!(refreshed.json["data"]["experiences"], json!([]));
+    let about = get(site_app, "/about/", author).await;
+    assert!(about.text().contains("Profile Two"));
+    assert_eq!(about.generation(), Some(next));
+    assert_eq!(
+        api(app, Method::DELETE, &media_path, None, editor)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    let saves: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_logs WHERE action='profile.update'")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(saves, 2);
 }

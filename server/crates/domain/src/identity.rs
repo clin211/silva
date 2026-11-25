@@ -17,6 +17,7 @@ pub const EDITOR_PERMISSIONS: &[&str] = &[
     "posts.publish",
     "media.manage",
     "taxonomy.manage",
+    "profile.manage",
     "resources.manage",
     "ai.manage",
     "jobs.read",

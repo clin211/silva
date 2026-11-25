@@ -815,7 +815,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | POST               | `/media`                                                                                                  | 流式上传图片并返回只读链接，201，见 §6.4                                    |
 | GET, PATCH, DELETE | `/media/{id}`                                                                                             | 媒体元数据、修改替代文本和授权删除；列表使用 `GET /media` |
 | GET                | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存                                            |
-| GET, PUT           | `/profile`                                                                                                | 读取和整体保存单例个人资料                                                  |
+| PUT                | `/users/profile`                                                                                                | 整体保存 About 页面的单例个人资料                                                  |
 | GET                | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                                                          |
 | PATCH              | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                                                   |
 | GET, POST          | `/ai-trending/ingestion-runs`                                                                             | 采集批次、错误与限流信息；Admin 请求当日批次，运行中或已成功返回现有记录    |

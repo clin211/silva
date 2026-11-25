@@ -352,25 +352,28 @@ impl PublishingService {
                 .filter(|value| !value.trim().is_empty())
                 .map(|value| self.renderer.render(&value, &HashMap::new()).html)
         };
-        let profile = site.profile.map(|profile| SnapshotProfile {
-            display_name: profile.display_name,
-            headline: profile.headline,
-            bio_html: render(profile.bio_md),
-            location: profile.location,
-            avatar: profile.avatar,
-            experiences: profile
-                .experiences
-                .into_iter()
-                .map(|experience| SnapshotExperience {
-                    organization: experience.organization,
-                    role: experience.role,
-                    description_html: render(experience.description_md),
-                    started_on: experience.started_on,
-                    ended_on: experience.ended_on,
-                })
-                .collect(),
-            skills: profile.skills,
-            links: profile.links,
+        let profile = site.profile.map(|exported| {
+            let profile = exported.profile;
+            SnapshotProfile {
+                display_name: profile.display_name,
+                headline: profile.headline,
+                bio_html: render(profile.bio_md),
+                location: profile.location,
+                avatar: exported.avatar,
+                experiences: profile
+                    .experiences
+                    .into_iter()
+                    .map(|experience| SnapshotExperience {
+                        organization: experience.organization,
+                        role: experience.role,
+                        description_html: render(experience.description_md),
+                        started_on: experience.started_on,
+                        ended_on: experience.ended_on,
+                    })
+                    .collect(),
+                skills: profile.skills,
+                links: profile.links,
+            }
         });
         SiteSnapshot {
             schema_version: SNAPSHOT_SCHEMA_VERSION,

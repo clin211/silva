@@ -22,7 +22,8 @@ const MEDIA_COLUMNS: &str = "id,status,original_filename,declared_mime_type,decl
 /// 媒体 `m` 未被任何文章修订、修订正文或个人资料引用；新增引用媒体的表时同步扩充。
 const UNREFERENCED: &str = "NOT EXISTS (SELECT 1 FROM post_revisions r WHERE r.cover_media_id=m.id) \
      AND NOT EXISTS (SELECT 1 FROM post_revision_media rm WHERE rm.media_id=m.id) \
-     AND NOT EXISTS (SELECT 1 FROM profiles p WHERE p.avatar_media_id=m.id)";
+     AND NOT EXISTS (SELECT 1 FROM profiles p WHERE p.avatar_media_id=m.id) \
+     AND NOT EXISTS (SELECT 1 FROM site_state s WHERE s.active_avatar_media_id=m.id)";
 
 /// 媒体列表筛选；`$1` 状态、`$2` 上传者，未提供时绑定 NULL。
 const MEDIA_FILTER: &str =
