@@ -165,7 +165,7 @@
 | 413 | `payload_too_large` | 请求体超过 64 KiB | 缩小请求 |
 | 415 | `unsupported_media_type` | `Content-Type` 不是 `application/json` 或 `application/*+json` | 修正请求头 |
 | 422 | `validation_error` | 输入不满足约束，`details` 中列出具体字段 | 按 `details` 标注表单 |
-| 422 | `media_invalid` | 上传的文件未通过图片校验，媒体变为 `rejected`；`message` 含拒绝原因，详情见媒体的 `rejection_reason`，`details` 为空 | 提示原因并重新申请上传 |
+| 422 | `media_invalid` | 上传的文件未通过图片校验；`message` 含拒绝原因，详情见媒体的 `rejection_reason`，`details` 为空 | 提示原因并更换文件重新上传 |
 | 429 | `rate_limited` | 超过请求频率限制 | 按 `Retry-After` 秒数等待后重试 |
 | 500 | `internal_error` | 服务端内部错误 | 展示通用错误和响应头 `X-Request-Id` |
 | 503 | `storage_unavailable` | 服务端未配置对象存储（生产环境 API 不会以此状态启动） | 提示媒体功能暂不可用 |

@@ -29,7 +29,7 @@ pub struct Config {
     pub login_lockout_duration: Duration,
     /// 私有对象存储；未配置 `SILVA_STORAGE_PROVIDER` 时为 None，媒体接口返回 503。
     pub storage: Option<StorageConfig>,
-    /// 媒体直传预签名地址及上传确认的有效期。
+    /// 媒体查看链接的有效期，也用于待处理上传的清理期限。
     pub media_upload_ttl: Duration,
     /// 公开站点构建；未配置 `SILVA_SITE_BUILDER_DIR` 时 Worker 不处理发布任务。
     pub site_build: Option<SiteBuildConfig>,

@@ -142,27 +142,42 @@ fn config(database_url: String) -> Config {
     }
 }
 
-/// 申请上传并返回（媒体 ID、直传地址、完整响应）。
-async fn create(
+async fn upload(
     app: &Router,
     token: &str,
-    filename: &str,
+    name: &str,
     mime: &str,
-    size: usize,
-) -> (Uuid, String, Response) {
-    let response = request(
-        app,
-        Method::POST,
-        "/api/v1/admin/media",
-        Some(json!({"filename": filename, "declared_mime_type": mime, "size_bytes": size})),
-        token,
-    )
-    .await;
-    assert_eq!(response.status, StatusCode::CREATED, "{}", response.json);
-    let data = &response.json["data"];
-    let id: Uuid = data["media"]["id"].as_str().unwrap().parse().unwrap();
-    let url = data["upload"]["url"].as_str().unwrap().to_owned();
-    (id, url, response)
+    bytes: &[u8],
+    length: usize,
+) -> Response {
+    let (status, headers, json) = storage::post_image(app, token, name, mime, bytes, length).await;
+    Response {
+        status,
+        headers,
+        json,
+        bytes: Vec::new(),
+    }
+}
+
+/// 模拟升级前已申请的临时记录，用于验证过期清理兼容性。
+async fn pending(pool: &PgPool, name: &str, owner: Uuid) -> Uuid {
+    let id = ids::new_id();
+    silva_infrastructure::media::PgMediaRepository::new(pool.clone())
+        .create(
+            &silva_application::ports::NewMedia {
+                id,
+                upload_key: format!("uploads/{id}"),
+                original_filename: name.into(),
+                declared_mime_type: "image/png".into(),
+                declared_size_bytes: 20,
+                upload_expires_at: chrono::Utc::now() + chrono::Duration::minutes(15),
+                uploaded_by: owner,
+            },
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+    id
 }
 
 async fn confirm(app: &Router, token: &str, id: Uuid) -> Response {
@@ -247,58 +262,44 @@ async fn run(pool: &PgPool, database_url: String) {
     let other = login(&app, "other@example.test").await;
     let editor = login(&app, "editor@example.test").await;
 
-    // 申请直传：201、Location、直传说明指向临时键；未上传前确认返回 409。
     let png = encode(40, 30, image::ImageFormat::Png);
-    let (id, url, created) = create(&app, &author, " cover.png ", "image/png", png.len()).await;
-    assert_eq!(
-        created.headers[header::LOCATION],
-        format!("/api/v1/admin/media/{id}").as_str()
-    );
-    let data = &created.json["data"];
-    assert_eq!(data["media"]["status"], "pending");
-    assert_eq!(data["media"]["original_filename"], "cover.png");
-    assert_eq!(data["upload"]["method"], "PUT");
-    assert_eq!(data["upload"]["headers"]["content-type"], "image/png");
-    assert_eq!(
-        data["upload"]["expires_at"],
-        data["media"]["upload_expires_at"]
-    );
-    assert!(url.contains(&format!("uploads/{id}")));
-    assert_error(
-        &confirm(&app, &author, id).await,
-        StatusCode::CONFLICT,
-        "upload_incomplete",
-    );
-
-    // 上传合法 PNG 后确认：写入正式对象、删除临时对象，重复确认返回同一结果。
-    assert!(
-        !storage.upload(&url, &[png.as_slice(), &[0; 16]].concat()),
-        "大小与签名不符的直传被拒绝"
-    );
-    assert!(storage.upload(&url, &png));
-    let confirmed = request(
+    let created = upload(
         &app,
-        Method::PATCH,
-        &format!("/api/v1/admin/media/{id}"),
-        Some(json!({"status": "uploaded", "alt_text": "  热气球封面 "})),
         &author,
+        "",
+        "application/octet-stream",
+        &png,
+        png.len(),
     )
     .await;
-    assert_eq!(confirmed.status, StatusCode::OK, "{}", confirmed.json);
-    let media = &confirmed.json["data"];
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
+    let media = &created.json["data"]["media"];
+    let id: Uuid = media["id"].as_str().unwrap().parse().unwrap();
+    let owner: Uuid = media["uploaded_by"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        created.headers[header::LOCATION],
+        format!("/api/v1/admin/media/{id}")
+    );
+    assert_eq!(
+        created.json["data"]["url"],
+        format!("https://storage.test/media/{id}?read=1")
+    );
+    assert_eq!(media["original_filename"], "image");
     assert_eq!(media["status"], "ready");
     assert_eq!(media["mime_type"], "image/png");
     assert_eq!(media["size_bytes"], png.len());
-    assert_eq!(
-        (media["width"].clone(), media["height"].clone()),
-        (json!(40), json!(30))
-    );
-    assert_eq!(media["alt_text"], "热气球封面");
+    assert_eq!(media["width"], 40);
+    assert_eq!(media["height"], 30);
     assert_eq!(storage.keys(), [format!("media/{id}")]);
-    let again = confirm(&app, &author, id).await;
-    assert_eq!(again.status, StatusCode::OK);
-    assert_eq!(again.json["data"]["size_bytes"], png.len());
-
+    let edited = request(
+        &app,
+        Method::PATCH,
+        &format!("/api/v1/admin/media/{id}"),
+        Some(json!({"alt_text":"  热气球封面 "})),
+        &author,
+    )
+    .await;
+    assert_eq!(edited.json["data"]["alt_text"], "热气球封面");
     // 授权读取内容：原始字节、实际类型、不缓存并带沙箱 CSP。
     let content = request(
         &app,
@@ -347,26 +348,26 @@ async fn run(pool: &PgPool, database_url: String) {
 
     // 按实际字节识别类型：声明 JPEG、实际 WebP 时以 WebP 记录。
     let webp = encode(8, 8, image::ImageFormat::WebP);
-    let (webp_id, webp_url, _) = create(&app, &other, "photo.jpg", "image/jpeg", webp.len()).await;
-    assert!(storage.upload(&webp_url, &webp));
-    let webp = confirm(&app, &other, webp_id).await;
-    assert_eq!(webp.json["data"]["mime_type"], "image/webp");
-    assert_eq!(webp.json["data"]["declared_mime_type"], "image/jpeg");
-
-    // 不合格文件：422 media_invalid，记录变为 rejected，重复确认返回同一错误，内容不可读。
-    let gif = b"GIF89a\x01\x00\x01\x00\x00\x00\x00;";
-    let (bad_id, bad_url, _) = create(&app, &author, "anim.gif", "image/png", gif.len()).await;
-    assert!(storage.upload(&bad_url, gif));
-    for _ in 0..2 {
-        let rejected = confirm(&app, &author, bad_id).await;
-        assert_error(&rejected, StatusCode::UNPROCESSABLE_ENTITY, "media_invalid");
-        assert!(
-            rejected.json["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("unsupported_format")
-        );
-    }
+    let result = upload(&app, &other, "photo.jpg", "image/jpeg", &webp, webp.len()).await;
+    let media = &result.json["data"]["media"];
+    let webp_id: Uuid = media["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(media["mime_type"], "image/webp");
+    assert_eq!(media["declared_mime_type"], "image/jpeg");
+    let corrupt = &png[..24];
+    let rejected = upload(
+        &app,
+        &author,
+        "bad.png",
+        "image/png",
+        corrupt,
+        corrupt.len(),
+    )
+    .await;
+    assert_error(&rejected, StatusCode::UNPROCESSABLE_ENTITY, "media_invalid");
+    let bad_id: Uuid = sqlx::query_scalar("SELECT id FROM media_assets WHERE status='rejected'")
+        .fetch_one(pool)
+        .await
+        .unwrap();
     let detail = request(
         &app,
         Method::GET,
@@ -376,10 +377,7 @@ async fn run(pool: &PgPool, database_url: String) {
     )
     .await;
     assert_eq!(detail.json["data"]["status"], "rejected");
-    assert_eq!(
-        detail.json["data"]["rejection_reason"],
-        "unsupported_format"
-    );
+    assert_eq!(detail.json["data"]["rejection_reason"], "undecodable");
     assert_error(
         &request(
             &app,
@@ -395,8 +393,7 @@ async fn run(pool: &PgPool, database_url: String) {
     assert!(!storage.keys().contains(&format!("uploads/{bad_id}")));
 
     // 过期后确认返回 409 upload_expired，记录保持 pending。
-    let (late_id, late_url, _) = create(&app, &author, "late.png", "image/png", png.len()).await;
-    assert!(storage.upload(&late_url, &png));
+    let late_id = pending(pool, "late.png", owner).await;
     sqlx::query(
         "UPDATE media_assets SET upload_expires_at = now() - interval '1 second' WHERE id = $1",
     )
@@ -410,25 +407,21 @@ async fn run(pool: &PgPool, database_url: String) {
         "upload_expired",
     );
 
-    // 输入校验。
-    let invalid = request(
-        &app,
-        Method::POST,
-        "/api/v1/admin/media",
-        Some(json!({"filename": "a.svg", "declared_mime_type": "image/svg+xml", "size_bytes": 10_485_761})),
-        &author,
-    )
-    .await;
+    // 超限在读取请求体前拒绝；实际字节数也必须匹配。
+    let oversized = upload(&app, &author, "x.png", "image/png", &[], 10_485_761).await;
+    assert_error(
+        &oversized,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "payload_too_large",
+    );
+    let invalid = upload(&app, &author, "short.png", "image/png", &png[..7], 6).await;
     assert_error(
         &invalid,
         StatusCode::UNPROCESSABLE_ENTITY,
         "validation_error",
     );
-    assert_eq!(
-        invalid.json["error"]["details"].as_array().unwrap().len(),
-        2
-    );
-
+    let invalid = upload(&app, &author, "fake.png", "image/png", &[42; 24], 24).await;
+    assert_error(&invalid, StatusCode::UNPROCESSABLE_ENTITY, "media_invalid");
     // 被个人资料或文章修订引用时不能删除；解除引用后删除记录和正式对象。
     sqlx::query(
         "INSERT INTO profiles (id, display_name, avatar_media_id) VALUES ($1, 'Owner', $2)",
@@ -497,7 +490,7 @@ async fn run(pool: &PgPool, database_url: String) {
         ]
     );
     let rejected: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM audit_logs WHERE action='media.rejected' AND resource_id=$1 AND metadata->>'reason'='unsupported_format'",
+        "SELECT count(*) FROM audit_logs WHERE action='media.rejected' AND resource_id=$1 AND metadata->>'reason'='undecodable'",
     )
     .bind(bad_id)
     .fetch_one(pool)
@@ -555,7 +548,7 @@ async fn run(pool: &PgPool, database_url: String) {
     // 单条清理失败不中断整批，失败记录排到后面；仍被引用的过期记录不清理。
     let mut expired = Vec::new();
     for name in ["a.png", "b.png", "c.png"] {
-        let (id, _, _) = create(&app, &author, name, "image/png", png.len()).await;
+        let id = pending(pool, name, owner).await;
         expired.push(id);
     }
     sqlx::query(
@@ -594,7 +587,7 @@ async fn run(pool: &PgPool, database_url: String) {
             .await
             .unwrap();
     assert!(attempted.is_some(), "失败的记录被标记");
-    let (later, _, _) = create(&app, &author, "d.png", "image/png", png.len()).await;
+    let later = pending(pool, "d.png", owner).await;
     sqlx::query(
         "UPDATE media_assets SET upload_expires_at = now() - interval '2 hours' WHERE id = $1",
     )
@@ -621,12 +614,13 @@ async fn run(pool: &PgPool, database_url: String) {
             .await
             .unwrap();
     assert_error(
-        &request(
+        &upload(
             &unconfigured,
-            Method::POST,
-            "/api/v1/admin/media",
-            Some(json!({"filename": "a.png", "declared_mime_type": "image/png", "size_bytes": 1})),
             &author,
+            "a.png",
+            "image/png",
+            &png,
+            png.len(),
         )
         .await,
         StatusCode::SERVICE_UNAVAILABLE,

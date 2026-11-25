@@ -237,8 +237,8 @@ impl MediaRepository for MemoryRepository {
 #[derive(Default)]
 struct MemoryStorage {
     objects: Mutex<HashMap<String, Vec<u8>>>,
-    /// 最近一次签发的直传地址绑定的字节数。
-    signed_length: Mutex<Option<u64>>,
+    /// 收到第一块上传字节时唤醒测试客户端。
+    receiving: tokio::sync::Notify,
     /// 删除时总是失败的键。
     failing_deletes: Mutex<std::collections::HashSet<String>>,
 }
@@ -258,21 +258,29 @@ impl MemoryStorage {
 
 #[async_trait]
 impl ObjectStorage for MemoryStorage {
-    async fn presign_put(
+    async fn put_stream(
         &self,
         key: &str,
-        content_type: &str,
-        content_length: u64,
-        _expires_in: Duration,
-    ) -> Result<PresignedUpload> {
-        *self.signed_length.lock().unwrap() = Some(content_length);
-        Ok(PresignedUpload {
-            method: "PUT".into(),
-            url: format!("https://storage.test/{key}?signature=x"),
-            headers: vec![("content-type".into(), content_type.into())],
-        })
+        mime: &str,
+        length: u64,
+        mut body: crate::ports::ByteStream,
+    ) -> Result<()> {
+        use futures_util::StreamExt;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = body.next().await {
+            bytes.extend_from_slice(&chunk.unwrap());
+            self.receiving.notify_one();
+        }
+        assert_eq!(bytes.len() as u64, length);
+        assert_eq!(
+            self.put_if_absent(key, bytes, mime).await?,
+            PutOutcome::Created
+        );
+        Ok(())
     }
-
+    async fn view_url(&self, key: &str, _: Duration) -> Result<String> {
+        Ok(format!("https://storage.test/{key}?read=1"))
+    }
     async fn read(&self, key: &str, max_bytes: u64) -> Result<StoredObject> {
         Ok(match self.get(key) {
             None => StoredObject::Missing,
@@ -406,9 +414,21 @@ fn confirm() -> MediaUpdate {
 }
 
 impl Fixture {
-    async fn upload(&self, owner: &Principal) -> UploadTicket {
-        self.service
-            .create_upload(owner, png_request(), &RequestMeta::default())
+    async fn pending(&self, owner: &Principal) -> Media {
+        let id = ids::new_id();
+        self.repository
+            .create(
+                &NewMedia {
+                    id,
+                    upload_key: upload_key(id),
+                    original_filename: "cover.png".into(),
+                    declared_mime_type: "image/png".into(),
+                    declared_size_bytes: 12,
+                    upload_expires_at: Utc::now() + chrono::Duration::minutes(15),
+                    uploaded_by: owner.user.id,
+                },
+                &RequestMeta::default(),
+            )
             .await
             .unwrap()
     }
@@ -434,35 +454,62 @@ fn assert_media_invalid(result: Result<Media>, expected: RejectionReason) {
     }
 }
 
+/// 客户端等到存储已收到文件头才发后半段，可区分流式转发和整文件缓冲后上传。
 #[tokio::test]
-async fn create_upload_signs_temporary_key_and_creates_pending_record() {
+async fn forwards_bytes_before_input_eof_and_never_commits_rejected_content() {
     let f = fixture();
     let author = principal("author");
-    let before = Utc::now();
-    let ticket = f.upload(&author).await;
-    let id = ticket.media.id;
-    assert_eq!(ticket.media.status, MediaStatus::Pending);
-    assert_eq!(ticket.media.uploaded_by, Some(author.user.id));
-    assert_eq!(ticket.upload.method, "PUT");
-    assert!(ticket.upload.url.contains(&format!("uploads/{id}")));
-    assert_eq!(
-        ticket.upload.headers,
-        vec![("content-type".to_owned(), "image/png".to_owned())]
+    let prefix = Bytes::from_static(b"\x89PNG\r\n\x1a\n1234");
+    let (client, rx) = tokio::sync::mpsc::channel(1);
+    let body = stream::unfold(
+        rx,
+        |mut rx| async move { rx.recv().await.map(|b| (Ok(b), rx)) },
     );
-    let ttl = ticket.media.upload_expires_at - before;
-    assert!(ttl >= chrono::Duration::seconds(899) && ttl <= chrono::Duration::seconds(901));
-    assert_eq!(f.audits(), ["media.create"]);
-    assert_eq!(
-        *f.storage.signed_length.lock().unwrap(),
-        Some(png_request().size_bytes),
-        "直传签名绑定声明的字节数"
+    let send = async {
+        client.send(prefix).await.unwrap();
+        f.storage.receiving.notified().await;
+        assert!(f.storage.objects.lock().unwrap().is_empty());
+        client.send(Bytes::from_static(b"x")).await.unwrap();
+        drop(client);
+    };
+    let meta = RequestMeta::default();
+    let receive = f.service.upload(
+        &author,
+        UploadRequest {
+            size_bytes: 13,
+            ..png_request()
+        },
+        Box::pin(body),
+        &meta,
     );
+    let (_, result) = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(send, receive)
+    })
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(AppError::MediaInvalid { .. })));
+    assert!(f.storage.objects.lock().unwrap().is_empty());
+    assert_eq!(f.audits(), ["media.create", "media.rejected"]);
 }
 
 #[tokio::test]
 async fn create_upload_validates_input_and_requires_configured_storage() {
     let f = fixture();
     let author = principal("author");
+    let mut forbidden = principal("author");
+    forbidden.permissions.clear();
+    let unread = stream::poll_fn(|_| panic!("鉴权失败时不应读取请求体"));
+    assert!(matches!(
+        f.service
+            .upload(
+                &forbidden,
+                png_request(),
+                Box::pin(unread),
+                &RequestMeta::default()
+            )
+            .await,
+        Err(AppError::Forbidden)
+    ));
     let invalid = UploadRequest {
         filename: "".into(),
         declared_mime_type: "image/gif".into(),
@@ -470,7 +517,7 @@ async fn create_upload_validates_input_and_requires_configured_storage() {
     };
     assert!(matches!(
         f.service
-            .create_upload(&author, invalid, &RequestMeta::default())
+            .upload(&author, invalid, Box::pin(futures_util::stream::empty()), &RequestMeta::default())
             .await,
         Err(AppError::Validation(errors)) if errors.len() == 3
     ));
@@ -482,7 +529,12 @@ async fn create_upload_validates_input_and_requires_configured_storage() {
     );
     assert!(matches!(
         unconfigured
-            .create_upload(&author, png_request(), &RequestMeta::default())
+            .upload(
+                &author,
+                png_request(),
+                Box::pin(futures_util::stream::empty()),
+                &RequestMeta::default()
+            )
             .await,
         Err(AppError::StorageUnavailable)
     ));
@@ -493,7 +545,7 @@ async fn create_upload_validates_input_and_requires_configured_storage() {
 async fn confirming_valid_upload_writes_formal_object_and_is_idempotent() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     f.storage.put(&upload_key(id), b"PNG:64");
     let media = f.update(&author, id, confirm()).await.unwrap();
     assert_eq!(media.status, MediaStatus::Ready);
@@ -520,7 +572,7 @@ async fn confirming_valid_upload_writes_formal_object_and_is_idempotent() {
 async fn confirming_before_upload_or_after_expiry_is_a_conflict() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     assert!(matches!(
         f.update(&author, id, confirm()).await,
         Err(AppError::Conflict(Conflict::UploadIncomplete))
@@ -559,7 +611,7 @@ async fn invalid_uploads_are_rejected_once_and_keep_their_reason() {
             RejectionReason::TooLarge,
         ),
     ] {
-        let id = f.upload(&author).await.media.id;
+        let id = f.pending(&author).await.id;
         f.storage.put(&upload_key(id), &bytes);
         assert_media_invalid(f.update(&author, id, confirm()).await, reason);
         assert!(
@@ -580,7 +632,7 @@ async fn invalid_uploads_are_rejected_once_and_keep_their_reason() {
 async fn existing_formal_object_wins_after_interrupted_confirmation() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     // 模拟上次确认写入正式对象后中断，随后客户端又上传了不同内容。
     f.storage.put(&storage_key(id), b"PNG:300");
     f.storage.put(&upload_key(id), b"PNG:7");
@@ -589,7 +641,7 @@ async fn existing_formal_object_wins_after_interrupted_confirmation() {
     assert_eq!(f.storage.get(&storage_key(id)).unwrap(), b"PNG:300");
 
     // 临时对象已被删除但正式对象存在时同样可以完成确认。
-    let other = f.upload(&author).await.media.id;
+    let other = f.pending(&author).await.id;
     f.storage.put(&storage_key(other), b"PNG:9");
     let media = f.update(&author, other, confirm()).await.unwrap();
     assert_eq!(media.width, Some(9));
@@ -601,8 +653,8 @@ async fn authors_only_see_their_own_media_and_editors_see_all() {
     let author = principal("author");
     let other = principal("author");
     let editor = principal("editor");
-    let mine = f.upload(&author).await.media.id;
-    let theirs = f.upload(&other).await.media.id;
+    let mine = f.pending(&author).await.id;
+    let theirs = f.pending(&other).await.id;
     assert!(matches!(
         f.service.get(&author, theirs).await,
         Err(AppError::NotFound)
@@ -664,7 +716,7 @@ async fn authors_only_see_their_own_media_and_editors_see_all() {
 async fn alt_text_is_normalized_and_status_only_accepts_uploaded() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     let media = f
         .update(
             &author,
@@ -721,7 +773,7 @@ async fn alt_text_is_normalized_and_status_only_accepts_uploaded() {
 async fn delete_removes_record_and_objects() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     f.storage.put(&upload_key(id), b"PNG:2");
     f.update(&author, id, confirm()).await.unwrap();
     f.service
@@ -740,9 +792,9 @@ async fn delete_removes_record_and_objects() {
 async fn purge_removes_expired_pending_and_old_rejected_but_keeps_ready() {
     let f = fixture();
     let author = principal("author");
-    let expired = f.upload(&author).await.media.id;
-    let fresh = f.upload(&author).await.media.id;
-    let ready = f.upload(&author).await.media.id;
+    let expired = f.pending(&author).await.id;
+    let fresh = f.pending(&author).await.id;
+    let ready = f.pending(&author).await.id;
     f.storage.put(&upload_key(expired), b"partial");
     f.storage.put(&upload_key(ready), b"PNG:3");
     f.update(&author, ready, confirm()).await.unwrap();
@@ -772,7 +824,7 @@ async fn purge_and_delete_remove_formal_objects_left_by_interrupted_confirmation
     let f = fixture();
     let author = principal("author");
     // 确认写入正式对象后记录未更新（例如数据库超时），随后过期被清理。
-    let expired = f.upload(&author).await.media.id;
+    let expired = f.pending(&author).await.id;
     f.storage.put(&upload_key(expired), b"PNG:4");
     f.storage.put(&storage_key(expired), b"PNG:4");
     f.repository
@@ -786,7 +838,7 @@ async fn purge_and_delete_remove_formal_objects_left_by_interrupted_confirmation
     assert!(f.storage.get(&storage_key(expired)).is_none());
 
     // 删除仍为 pending 的记录时同样删除可能存在的正式对象。
-    let pending = f.upload(&author).await.media.id;
+    let pending = f.pending(&author).await.id;
     f.storage.put(&storage_key(pending), b"PNG:4");
     f.service
         .delete(&author, pending, &RequestMeta::default())
@@ -799,7 +851,7 @@ async fn purge_and_delete_remove_formal_objects_left_by_interrupted_confirmation
 async fn confirmation_racing_a_delete_removes_the_object_it_wrote() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     f.storage.put(&upload_key(id), b"PNG:6");
     f.repository
         .vanish_on_ready
@@ -819,7 +871,7 @@ async fn confirmation_racing_a_delete_removes_the_object_it_wrote() {
 async fn editing_alt_text_does_not_postpone_rejected_retention() {
     let f = fixture();
     let author = principal("author");
-    let id = f.upload(&author).await.media.id;
+    let id = f.pending(&author).await.id;
     f.storage.put(&upload_key(id), b"GIF89a");
     assert!(f.update(&author, id, confirm()).await.is_err());
     f.repository
@@ -848,7 +900,7 @@ async fn purge_continues_past_failures_defers_them_and_skips_referenced_media() 
     let author = principal("author");
     let mut ids = Vec::new();
     for _ in 0..3 {
-        let id = f.upload(&author).await.media.id;
+        let id = f.pending(&author).await.id;
         f.repository
             .rows()
             .get_mut(&id)
@@ -891,7 +943,7 @@ async fn purge_continues_past_failures_defers_them_and_skips_referenced_media() 
     );
 
     // 失败的记录排在从未失败的记录之后。
-    let later = f.upload(&author).await.media.id;
+    let later = f.pending(&author).await.id;
     f.repository
         .rows()
         .get_mut(&later)

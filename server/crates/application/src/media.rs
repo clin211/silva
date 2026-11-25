@@ -1,13 +1,15 @@
-//! 媒体上传用例：申请直传、确认与校验、读取、替代文本维护、删除和过期清理。
+//! 媒体上传用例：流式写入、图片校验、旧版直传确认、读取、替代文本维护、删除和过期清理。
 //!
 //! 授权规则：持有 `media.manage` 可操作全部媒体；只持有 `media.manage_own` 时只能看到并操作
 //! 自己上传的媒体，访问他人媒体按不存在处理（404），避免泄露媒体 ID 是否存在。
 
 use crate::ports::{
     ByteStream, ImageInspector, MediaActor, MediaFilter, MediaRecord, MediaRepository, NewMedia,
-    ObjectStorage, PresignedUpload, PutOutcome, RequestMeta, StoredObject, StreamedObject,
+    ObjectStorage, PutOutcome, RequestMeta, StoredObject, StreamedObject,
 };
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt, stream};
 use silva_domain::{
     identity::Principal,
     media::{
@@ -53,12 +55,6 @@ pub struct MediaContent {
     pub body: ByteStream,
 }
 
-/// 申请直传的结果：新建的媒体记录和浏览器直传请求。
-pub struct UploadTicket {
-    pub media: Media,
-    pub upload: PresignedUpload,
-}
-
 /// `PATCH /media/{id}` 的输入；字段为 None 时保持原值。
 #[derive(Default)]
 pub struct MediaUpdate {
@@ -97,47 +93,125 @@ impl MediaService {
         self.storage.as_deref().ok_or(AppError::StorageUnavailable)
     }
 
-    /// 申请直传：校验声明信息，签发临时键的 PUT 地址并创建 `pending` 记录。
-    #[tracing::instrument(name = "media.create_upload", skip_all)]
-    pub async fn create_upload(
+    /// 接收原始图片。先验证文件头，再按存储端的消费速度转发，解码通过才提交最后一个字节。
+    pub async fn upload(
         &self,
         principal: &Principal,
         request: UploadRequest,
+        mut body: ByteStream,
         meta: &RequestMeta,
-    ) -> Result<UploadTicket> {
+    ) -> Result<(Media, String)> {
         require_any(principal)?;
-        let request = request.validate()?;
+        let mut request = request.validate()?;
         let storage = self.storage()?;
+        let _permit = self
+            .confirmations
+            .acquire()
+            .await
+            .map_err(|e| AppError::Internal(e.into()))?;
+        let length = request.size_bytes as usize;
+        let mut bytes = Vec::with_capacity(length);
+        while bytes.len() < 12 {
+            let chunk = next_chunk(&mut body)
+                .await?
+                .ok_or_else(|| RejectionReason::UnsupportedFormat.into_error())?;
+            append_chunk(&mut bytes, &chunk, length)?;
+        }
+        let mime = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            "image/png"
+        } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+            "image/jpeg"
+        } else if bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+            "image/webp"
+        } else {
+            return Err(RejectionReason::UnsupportedFormat.into_error());
+        };
+
+        if request.declared_mime_type == "application/octet-stream" {
+            request.declared_mime_type = mime.to_owned();
+        }
         let id = ids::new_id();
-        let key = upload_key(id);
-        let ttl = chrono::Duration::from_std(self.upload_ttl)
-            .map_err(|error| AppError::Internal(error.into()))?;
-        // 先计算截止时间再签名，签名地址不会晚于记录中的截止时间之前失效。
-        let upload_expires_at = Utc::now() + ttl;
-        let upload = storage
-            .presign_put(
-                &key,
-                &request.declared_mime_type,
-                request.size_bytes,
-                self.upload_ttl,
-            )
-            .await?;
-        let media = self
-            .repository
+        let key = storage_key(id);
+        let expires = chrono::Duration::from_std(self.upload_ttl)
+            .map_err(|e| AppError::Internal(e.into()))?;
+        self.repository
             .create(
                 &NewMedia {
                     id,
-                    upload_key: key,
+                    upload_key: upload_key(id),
                     original_filename: request.filename,
                     declared_mime_type: request.declared_mime_type,
                     declared_size_bytes: request.size_bytes,
-                    upload_expires_at,
+                    upload_expires_at: Utc::now() + expires,
                     uploaded_by: principal.user.id,
                 },
                 meta,
             )
             .await?;
-        Ok(UploadTicket { media, upload })
+        let actor = MediaActor {
+            user_id: principal.user.id,
+            meta,
+        };
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let outgoing = stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|chunk| (Ok(chunk), rx))
+        });
+        let receive = self.forward_image(body, bytes, length, tx);
+        let transfer = storage.put_stream(&key, mime, request.size_bytes, Box::pin(outgoing));
+        let image = match tokio::try_join!(receive, transfer) {
+            Ok((image, ())) => image,
+            Err(error) => {
+                // 校验失败时 PUT 尚未完成。传输中断或存储状态未知时由 Worker 回收 pending 记录。
+                if let AppError::MediaInvalid { reason } = &error
+                    && let Some(reason) = RejectionReason::parse(reason)
+                {
+                    self.repository.mark_rejected(id, reason, &actor).await?;
+                }
+                return Err(error);
+            }
+        };
+        let url = storage.view_url(&key, self.upload_ttl).await?;
+        let media = match self.repository.mark_ready(id, &key, &image, &actor).await? {
+            Some(media) => media,
+            None => self.settled(storage, id).await?,
+        };
+        Ok((media, url))
+    }
+
+    async fn forward_image(
+        &self,
+        mut body: ByteStream,
+        mut bytes: Vec<u8>,
+        length: usize,
+        tx: tokio::sync::mpsc::Sender<Bytes>,
+    ) -> Result<VerifiedImage> {
+        let mut chunk = Bytes::copy_from_slice(&bytes);
+        loop {
+            // 保留最后一个字节，使任何长度正确的 PUT 都已经通过完整解码。
+            if bytes.len() == length && !chunk.is_empty() {
+                chunk.truncate(chunk.len() - 1);
+            }
+            if !chunk.is_empty() {
+                tx.send(chunk).await.map_err(|_| {
+                    AppError::Internal(anyhow::anyhow!("storage stopped receiving upload"))
+                })?;
+            }
+            let Some(next) = next_chunk(&mut body).await? else {
+                break;
+            };
+            append_chunk(&mut bytes, &next, length)?;
+            chunk = next;
+        }
+        if bytes.len() != length {
+            return Err(invalid_length());
+        }
+        let last = Bytes::copy_from_slice(&bytes[length - 1..]);
+        let (_, verdict) = self.inspector.inspect(bytes).await?;
+        let image = verdict.map_err(RejectionReason::into_error)?;
+        tx.send(last)
+            .await
+            .map_err(|_| AppError::Internal(anyhow::anyhow!("storage stopped receiving upload")))?;
+        Ok(image)
     }
 
     #[tracing::instrument(name = "media.list", skip_all)]
@@ -419,6 +493,36 @@ impl MediaService {
             ))),
         }
     }
+}
+
+async fn next_chunk(body: &mut ByteStream) -> Result<Option<Bytes>> {
+    tokio::time::timeout(Duration::from_secs(30), body.next())
+        .await
+        .map_err(|_| AppError::invalid("file", FieldErrorCode::InvalidFormat, "upload timed out"))?
+        .transpose()
+        .map_err(|_| {
+            AppError::invalid(
+                "file",
+                FieldErrorCode::InvalidFormat,
+                "upload was interrupted",
+            )
+        })
+}
+
+fn invalid_length() -> AppError {
+    AppError::invalid(
+        "size_bytes",
+        FieldErrorCode::OutOfRange,
+        "body length differs from Content-Length",
+    )
+}
+
+fn append_chunk(bytes: &mut Vec<u8>, chunk: &Bytes, length: usize) -> Result<()> {
+    if chunk.len() > length - bytes.len() {
+        return Err(invalid_length());
+    }
+    bytes.extend_from_slice(chunk);
+    Ok(())
 }
 
 fn can_manage_all(principal: &Principal) -> bool {

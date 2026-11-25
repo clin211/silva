@@ -4,9 +4,8 @@
 //! - OSS 走原生接口与签名，条件写入使用 `x-oss-forbid-overwrite: true`；bucket 开启版本控制时
 //!   OSS 会忽略该请求头，因此媒体 bucket 不应开启版本控制。
 //!
-//! 浏览器直传地址不经过 OpenDAL：OpenDAL 预签名时不携带 `Content-Length`，OSS 还默认使用
-//! 不覆盖该头的 V1 签名。这里直接用 reqsign 签名，R2 使用 SigV4 查询签名，OSS 使用 V4 查询签名，
-//! 把 `content-type` 和 `content-length` 都纳入签名，客户端只能上传与声明大小完全一致的文件。
+//! 使用 reqsign 为服务端的流式 PUT 和短期 GET 签名。PUT 设置实际类型和声明长度，
+//! 使用有背压的请求体将输入分块转发给对象存储。
 //!
 //! 只使用配置中的显式密钥，不读取运行环境的默认凭据链或云主机元数据。
 
@@ -16,9 +15,7 @@ use opendal::{
     layers::{RetryLayer, TimeoutLayer},
     services,
 };
-use silva_application::ports::{
-    ObjectStorage, PresignedUpload, PutOutcome, StoredObject, StreamedObject,
-};
+use silva_application::ports::{ObjectStorage, PutOutcome, StoredObject, StreamedObject};
 use silva_shared::{
     config::{StorageConfig, StorageProvider},
     error::{AppError, Result},
@@ -28,17 +25,17 @@ use url::Url;
 
 /// 单次存储操作的超时时间；10 MiB 以内的对象足够完成读写。
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
-/// 浏览器不允许脚本设置的请求头，签名结果中出现时不下发给客户端，由浏览器自动携带。
-const BROWSER_MANAGED_HEADERS: [&str; 2] = ["host", "content-length"];
-
+/// 流式 PUT 包含客户端传输与图片解码时间。
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 pub struct OpendalStorage {
     operator: Operator,
-    signer: UploadSigner,
+    client: reqwest::Client,
+    signer: ObjectSigner,
     config: StorageConfig,
 }
 
-/// 浏览器直传地址的签名器；`base` 为对象路径之前的地址部分。
-enum UploadSigner {
+/// 对象请求签名器；`base` 为对象路径之前的地址部分。
+enum ObjectSigner {
     R2 {
         signer: reqsign_core::Signer<reqsign_aws_v4::Credential>,
         base: String,
@@ -49,7 +46,7 @@ enum UploadSigner {
     },
 }
 
-impl UploadSigner {
+impl ObjectSigner {
     fn new(config: &StorageConfig) -> anyhow::Result<Self> {
         let secret = config.access_key_secret.expose();
         Ok(match config.provider {
@@ -106,6 +103,8 @@ impl UploadSigner {
 
 impl OpendalStorage {
     pub fn new(config: &StorageConfig) -> anyhow::Result<Self> {
+        // 关闭默认特性后，需要在构建存储客户端前显式注册 HTTP 传输。
+        opendal::install_default();
         let operator = match config.provider {
             StorageProvider::R2 => Operator::new(
                 services::S3::default()
@@ -128,10 +127,14 @@ impl OpendalStorage {
             )?,
         };
         Ok(Self {
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(UPLOAD_TIMEOUT)
+                .build()?,
             operator: operator
                 .layer(TimeoutLayer::new().with_timeout(OPERATION_TIMEOUT))
                 .layer(RetryLayer::new().with_max_times(3).with_jitter()),
-            signer: UploadSigner::new(config)?,
+            signer: ObjectSigner::new(config)?,
             config: config.clone(),
         })
     }
@@ -147,39 +150,51 @@ fn storage_error(operation: &'static str) -> impl FnOnce(opendal::Error) -> AppE
 
 #[async_trait]
 impl ObjectStorage for OpendalStorage {
-    #[tracing::instrument(name = "storage.presign_put", skip_all, fields(otel.kind = "client"))]
-    async fn presign_put(
+    async fn put_stream(
         &self,
         key: &str,
         content_type: &str,
-        content_length: u64,
-        expires_in: Duration,
-    ) -> Result<PresignedUpload> {
+        length: u64,
+        body: silva_application::ports::ByteStream,
+    ) -> Result<()> {
         let url = format!("{}/{}", self.signer.base(), self.config.object_path(key));
+        let condition = match self.config.provider {
+            StorageProvider::R2 => ("if-none-match", "*"),
+            StorageProvider::AliyunOss => ("x-oss-forbid-overwrite", "true"),
+        };
         let (mut parts, ()) = http::Request::put(url)
+            .header(condition.0, condition.1)
             .header(http::header::CONTENT_TYPE, content_type)
-            .header(http::header::CONTENT_LENGTH, content_length)
+            .header(http::header::CONTENT_LENGTH, length)
             .body(())
-            .map_err(|error| AppError::Internal(error.into()))?
+            .map_err(|e| AppError::Internal(e.into()))?
             .into_parts();
-        self.signer.sign(&mut parts, expires_in).await?;
-        // content-length 已签名，但浏览器按请求体自动设置，不允许脚本指定。
-        let headers = parts
-            .headers
-            .iter()
-            .filter(|(name, _)| !BROWSER_MANAGED_HEADERS.contains(&name.as_str()))
-            .map(|(name, value)| {
-                value
-                    .to_str()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
-                    .map_err(|error| AppError::Internal(error.into()))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(PresignedUpload {
-            method: parts.method.as_str().to_owned(),
-            url: parts.uri.to_string(),
-            headers,
-        })
+        self.signer.sign(&mut parts, UPLOAD_TIMEOUT).await?;
+        let response = self
+            .client
+            .put(parts.uri.to_string())
+            .headers(parts.headers)
+            .body(reqwest::Body::wrap_stream(body))
+            .send()
+            .await
+            .map_err(|e| AppError::Internal(e.without_url().into()))?;
+        if !response.status().is_success() {
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "streaming object PUT returned {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn view_url(&self, key: &str, ttl: Duration) -> Result<String> {
+        let url = format!("{}/{}", self.signer.base(), self.config.object_path(key));
+        let (mut parts, ()) = http::Request::get(url)
+            .body(())
+            .map_err(|e| AppError::Internal(e.into()))?
+            .into_parts();
+        self.signer.sign(&mut parts, ttl).await?;
+        Ok(parts.uri.to_string())
     }
 
     #[tracing::instrument(name = "storage.read", skip_all, fields(otel.kind = "client"))]
@@ -281,56 +296,35 @@ mod tests {
         }
     }
 
-    /// 签名在本地完成，不访问网络：直传地址指向根前缀下的临时键，签名覆盖
-    /// `content-type` 与 `content-length`，并只下发浏览器可以设置的请求头。
+    /// 查看地址绑定指定对象及有效期，仅凭链接即可发起 GET。
     #[tokio::test]
-    async fn presigned_put_signs_content_type_and_length() {
-        for (provider, endpoint, region, host, path, signed) in [
+    async fn signed_view_scopes_object_and_expiry() {
+        for (provider, endpoint, region, parameter) in [
             (
                 StorageProvider::R2,
                 "https://account.r2.cloudflarestorage.com",
                 "auto",
-                "account.r2.cloudflarestorage.com",
-                "/silva-media/silva/test/uploads/abc",
-                ("X-Amz-SignedHeaders", "content-length;content-type;host"),
+                "X-Amz-Expires",
             ),
             (
                 StorageProvider::AliyunOss,
                 "https://oss-cn-hangzhou.aliyuncs.com",
                 "cn-hangzhou",
-                "silva-media.oss-cn-hangzhou.aliyuncs.com",
-                "/silva/test/uploads/abc",
-                ("x-oss-additional-headers", "content-length;host"),
+                "x-oss-expires",
             ),
         ] {
             let storage = OpendalStorage::new(&config(provider, endpoint, region)).unwrap();
-            let upload = storage
-                .presign_put("uploads/abc", "image/png", 2048, Duration::from_secs(900))
-                .await
-                .unwrap();
-            assert_eq!(upload.method, "PUT", "{provider:?}");
-            let url = Url::parse(&upload.url).unwrap();
-            assert_eq!(url.host_str(), Some(host), "{provider:?}");
-            assert_eq!(url.path(), path, "{provider:?}");
-            let query: Vec<(String, String)> = url.query_pairs().into_owned().collect();
-            let value = |name: &str| {
-                query
-                    .iter()
-                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
-                    .map(|(_, value)| value.as_str())
-            };
-            assert_eq!(value(signed.0), Some(signed.1), "{provider:?}: {query:?}");
-            if provider == StorageProvider::AliyunOss {
-                assert_eq!(value("x-oss-signature-version"), Some("OSS4-HMAC-SHA256"));
-            }
+            let url = Url::parse(
+                &storage
+                    .view_url("media/abc", Duration::from_secs(900))
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(url.path().ends_with("/silva/test/media/abc"));
             assert!(
-                !upload.url.contains("wJalrXUtnFEMI"),
-                "{provider:?}: 地址不得包含密钥"
-            );
-            assert_eq!(
-                upload.headers,
-                vec![("content-type".to_owned(), "image/png".to_owned())],
-                "{provider:?}: 只下发 content-type"
+                url.query_pairs()
+                    .any(|(key, value)| key.eq_ignore_ascii_case(parameter) && value == "900")
             );
         }
     }

@@ -100,39 +100,26 @@ unset SILVA_API_ACCESS SILVA_API_REFRESH
 
 ## 媒体上传
 
-图片不经过 API 上传：先向 API 申请，再由浏览器直传到私有对象存储（Cloudflare R2 或阿里云 OSS），最后请 API 校验。只接受 JPEG、PNG、WebP，单文件不超过 10 MiB，单边不超过 16384 像素且总像素不超过 4000 万。
-
-1. `POST /api/v1/admin/media` 提交文件名、类型和大小，得到 `media`（`pending`）和 `upload` 直传说明。
-2. 按 `upload.method` 把文件原始字节发到 `upload.url`，原样带上 `upload.headers`，**不要**带 `Authorization`。签名包含声明的大小，请求体必须正是第 1 步声明的那个文件，字节数不符时存储服务返回 403。
-3. 在 `upload.expires_at`（默认 15 分钟）前调用 `PATCH /api/v1/admin/media/{id}` 提交 `{"status": "uploaded"}`。服务端按实际字节识别格式并完整解码，通过后返回 `status: ready`，记录里的 `mime_type`、`size_bytes`、`width`、`height` 是校验结果。
+用一个 `POST /api/v1/admin/media` 发送图片原始字节。支持 JPEG、PNG、WebP，最大 10 MiB，单边最多 16384 像素，总像素最多 4000 万。可选查询参数 `filename` 保留原文件名。使用文件字节数作为 `Content-Length`，浏览器发送 `File` 时会自动填写。
 
 ```ts
 async function uploadImage(file: File, accessToken: string) {
-  const auth = { Authorization: `Bearer ${accessToken}` };
-  const created = await fetch("/api/v1/admin/media", {
+  const query = new URLSearchParams({ filename: file.name });
+  const response = await fetch(`/api/v1/admin/media?${query}`, {
     method: "POST",
-    headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: file.name, declared_mime_type: file.type, size_bytes: file.size }),
-  }).then((response) => response.json());
-  const { media, upload } = created.data;
-  const put = await fetch(upload.url, { method: upload.method, headers: upload.headers, body: file });
-  if (!put.ok) throw new Error(`直传失败：${put.status}`);
-  const confirmed = await fetch(`/api/v1/admin/media/${media.id}`, {
-    method: "PATCH",
-    headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "uploaded" }),
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
   });
-  return confirmed.json(); // 422 media_invalid 时需重新申请上传
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error.message);
+  return result.data; // media.id 用于文章引用，url 可直接打开或作为 img.src
 }
 ```
 
-- **重复确认是安全的**：已就绪的媒体再次确认返回同一记录；已拒绝的返回同一个 `422 media_invalid`。网络中断后可以直接重试确认。
-- **被拒绝后不能复用**：`rejected` 记录的拒绝原因见 `rejection_reason`，需重新调用 `POST /media` 申请新的上传。
-- **替代文本**：`PATCH /media/{id}` 提交 `{"alt_text": "..."}` 修改，空字符串清除；可与确认放在同一个请求。
-- **直传地址只用一次**：确认成功后不要再向同一地址上传；地址在 `expires_at` 前仍然有效，重复上传的文件不会被使用，只会由存储的生命周期规则删除。
-- **显示图片**：`GET /media/{id}/content` 以流式响应返回文件，需要 `Authorization`，不能直接作为 `<img src>`。用 `fetch` 读取后 `URL.createObjectURL(await response.blob())` 显示，不再使用时调用 `URL.revokeObjectURL`。
-- **删除**：`DELETE /media/{id}` 删除记录和文件；仍被文章修订或个人资料引用时返回 `409 media_in_use`。
-- 过期未确认的上传在截止后约 1 小时由 Worker 删除，被拒绝的记录保留 7 天。
+成功返回 201、媒体详情的 `Location`、已就绪的 `data.media` 和短期只读的 `data.url`。持有链接的人可在有效期内查看图片，默认 15 分钟。长期引用保存媒体 ID；后台可随时用 Bearer Token 读取 `GET /api/v1/admin/media/{id}/content`。替代文本使用 `PATCH /media/{id}` 提交 `{"alt_text":"..."}`，删除使用 `DELETE /media/{id}`。
 
 ## 文章、审核与发布
 
@@ -214,7 +201,7 @@ async function uploadImage(file: File, accessToken: string) {
 | 409 | `media_not_ready` / `media_in_use` | 媒体尚未通过校验 / 先解除文章或个人资料对该媒体的引用 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
 | 422 | `validation_error` | 按 `details` 中的字段与字段错误码修正输入；路径 ID 不是 UUIDv7 时 `field` 为 `id` |
-| 422 | `media_invalid` | 文件未通过校验，原因见媒体的 `rejection_reason`；重新申请上传 |
+| 422 | `media_invalid` | 文件未通过校验，原因见错误消息；更换文件后重新上传 |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 | `internal_error` | 记录请求标识并排查服务依赖 |
 | 503 | `site_not_ready` | 站点尚未有线上版本，稍后重试 |

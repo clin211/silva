@@ -1,7 +1,6 @@
 //! 媒体领域规则：允许的图片类型、大小与像素上限、状态取值和对象键。
 //!
-//! 一期只接收 JPEG、PNG、WebP 图片。浏览器先直传到私有临时键，确认时服务端按实际字节
-//! 识别格式并完整解码，通过后写入不可覆盖的正式键，记录才变为 `ready`。
+//! 一期只接收 JPEG、PNG、WebP 图片。服务端按实际字节识别格式、流式写入私有对象，完整解码并提交后记录变为 `ready`。
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -25,7 +24,7 @@ pub const ALT_TEXT_MAX_BYTES: usize = 1000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaStatus {
-    /// 已申请直传，尚未通过确认。
+    /// 上传尚未完成或待校验。
     Pending,
     /// 已校验并写入正式对象，可被引用。
     Ready,
@@ -102,7 +101,7 @@ pub struct Media {
     pub id: Uuid,
     pub status: MediaStatus,
     pub original_filename: String,
-    /// 申请上传时客户端声明的 MIME 类型。
+    /// 请求声明的图片类型；通用二进制请求使用服务端识别的类型。
     pub declared_mime_type: String,
     /// 申请上传时客户端声明的字节数。
     pub declared_size_bytes: i64,
@@ -117,7 +116,7 @@ pub struct Media {
     pub rejection_reason: Option<RejectionReason>,
     /// 上传者账户 ID；账户关联缺失时为 None。
     pub uploaded_by: Option<Uuid>,
-    /// 直传地址与上传确认的截止时间。
+    /// 未完成上传的清理截止时间。
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub upload_expires_at: DateTime<Utc>,
     #[serde(serialize_with = "silva_shared::time::serialize")]
@@ -152,11 +151,13 @@ impl UploadRequest {
                 "filename must not contain control characters",
             ));
         }
-        if !ALLOWED_MIME_TYPES.contains(&self.declared_mime_type.as_str()) {
+        if self.declared_mime_type != "application/octet-stream"
+            && !ALLOWED_MIME_TYPES.contains(&self.declared_mime_type.as_str())
+        {
             errors.push(FieldError::new(
                 "declared_mime_type",
                 FieldErrorCode::InvalidValue,
-                "declared_mime_type must be one of: image/jpeg, image/png, image/webp",
+                "declared_mime_type must be one of: image/jpeg, image/png, image/webp, application/octet-stream",
             ));
         }
         if !(1..=MAX_UPLOAD_BYTES).contains(&self.size_bytes) {

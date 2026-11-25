@@ -42,7 +42,7 @@ CLI 管理员密码只通过 `SILVA_ADMIN_PASSWORD` 提供，不出现在命令�
 - `cargo run -p silva-worker -- --once`：执行一次真实维护清理（过期会话、过期未确认与保留期已满的已拒绝媒体）后退出，不声称处理尚未实现的发布或采集任务。
 - `cargo test -p silva-api --test identity --test media -- --ignored`：读取 `SILVA_TEST_DATABASE_URL`，连接角色需 CREATEDB，用独立临时数据库测试后清理。CI URL 为 `postgres://silva:silva@localhost:5432/silva_test`。
 
-- `cargo test -p silva-infrastructure --test object_storage_live -- --ignored`：读取 `SILVA_STORAGE_*` 连接真实 R2 或 OSS bucket，验证预签名直传、禁止覆盖写入、读取与删除；不在 CI 中运行。
+- `cargo test -p silva-infrastructure --test object_storage_live -- --ignored`：读取 `SILVA_STORAGE_*` 连接真实 R2 或 OSS bucket，验证流式上传、禁止覆盖、查看链接与删除；不在 CI 中运行。
 
 - `cargo run -p silva-cli -- publish-site`：登记一次 `bootstrap` 全站构建，用于首次部署。
 - `cargo test -p silva-api --test content -- --ignored`：文章、审核、发布流水线、Public API 与静态站点的集成测试；设置 `SILVA_TEST_WEBSITE_DIR` 时使用真实的 Astro 构建。

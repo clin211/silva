@@ -270,31 +270,18 @@ fn png() -> Vec<u8> {
     bytes.into_inner()
 }
 
-/// 上传并确认一张图片，返回媒体 ID。
-async fn ready_media(app: &Router, storage: &MemoryStorage, token: &str) -> String {
+/// 上传封面并设置文章测试使用的替代文本。
+async fn ready_media(app: &Router, token: &str) -> String {
     let bytes = png();
-    let created = api(
-        app,
-        Method::POST,
-        "/api/v1/admin/media",
-        Some(json!({"filename": "cover.png", "declared_mime_type": "image/png", "size_bytes": bytes.len()})),
-        token,
-    )
-    .await;
-    assert_eq!(created.status, StatusCode::CREATED, "{}", created.json);
-    let id = created.json["data"]["media"]["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(storage.upload(
-        created.json["data"]["upload"]["url"].as_str().unwrap(),
-        &bytes
-    ));
+    let (status, _, created) =
+        storage::post_image(app, token, "cover.png", "image/png", &bytes, bytes.len()).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let id = created["data"]["media"]["id"].as_str().unwrap().to_owned();
     let confirmed = api(
         app,
         Method::PATCH,
         &format!("/api/v1/admin/media/{id}"),
-        Some(json!({"status": "uploaded", "alt_text": "封面"})),
+        Some(json!({"alt_text": "封面"})),
         token,
     )
     .await;
@@ -475,8 +462,8 @@ async fn run(pool: &PgPool, database_url: String) {
     assert_eq!(listed.json["data"][0]["slug"], "backend");
 
     // 创建文章：正文图片引用受控媒体，原始 HTML 被转义。
-    let cover = ready_media(&app, &storage, &author).await;
-    let others_media = ready_media(&app, &storage, &other).await;
+    let cover = ready_media(&app, &author).await;
+    let others_media = ready_media(&app, &other).await;
     let body = format!(
         "## 介绍\n\n正文 <script>alert(1)</script>\n\n![图](media:{cover})\n\n```rust\nfn main() {{}}\n```\n"
     );

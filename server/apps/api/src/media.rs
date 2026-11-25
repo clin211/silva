@@ -1,8 +1,8 @@
-//! 媒体管理接口：申请直传、列表、详情、确认上传与替代文本、授权读取内容和删除。
+//! 媒体管理接口：流式上传、列表、详情、旧版上传确认与替代文本、授权读取内容和删除。
 
 use crate::{
     AppState,
-    error::ApiError,
+    error::{ApiError, ErrorCode},
     http::{
         ClientMeta, HttpResult, IdPath, Input, authorize, duplicate_parameter, parse_page,
         query_pairs,
@@ -14,18 +14,15 @@ use axum::{
     http::{HeaderMap, HeaderValue, header, request::Parts},
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, Utc};
+use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use silva_application::{
-    media::{MediaUpdate, UploadTicket},
-    ports::MediaFilter,
-};
+use silva_application::{media::MediaUpdate, ports::MediaFilter};
+use silva_domain::media::{ALLOWED_MIME_TYPES, MAX_UPLOAD_BYTES};
 use silva_domain::media::{Media, MediaStatus, UploadRequest};
 use silva_shared::{
     error::{FieldError, FieldErrorCode},
     pagination::PageRequest,
 };
-use std::collections::BTreeMap;
 
 /// 媒体列表查询参数：分页参数加可选的 `status` 筛选；重复或无效取值返回字段错误。
 pub(crate) struct MediaListQuery(PageRequest, MediaFilter);
@@ -63,64 +60,76 @@ impl<S: Send + Sync> FromRequestParts<S> for MediaListQuery {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CreateMediaInput {
-    filename: String,
-    declared_mime_type: String,
-    size_bytes: u64,
-}
-
-/// 浏览器直传说明：按 `method` 向 `url` 发送文件原始字节，并原样携带 `headers`。
-#[derive(Serialize)]
-struct UploadInstruction {
-    method: String,
-    url: String,
-    headers: BTreeMap<String, String>,
-    #[serde(serialize_with = "silva_shared::time::serialize")]
-    expires_at: DateTime<Utc>,
+struct UploadQuery {
+    filename: Option<String>,
 }
 
 #[derive(Serialize)]
 struct MediaUpload {
     media: Media,
-    upload: UploadInstruction,
-}
-
-impl From<UploadTicket> for MediaUpload {
-    fn from(ticket: UploadTicket) -> Self {
-        Self {
-            upload: UploadInstruction {
-                method: ticket.upload.method,
-                url: ticket.upload.url,
-                headers: ticket.upload.headers.into_iter().collect(),
-                expires_at: ticket.media.upload_expires_at,
-            },
-            media: ticket.media,
-        }
-    }
+    url: String,
 }
 
 pub(crate) async fn create(
     State(state): State<AppState>,
     ClientMeta(meta): ClientMeta,
-    headers: HeaderMap,
-    Input(input): Input<CreateMediaInput>,
+    request: axum::extract::Request,
 ) -> HttpResult<Response> {
-    let principal = authorize(&state, &headers).await?;
-    let ticket = state
+    let headers = request.headers();
+    let principal = authorize(&state, headers).await?;
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    if content_type != "application/octet-stream" && !ALLOWED_MIME_TYPES.contains(&content_type) {
+        return Err(ApiError::new(
+            ErrorCode::UnsupportedMediaType,
+            "Expected raw JPEG, PNG or WebP image bytes",
+        ));
+    }
+    let size_bytes = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| {
+            ApiError::validation(vec![FieldError::new(
+                "Content-Length",
+                FieldErrorCode::Required,
+                "File length is required",
+            )])
+        })?;
+    if size_bytes > MAX_UPLOAD_BYTES {
+        return Err(ApiError::new(
+            ErrorCode::PayloadTooLarge,
+            "File exceeds 10 MiB",
+        ));
+    }
+    let query = axum::extract::Query::<UploadQuery>::try_from_uri(request.uri()).map_err(|_| {
+        ApiError::validation(vec![FieldError::new(
+            "filename",
+            FieldErrorCode::InvalidFormat,
+            "Invalid filename",
+        )])
+    })?;
+    let upload = UploadRequest {
+        filename: query
+            .0
+            .filename
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| "image".to_owned()),
+        declared_mime_type: content_type.to_owned(),
+        size_bytes,
+    };
+    let body = request
+        .into_body()
+        .into_data_stream()
+        .map_err(std::io::Error::other);
+    let (media, url) = state
         .media
-        .create_upload(
-            &principal,
-            UploadRequest {
-                filename: input.filename,
-                declared_mime_type: input.declared_mime_type,
-                size_bytes: input.size_bytes,
-            },
-            &meta,
-        )
+        .upload(&principal, upload, Box::pin(body), &meta)
         .await?;
-    let location = format!("/api/v1/admin/media/{}", ticket.media.id);
-    Ok(response::created_at(&location, MediaUpload::from(ticket)))
+    let location = format!("/api/v1/admin/media/{}", media.id);
+    Ok(response::created_at(&location, MediaUpload { media, url }))
 }
 
 pub(crate) async fn list(

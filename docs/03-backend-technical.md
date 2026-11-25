@@ -402,7 +402,7 @@ COMMENT ON COLUMN post_revision_media.revision_id IS '使用该媒体的文章�
 COMMENT ON COLUMN post_revision_media.media_id IS '该修订正文引用的已校验媒体 ID';
 ```
 
-一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。预签名只允许上传到短时有效的私有临时 key。确认时检查归属、有效期、实际字节大小与图像解码结果；校验的字节写入独立且不可覆盖的私有正式 key 后，才能标记 `ready`，重复确认返回同一结果。仅 `ready` 且调用者有权引用的媒体可用于文章封面、正文或个人头像。正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许当前 manifest 包含的媒体 ID。清理弃置的临时对象；删除正式对象前须确认当前及历史文章修订、个人资料、当前线上或待切换产物均无引用。
+一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。服务端鉴权后按文件头识别格式，接收时检查实际长度并流式写入私有存储，完整解码通过才提交对象并标记 `ready`。仅 `ready` 且调用者有权引用的媒体可用于文章封面、正文或个人头像。正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许当前 manifest 包含的媒体 ID。清理弃置的临时对象；删除正式对象前须确认当前及历史文章修订、个人资料、当前线上或待切换产物均无引用。
 
 ### 4.4 个人资料
 
@@ -736,7 +736,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 - `/api/v1/admin/*`：需要登录和 RBAC 的管理接口。
 - `/api/v1/internal/*`：Worker/内部任务接口，仅内网或服务身份访问。
 
-业务请求与响应使用 JSON（204 无响应体；媒体直传和媒体二进制读取例外）。统一分页、错误结构、排序和过滤参数，不直接暴露数据库模型。列表默认 `page=1`、`per_page=20`、最大 100；排序字段按端点列入 OpenAPI 白名单，最后使用稳定 ID 打破同分。OpenAPI 是运行时契约与 TypeScript Client 的来源；联调前将路径、权限、DTO、状态码及并发错误写入 OpenAPI。
+业务请求与响应使用 JSON（204 无响应体；媒体二进制上传和读取例外）。统一分页、错误结构、排序和过滤参数，不直接暴露数据库模型。列表默认 `page=1`、`per_page=20`、最大 100；排序字段按端点列入 OpenAPI 白名单，最后使用稳定 ID 打破同分。OpenAPI 是运行时契约与 TypeScript Client 的来源；联调前将路径、权限、DTO、状态码及并发错误写入 OpenAPI。
 
 业务实体 ID 在路径、查询参数和 JSON 中使用标准连字符 UUID 字符串。OpenAPI 对这些 ID 声明 `type: string`、`format: uuid`，并用 `pattern` 约束 UUIDv7 的版本位和变体位；服务端实际校验，格式或版本不符时返回 422 `validation_error`，字段错误码为 `invalid_format`。
 
@@ -812,8 +812,8 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | PATCH              | `/posts/{id}/reviews/{review_id}`                                                                         | Editor/Admin 批准或拒绝待审核记录                                           |
 | PUT, DELETE        | `/posts/{id}/publication`                                                                                 | Editor/Admin 设置或撤下上线目标，202，见 §6.2                               |
 | CRUD               | `/categories`、`/tags`                                                                                    | 分类标签维护；有引用时不允许删除                                            |
-| POST               | `/media`                                                                                                  | 创建媒体记录并返回直传地址，201，见 §6.4                                    |
-| GET, PATCH, DELETE | `/media/{id}`                                                                                             | 媒体元数据、确认上传（`status: uploaded`）和授权删除；列表使用 `GET /media` |
+| POST               | `/media`                                                                                                  | 流式上传图片并返回只读链接，201，见 §6.4                                    |
+| GET, PATCH, DELETE | `/media/{id}`                                                                                             | 媒体元数据、修改替代文本和授权删除；列表使用 `GET /media` |
 | GET                | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存                                            |
 | GET, PUT           | `/profile`                                                                                                | 读取和整体保存单例个人资料                                                  |
 | GET                | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                                                          |
@@ -876,7 +876,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 6.4 媒体上传
 
-`POST /media` 接受 `filename`、`declared_mime_type`、`size_bytes`，返回 201、`Location` 和 `{"media": <媒体记录>, "upload": {"method", "url", "headers", "expires_at"}}`。浏览器按 `upload` 直传到私有临时键后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}`，不自行提交公开 URL；服务端校验后返回 200 和 `status: ready`。对象尚未就绪为 `409 upload_incomplete`，过期为 `409 upload_expired`，不符合校验规则为 `422 media_invalid`；被拒绝时重新申请上传。读取未就绪媒体的内容，以及保存文章或个人资料时引用未通过校验的媒体，返回 `409 media_not_ready`（依赖其他资源状态，按响应规范归为 409）。删除被引用的媒体返回 `409 media_in_use`。对象存储使用 Cloudflare R2 或阿里云 OSS，由 `SILVA_STORAGE_PROVIDER` 选择。
+`POST /media` 接受原始图片、Content-Length 和可选文件名查询参数，返回 201、Location、已就绪的 `data.media` 和可直接查看的短期只读链接 `data.url`。超出 10 MiB 返回 413，图片无效返回 422。读取未就绪媒体的内容，以及保存文章或个人资料时引用未通过校验的媒体，返回 `409 media_not_ready`（依赖其他资源状态，按响应规范归为 409）。删除被引用的媒体返回 `409 media_in_use`。对象存储使用 Cloudflare R2 或阿里云 OSS，由 `SILVA_STORAGE_PROVIDER` 选择。
 
 ## 7. 核心业务流程
 
@@ -911,7 +911,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 - 令牌不由浏览器自动携带，因此不再使用 Cookie、CSRF token 与 Origin 校验；登录与刷新只接受 JSON，认证响应与非公开预览使用 `Cache-Control: no-store`。前端只在内存或受控存储中保存令牌，并防范 XSS 泄露令牌。
 - 在服务端每个管理用例执行产品 §3 的 RBAC 与文章/媒体归属检查，含嵌套修订读取、上传确认和媒体引用；前端隐藏按钮不作为授权。登录及 API 做限流，管理操作写审计。
 - Markdown 渲染与预览使用同一套允许的标签、属性和 URL 协议；不要执行原始 HTML 或远程资源探测。上传校验与私有、公开读取边界见 §4.3。
-- Secret 通过部署环境 Secret 管理，不提交到仓库。管理 API 不启用跨域凭证；对象存储直传 CORS 只允许后台 origin 和签名所需的方法、请求头。
+- Secret 通过部署环境 Secret 管理，不提交到仓库。管理 API 不启用跨域凭证。
 
 ## 10. 可观测性与部署
 
@@ -936,7 +936,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 ## 11. 实施里程碑
 
 1. Workspace、配置、迁移、健康检查、认证和 RBAC。
-2. 媒体直传与确认、Markdown 修订、分类标签、审核、发布和取消发布。
+2. 媒体流式上传与校验、Markdown 修订、分类标签、审核、发布和取消发布。
 3. Outbox、generation 快照、Astro 构建与生产指针切换；Public API 和 Admin 任务页面。
 4. 个人资料维护与公开投影。
 5. GitHub 采集、快照、趋势计算和后台运行记录。

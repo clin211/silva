@@ -2,7 +2,7 @@
 
 Rust + Axum + Tokio + SQLx + PostgreSQL 的模块化单体。API、Worker 和运维 CLI 共用领域与用例，分别运行。
 
-当前交付后端技术方案的前三个里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理；经 Cloudflare R2 或阿里云 OSS 私有 bucket 直传、服务端校验的图片媒体；文章的不可变修订、分类标签、审核、发布与取消发布；以及 Worker 导出快照、构建 Astro 站点、上传产物并原子切换线上版本，Public API 与静态站点入口只读取当前线上版本。个人资料维护与 GitHub 采集在后续里程碑实现。Worker 执行会话维护、过期媒体清理和站点发布。
+当前交付后端技术方案的前三个里程碑：Workspace、环境配置、数据库迁移与检查、健康检查、Argon2id 登录、JWT access token / refresh token 认证（服务端会话可撤销）、内置角色和账户管理；经服务端流式上传到 Cloudflare R2 或阿里云 OSS 的图片媒体；文章的不可变修订、分类标签、审核、发布与取消发布；以及 Worker 导出快照、构建 Astro 站点、上传产物并原子切换线上版本，Public API 与静态站点入口只读取当前线上版本。个人资料维护与 GitHub 采集在后续里程碑实现。Worker 执行会话维护、过期媒体清理和站点发布。
 
 ## 本地启动
 
@@ -144,7 +144,7 @@ unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 | `SILVA_STORAGE_PROVIDER` | 空；`r2` 或 `oss`。生产环境必填，否则 API 启动失败；开发环境留空时媒体上传、确认、读取内容和删除返回 503 `storage_unavailable` |
 | `SILVA_STORAGE_ENDPOINT` | 设置服务商时必填。R2 为 `https://<account_id>.r2.cloudflarestorage.com`，OSS 为地域地址如 `https://oss-cn-hangzhou.aliyuncs.com`（不含 bucket）；生产只接受 HTTPS |
 | `SILVA_STORAGE_BUCKET` | 设置服务商时必填，私有 bucket 名称，只含 `a-z`、`0-9`、`-`、`.` |
-| `SILVA_STORAGE_REGION` | R2 默认 `auto`；OSS 必填，为不含 `oss-` 前缀的地域 ID，如 `cn-hangzhou`（直传地址使用 OSS V4 签名） |
+| `SILVA_STORAGE_REGION` | R2 默认 `auto`；OSS 必填，为不含 `oss-` 前缀的地域 ID，如 `cn-hangzhou`（请求使用 OSS V4 签名） |
 | `SILVA_STORAGE_ROOT` | `/`；bucket 内的根前缀，多个环境共用一个 bucket 时用于隔离，如 `/silva/production/`；路径段只允许 `A-Za-z0-9._-` |
 | `SILVA_STORAGE_ACCESS_KEY_ID`、`SILVA_STORAGE_ACCESS_KEY_SECRET` | 设置服务商时必填；只读取显式配置，不读取云主机元数据或默认凭据文件 |
 | `SILVA_SITE_BUILDER_DIR` | 空；`frontend/apps/website` 的路径。设置后 Worker 处理发布任务，需要 Node 24、pnpm 与已安装的前端依赖；构建临时目录建在该目录的 `.astro/` 下 |
@@ -153,7 +153,7 @@ unset SILVA_ACCESS_TOKEN SILVA_REFRESH_TOKEN
 | `SILVA_SITE_BUILD_TIMEOUT_SECONDS` | `600`，正整数秒；超时视为构建失败 |
 | `SILVA_PUBLISH_POLL_SECONDS` | `5`，正整数秒；Worker 检查发布任务的间隔 |
 | `SILVA_SITE_SERVE` | `false`；为 `true` 时 API 在 `/api` 之外的路径提供当前线上的静态站点 |
-| `SILVA_MEDIA_UPLOAD_TTL_SECONDS` | `900`，正整数秒，最大 `86400`；直传地址与上传确认的有效期，需短于 `uploads/` 的生命周期规则 |
+| `SILVA_MEDIA_UPLOAD_TTL_SECONDS` | `900`，正整数秒，最大 `86400`；查看链接有效期，也用于未完成上传的清理期限 |
 | `RUST_LOG` | `.env.example` 使用 `info,silva_api=debug` |
 
 初始化 CLI 额外读取 `SILVA_ADMIN_EMAIL`、`SILVA_ADMIN_NAME` 和 `SILVA_ADMIN_PASSWORD`。集成测试单独读取 `SILVA_TEST_DATABASE_URL`，不复用生产连接。
@@ -164,30 +164,11 @@ API 和登录限流目前按直连 peer IP（IPv6 按 /64 前缀合并）使用�
 
 ## 媒体存储
 
-媒体只存放在私有 bucket。浏览器用 API 签发的短时预签名地址把文件直传到临时键 `uploads/{id}`，文件不经过 API。签名覆盖 `Content-Type` 和 `Content-Length`：R2 使用 SigV4，OSS 使用 V4 签名，上传的字节数必须与申请时声明的 `size_bytes` 完全一致，否则存储服务拒绝该请求，因此预签名地址不能用来上传超大文件。确认时服务端读取文件，按实际字节识别 JPEG、PNG、WebP 并完整解码，通过后写入不可覆盖的正式键 `media/{id}`，并删除临时对象。后台通过 `GET /api/v1/admin/media/{id}/content` 授权读取，bucket 本身不对外公开。流程与接口见 [API 接入指南](docs/api/README.md#媒体上传)。
+服务端鉴权并检查大小和图片文件头，流式写入私有 bucket；解码通过才提交最后一个字节。成功时返回可直接打开的短期只读链接。后台也可使用媒体 ID 授权读取原图。[API 接入指南](docs/api/README.md#媒体上传)
 
-R2 与 OSS 都需要按以下要求配置 bucket：
+R2 使用限制在媒体 bucket 的对象读写令牌，OSS 使用限制在对应 bucket 或根前缀的读写、删除权限。关闭公共读写，OSS 保持版本控制关闭以支持禁止覆盖。上传由服务端发起。升级前已签发的旧版直传地址到期前仍应保留原有的 bucket CORS 和 `uploads/` 临时对象生命周期规则。
 
-1. **私有访问。** 关闭公共读写，R2 不绑定公开域名或 `r2.dev` 访问。
-2. **访问密钥最小权限。** R2 创建只作用于该 bucket 的「对象读和写」API 令牌；OSS 使用 RAM 子账号，只授予该 bucket（或 `SILVA_STORAGE_ROOT` 前缀）的 `oss:PutObject`、`oss:GetObject`、`oss:DeleteObject`。
-3. **CORS。** 只允许后台 origin 使用 `PUT` 方法和 `content-type` 请求头，例如 R2：
-
-   ```json
-   [
-     {
-       "AllowedOrigins": ["https://admin.example.com"],
-       "AllowedMethods": ["PUT"],
-       "AllowedHeaders": ["content-type"],
-       "MaxAgeSeconds": 3600
-     }
-   ]
-   ```
-
-   OSS 在「数据安全 → 跨域设置」添加同样的来源、方法 `PUT` 和允许 Headers `content-type`。本地开发再加入本机后台地址，如 `http://localhost:5173`。
-4. **生命周期规则（必须配置）。** 为 `uploads/` 前缀（若设置了 `SILVA_STORAGE_ROOT`，前缀要包含根路径）添加 1 天后删除对象的规则。Worker 只清理仍有待确认或已拒绝记录对应的临时对象：过期 1 小时以上的未确认上传、被拒绝满 7 天的上传，以及中断的确认可能留下的正式对象。以下临时对象只能靠该规则删除：确认成功后在直传地址有效期内被再次上传的文件、直传后从未调用 API 的文件，以及 Worker 删除失败的文件。不要对 `media/` 设置过期规则。
-5. **不开启版本控制（OSS）。** OSS 在开启或暂停版本控制的 bucket 上会忽略禁止覆盖写入的请求头，正式对象将不再受保护。R2 使用 `If-None-Match` 条件写入，不受此影响。
-
-配置完成后用真实 bucket 运行冒烟测试。测试只用预签名地址直传，确认大小与签名不符的上传被拒绝，并验证条件写入、读取和删除，测试对象写在根前缀下的 `smoke/`，结束时删除：
+使用以下命令验证流式写入、禁止覆盖、只读链接和删除。测试对象使用唯一的 `smoke/` 键。
 
 ```sh
 export SILVA_STORAGE_PROVIDER=r2 SILVA_STORAGE_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com \
@@ -197,8 +178,6 @@ read -r -s SILVA_STORAGE_ACCESS_KEY_SECRET
 export SILVA_STORAGE_ACCESS_KEY_ID SILVA_STORAGE_ACCESS_KEY_SECRET
 cargo test -p silva-infrastructure --test object_storage_live -- --ignored
 ```
-
-该测试不经过浏览器，因此不检查 CORS；CORS 需在后台页面实际上传一次确认。
 
 ## 文章与站点发布
 

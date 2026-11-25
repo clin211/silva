@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+futures-util.workspace = true
 silva-shared.workspace = true
 silva-domain.workspace = true
 silva-application.workspace = true
@@ -25,7 +26,6 @@ uuid.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 bytes.workspace = true
-futures-util.workspace = true
 image.workspace = true
 jsonwebtoken.workspace = true
 jsonschema = { version = "0.61.2", default-features = false }

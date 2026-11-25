@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+reqwest = { workspace = true, features = ["stream"] }
 silva-shared.workspace = true
 silva-domain.workspace = true
 silva-application.workspace = true
@@ -37,7 +38,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 base64.workspace = true
-reqwest.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
 
 [lints]
 workspace = true

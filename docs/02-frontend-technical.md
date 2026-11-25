@@ -150,7 +150,7 @@ src/features/
 - 在管理域使用未发布 revision 做安全预览，不生成公开预览 URL。
 - 提交审核、批准、拒绝都绑定明确的 revision；发布仅可选择已批准 revision，另提供取消发布。
 - 编辑分类标签、封面、SEO 和首页精选标记；这些字段随 revision 发布。
-- 上传先调用 `POST /media` 创建媒体记录并取得直传地址，再直传私有对象存储，最后调用 `PATCH /media/{id}` 提交 `{"status": "uploaded"}` 确认。仅在服务端返回 `ready` 后插入媒体引用；失败保留编辑内容并提示。
+- 调用一次 `POST /media` 发送图片文件，以返回的 `data.url` 预览，以 `data.media.id` 插入媒体引用；失败保留编辑内容并提示。
 - 保存失败时保留本地编辑状态。
 
 每次保存由后端创建不可变 revision。保存传 `expected_revision_id`；收到 `409 revision_conflict` 时停止自动保存、保留本地草稿并提示读取最新记录，不盲重试。发布和取消发布传 `expected_publication_version`；若冲突，重新读取文章与发布状态后再由用户确认。

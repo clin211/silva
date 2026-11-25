@@ -1,43 +1,66 @@
 #![allow(dead_code)]
-//! 测试用的内存对象存储：直传地址形如 `https://storage.test/<key>?signature=test`，
-//! 与真实存储一致，直传字节数必须等于签名时绑定的长度。
+//! 用内存存储验证上传的真实字节、长度和条件写入。
 
 use async_trait::async_trait;
-use silva_application::ports::{
-    ObjectStorage, PresignedUpload, PutOutcome, StoredObject, StreamedObject,
-};
+use silva_application::ports::{ObjectStorage, PutOutcome, StoredObject, StreamedObject};
 use silva_shared::error::Result as AppResult;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 
-pub const STORAGE_ORIGIN: &str = "https://storage.test/";
+/// 向实际 HTTP 路由发送分块图片，文件头故意拆开。
+pub async fn post_image(
+    app: &axum::Router,
+    token: &str,
+    filename: &str,
+    mime: &str,
+    bytes: &[u8],
+    declared: usize,
+) -> (
+    axum::http::StatusCode,
+    axum::http::HeaderMap,
+    serde_json::Value,
+) {
+    use axum::{
+        body::{Body, to_bytes},
+        extract::ConnectInfo,
+        http::{Method, Request, header},
+    };
+    use tower::ServiceExt;
+    let path = format!("/api/v1/admin/media?filename={filename}");
+    let chunks: Vec<_> = bytes
+        .chunks(7)
+        .map(|c| Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(c)))
+        .collect();
+    let response = app
+        .clone()
+        .oneshot(
+            Request::post(&path)
+                .extension(ConnectInfo(
+                    "192.0.2.10:40000".parse::<std::net::SocketAddr>().unwrap(),
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, mime)
+                .header(header::CONTENT_LENGTH, declared)
+                .body(Body::from_stream(futures_util::stream::iter(chunks)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = to_bytes(response.into_body(), 65536).await.unwrap();
+    crate::support::assert_response(&Method::POST, &path, status, &headers, &body);
+    (status, headers, serde_json::from_slice(&body).unwrap())
+}
 
-/// 内存对象存储：签发的直传地址形如 `https://storage.test/<key>?signature=test`。
-/// 与真实存储一致，直传的字节数必须等于签名时绑定的长度。
+/// 测试存储只在完整接收对象后提交。
 #[derive(Default)]
 pub struct MemoryStorage {
     pub objects: Mutex<HashMap<String, Vec<u8>>>,
-    signed_lengths: Mutex<HashMap<String, u64>>,
     /// 删除时总是失败的键，用于模拟存储故障。
     pub failing_deletes: Mutex<Vec<String>>,
 }
 
 impl MemoryStorage {
-    /// 模拟浏览器按直传地址 PUT 文件；字节数与签名不符时返回 false 且不写入。
-    pub fn upload(&self, url: &str, bytes: &[u8]) -> bool {
-        let key = url
-            .strip_prefix(STORAGE_ORIGIN)
-            .and_then(|rest| rest.split('?').next())
-            .expect("直传地址指向测试存储");
-        if self.signed_lengths.lock().unwrap().get(key) != Some(&(bytes.len() as u64)) {
-            return false;
-        }
-        self.objects
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), bytes.to_vec());
-        true
-    }
-
     pub fn keys(&self) -> Vec<String> {
         let mut keys: Vec<_> = self.objects.lock().unwrap().keys().cloned().collect();
         keys.sort();
@@ -47,24 +70,28 @@ impl MemoryStorage {
 
 #[async_trait]
 impl ObjectStorage for MemoryStorage {
-    async fn presign_put(
+    async fn put_stream(
         &self,
         key: &str,
-        content_type: &str,
-        content_length: u64,
-        _expires_in: Duration,
-    ) -> AppResult<PresignedUpload> {
-        self.signed_lengths
-            .lock()
-            .unwrap()
-            .insert(key.to_owned(), content_length);
-        Ok(PresignedUpload {
-            method: "PUT".into(),
-            url: format!("{STORAGE_ORIGIN}{key}?signature=test"),
-            headers: vec![("content-type".into(), content_type.into())],
-        })
+        mime: &str,
+        length: u64,
+        mut body: silva_application::ports::ByteStream,
+    ) -> AppResult<()> {
+        use futures_util::StreamExt;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = body.next().await {
+            bytes.extend_from_slice(&chunk.unwrap());
+        }
+        assert_eq!(bytes.len() as u64, length);
+        assert_eq!(
+            self.put_if_absent(key, bytes, mime).await?,
+            PutOutcome::Created
+        );
+        Ok(())
     }
-
+    async fn view_url(&self, key: &str, _: Duration) -> AppResult<String> {
+        Ok(format!("https://storage.test/{key}?read=1"))
+    }
     async fn read(&self, key: &str, max_bytes: u64) -> AppResult<StoredObject> {
         Ok(match self.objects.lock().unwrap().get(key) {
             None => StoredObject::Missing,

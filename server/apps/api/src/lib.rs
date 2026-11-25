@@ -122,7 +122,7 @@ pub async fn build_router_with_storage(
         .route("/api/v1/admin/roles", get(http::roles))
         .route("/api/v1/admin/audit-logs", get(http::audit_logs))
         .route("/api/v1/admin/audit-logs/{id}", get(http::audit_log))
-        // 申请直传即创建媒体记录；确认上传通过 PATCH 修改状态。
+        // 单请求上传图片；PATCH 支持替代文本和旧版上传的确认。
         .route("/api/v1/admin/media", get(media::list).post(media::create))
         .route(
             "/api/v1/admin/media/{id}",

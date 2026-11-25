@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::ports::{
-    ActiveSite, BuiltFile, ImageSize, ObjectStorage, PresignedUpload, RenderedMarkdown,
-    StoredObject, StreamedObject,
+    ActiveSite, BuiltFile, ImageSize, ObjectStorage, RenderedMarkdown, StoredObject, StreamedObject,
 };
 use async_trait::async_trait;
 use silva_domain::site::{PublishJob, PublishJobFilter, SiteSnapshot, SnapshotPost};
@@ -111,7 +110,17 @@ struct MemoryStorage {
 
 #[async_trait]
 impl ObjectStorage for MemoryStorage {
-    async fn presign_put(&self, _: &str, _: &str, _: u64, _: Duration) -> Result<PresignedUpload> {
+    async fn put_stream(
+        &self,
+        _: &str,
+        _: &str,
+        _: u64,
+        _: crate::ports::ByteStream,
+    ) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn view_url(&self, _: &str, _: Duration) -> Result<String> {
         unimplemented!()
     }
     async fn read(&self, key: &str, _: u64) -> Result<StoredObject> {

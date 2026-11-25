@@ -30,7 +30,7 @@
 
 需要表达动作时，按下面的顺序选择：
 
-1. **改字段：** 动作只是改变资源状态时，用 PATCH 修改对应字段。例如停用账户为 `PATCH /users/{id}` 提交 `{"status": "disabled"}`；确认上传为 `PATCH /media/{id}` 提交 `{"status": "uploaded"}`。
+1. **改字段：** 动作只是改变资源状态时，用 PATCH 修改对应字段。例如停用账户为 `PATCH /users/{id}` 提交 `{"status": "disabled"}`。
 2. **建子资源：** 动作会留下记录或需要单独追踪时，创建对应的子资源。例如提交审核为 `POST /posts/{id}/reviews`，重试任务为 `POST /publishing/jobs/{id}/attempts`。
 3. **操作单例：** 动作是设置或撤销某个“唯一状态”时，对单例资源使用 PUT 和 DELETE。例如上线为 `PUT /posts/{id}/publication`，下线为 `DELETE /posts/{id}/publication`。
 
@@ -46,7 +46,7 @@
 | 提交审核 | `POST /posts/{id}/submit-review` | `POST /posts/{id}/reviews` → 201 |
 | 审核决定 | `POST /posts/{id}/reviews` 携带决定 | `PATCH /posts/{id}/reviews/{review_id}` |
 | 上线、下线 | `POST /posts/{id}/publish`、`/unpublish` | `PUT`、`DELETE /posts/{id}/publication` → 202 |
-| 申请、确认上传 | `POST /media/presign`、`/media/{id}/complete` | `POST /media` → 201；`PATCH /media/{id}` |
+| 上传文件 | `POST /media/presign`、`/media/{id}/complete` | `POST /media` → 201 |
 | 重试任务 | `POST /publishing/jobs/{id}/retry` | `POST /publishing/jobs/{id}/attempts` → 202 |
 
 ## 4. 例外

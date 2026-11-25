@@ -332,7 +332,6 @@ fn input_shapes_and_pagination_match_runtime_validation() {
         "CreateUserInput",
         "UpdateUserInput",
         "ChangePasswordInput",
-        "CreateMediaInput",
         "UpdateMediaInput",
         "CreatePostInput",
         "CreateRevisionInput",
@@ -460,8 +459,8 @@ fn documented_examples_match_their_schemas() {
     for (path, methods) in spec["paths"].as_object().unwrap() {
         for operation in methods.as_object().unwrap().values() {
             assert!(operation["summary"].as_str().is_some_and(|s| !s.is_empty()));
-            if let Some(body) = operation.get("requestBody") {
-                assert!(body["content"]["application/json"].get("example").is_some());
+            if let Some(content) = operation.pointer("/requestBody/content/application~1json") {
+                assert!(content.get("example").is_some());
             }
             for response in operation["responses"].as_object().unwrap().values() {
                 let response = resolve(&spec, response);
@@ -558,7 +557,10 @@ fn responses_follow_envelope_conventions() {
                     }
                 }
             }
-            if operation.get("requestBody").is_some() {
+            if operation
+                .pointer("/requestBody/content/application~1json")
+                .is_some()
+            {
                 assert_eq!(
                     operation["responses"]["400"]["$ref"], "#/components/responses/MalformedJson",
                     "{method} {path}: JSON 请求体接口必须声明 400 malformed_json"
@@ -835,18 +837,9 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
             path: "/api/v1/admin/media",
             content_type: Some("text/plain"),
             body: "{}",
-            status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            code: "unsupported_media_type",
+            status: StatusCode::UNAUTHORIZED,
+            code: "unauthorized",
             field: None,
-        },
-        Case {
-            method: "POST",
-            path: "/api/v1/admin/media",
-            content_type: Some("application/json"),
-            body: r#"{"filename":"a.png","declared_mime_type":"image/png","size_bytes":-1}"#,
-            status: invalid,
-            code: "validation_error",
-            field: Some(("size_bytes", "invalid_type")),
         },
         Case {
             method: "PATCH",
@@ -1116,16 +1109,32 @@ fn media_contract_matches_domain_rules() {
         schemas["MediaRejectionReason"]["enum"],
         serde_json::to_value(RejectionReason::ALL).unwrap()
     );
-    let input = &schemas["CreateMediaInput"]["properties"];
-    assert_eq!(input["size_bytes"]["maximum"], MAX_UPLOAD_BYTES);
-    assert_eq!(input["filename"]["x-max-bytes"], FILENAME_MAX_BYTES);
+    let post = &spec["paths"]["/api/v1/admin/media"]["post"];
+    assert!(
+        post["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|parameter| parameter["name"]
+                .as_str()
+                .is_none_or(|name| !name.eq_ignore_ascii_case("Content-Length")))
+    );
+    for body in post["requestBody"]["content"].as_object().unwrap().values() {
+        assert_eq!(body["schema"]["x-max-bytes"], MAX_UPLOAD_BYTES);
+    }
+    assert_eq!(
+        post["parameters"][0]["schema"]["x-max-bytes"],
+        FILENAME_MAX_BYTES
+    );
+    for mime in ALLOWED_MIME_TYPES {
+        assert_eq!(
+            post["requestBody"]["content"][mime]["schema"]["format"],
+            "binary"
+        );
+    }
     assert_eq!(
         schemas["UpdateMediaInput"]["properties"]["alt_text"]["anyOf"][0]["x-max-bytes"],
         ALT_TEXT_MAX_BYTES
-    );
-    assert_eq!(
-        schemas["CreateMediaInput"]["required"],
-        serde_json::json!(["filename", "declared_mime_type", "size_bytes"])
     );
     // 媒体记录不暴露对象存储键，可空字段也始终存在。
     let media = &schemas["Media"];

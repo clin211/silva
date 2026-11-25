@@ -334,14 +334,6 @@ pub trait MediaRepository: Send + Sync {
     async fn defer_purge(&self, id: Uuid) -> Result<()>;
 }
 
-/// 浏览器直传请求：方法、地址和必须原样携带的请求头。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PresignedUpload {
-    pub method: String,
-    pub url: String,
-    pub headers: Vec<(String, String)>,
-}
-
 /// 有大小上限的对象读取结果。
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoredObject {
@@ -381,15 +373,16 @@ pub enum PutOutcome {
 /// 私有对象存储。实现须保证 bucket 不公开，键由服务端生成。
 #[async_trait]
 pub trait ObjectStorage: Send + Sync {
-    /// 为指定键签发有效期内的 PUT 直传地址。签名必须覆盖 `Content-Type` 与 `Content-Length`，
-    /// 使客户端只能上传声明类型、且字节数恰好为 `content_length` 的请求体。
-    async fn presign_put(
+    /// 使用声明长度流式写入新对象，同名对象不可覆盖。
+    async fn put_stream(
         &self,
         key: &str,
         content_type: &str,
-        content_length: u64,
-        expires_in: std::time::Duration,
-    ) -> Result<PresignedUpload>;
+        length: u64,
+        body: ByteStream,
+    ) -> Result<()>;
+    /// 签发仅可读取已校验对象的短期地址。
+    async fn view_url(&self, key: &str, ttl: std::time::Duration) -> Result<String>;
     /// 读取对象，超过 `max_bytes` 时不下载内容。
     async fn read(&self, key: &str, max_bytes: u64) -> Result<StoredObject>;
     /// 以字节流读取对象，不把整个对象读入内存；超过 `max_bytes` 时不传输内容。
