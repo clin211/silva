@@ -1336,3 +1336,26 @@ img.profile-monogram {
         line-height: 1.35;
     }
 }
+
+/* Article image alt caption */
+.silva-img-wrap {
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: middle;
+    margin: 0.25rem 0;
+}
+
+.silva-img-wrap > img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.silva-img-caption {
+    display: block;
+    margin-top: 0.4rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: #8a9993;
+}

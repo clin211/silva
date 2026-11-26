@@ -37,8 +37,12 @@ static SANITIZER: LazyLock<Builder<'static>> = LazyLock::new(|| {
         .add_tag_attributes("img", ["loading", "decoding"])
         .add_tag_attributes("input", ["type", "checked", "disabled"])
         .add_tag_attributes("code", ["class"])
+        .add_tag_attributes("span", ["class", "style"])
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") => value.starts_with(PUBLIC_MEDIA_PATH).then(|| value.into()),
+            ("span", "class") => matches!(value, "silva-img-wrap" | "silva-img-caption")
+                .then(|| value.into()),
+            ("span", "style") => parse_safe_color_style(value).map(Into::into),
             ("code", "class") => {
                 let language = value.strip_prefix("language-")?;
                 (!language.is_empty()
@@ -120,18 +124,32 @@ impl MarkdownRenderer for CommonMarkRenderer {
                     events.extend(inner.into_iter().map(escape_raw_html));
                     events.push(Event::End(TagEnd::Heading(level)));
                 }
-                Event::Start(Tag::Image { dest_url, .. }) => {
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
                     let alt = plain_text(&collect_until(&mut parser, |end| {
                         matches!(end, TagEnd::Image)
                     }));
+                    let trimmed_alt = alt.trim();
+                    let alt_color = parse_alt_color_title(&title);
                     let image = parse_media_url(&dest_url).and_then(|id| {
                         media.get(&id).map(|size| {
-                            format!(
-                                r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="{}" height="{}" alt="{}" loading="lazy" decoding="async">"#,
-                                size.width,
-                                size.height,
-                                escape_attribute(&alt)
-                            )
+                            let safe_alt = escape_attribute(trimmed_alt);
+                            let img_tag = format!(
+                                r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="{}" height="{}" alt="{safe_alt}" loading="lazy" decoding="async">"#,
+                                size.width, size.height,
+                            );
+                            if trimmed_alt.is_empty() {
+                                img_tag
+                            } else {
+                                let style_attr = alt_color
+                                    .as_deref()
+                                    .map(|hex| format!(r#" style="color:{hex}""#))
+                                    .unwrap_or_default();
+                                format!(
+                                    r#"<span class="silva-img-wrap">{img_tag}<span class="silva-img-caption"{style_attr}>{safe_alt}</span></span>"#
+                                )
+                            }
                         })
                     });
                     // 未知媒体只保留说明文字；保存前已校验引用，这里只是兜底。
@@ -245,6 +263,21 @@ fn escape_attribute(value: &str) -> String {
 }
 
 /// 解析 `media:<UUIDv7>`；其他地址返回 None。
+fn is_hex_color(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
+}
+
+fn parse_alt_color_title(title: &str) -> Option<String> {
+    let raw = title.trim().strip_prefix("alt-color:")?;
+    is_hex_color(raw).then(|| raw.to_ascii_lowercase())
+}
+
+fn parse_safe_color_style(value: &str) -> Option<String> {
+    let raw = value.trim().strip_prefix("color:")?.trim().trim_end_matches(';').trim();
+    is_hex_color(raw).then(|| format!("color:{}", raw.to_ascii_lowercase()))
+}
+
 fn parse_media_url(url: &str) -> Option<Uuid> {
     url.strip_prefix(MEDIA_SCHEME)?
         .parse::<EntityId>()
@@ -346,6 +379,21 @@ mod tests {
         assert!(html.contains(&format!(
             r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="1600" height="900" alt="封面 &quot;图&quot;""#
         )));
+        assert!(html.contains(r#"<span class="silva-img-caption">封面 "图"</span>"#));
+        let colored_html = CommonMarkRenderer
+            .render(
+                &format!(r#"![绿色说明](media:{id} "alt-color:#137A4D")"#),
+                &media,
+            )
+            .html;
+        assert!(
+            colored_html
+                .contains(r#"<span class="silva-img-caption" style="color:#137a4d">绿色说明</span>"#)
+        );
+        let empty_alt_html = CommonMarkRenderer
+            .render(&format!("![](media:{id})"), &media)
+            .html;
+        assert!(!empty_alt_html.contains("silva-img-caption"));
         for invalid in [
             "![x](https://example.com/a.png)",
             "![x](media:not-an-id)",

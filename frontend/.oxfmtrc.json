@@ -4,5 +4,12 @@
     "printWidth": 100,
     "singleQuote": true,
     "tabWidth": 4,
-    "ignorePatterns": ["**/.astro/**", "**/dist/**", "pnpm-lock.yaml"]
+    "ignorePatterns": [
+        "**/.astro/**",
+        "**/dist/**",
+        ".agents/**",
+        ".claude/**",
+        "pnpm-lock.yaml",
+        "packages/api-client/src/schema.d.ts"
+    ]
 }
