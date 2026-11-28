@@ -1,5 +1,5 @@
 ---
-import { listCategories, listTags, type Post } from '../lib/data';
+import { type Post } from '../lib/data';
 import { categoryUrl, tagUrl } from '../lib/site';
 
 interface Props {
@@ -9,15 +9,28 @@ interface Props {
 }
 
 const { posts, category, tag } = Astro.props;
-const [categories, tags] = await Promise.all([listCategories(), listTags()]);
+const [categories, tags, seriesList] = await Promise.all([
+    Astro.locals.content.listCategories(),
+    Astro.locals.content.listTags(),
+    Astro.locals.content.listSeries(),
+]);
 const count = (key: 'categories' | 'tags', slug: string) =>
     posts.filter((post) => post[key].some((item) => item.slug === slug)).length;
-const categoryCounts = categories.map((item) => [item, count('categories', item.slug)] as const);
+const seriesCountForCategory = (slug: string) =>
+    seriesList.filter((item) => item.category?.slug === slug).length;
+const categoryCounts = categories.map(
+    (item) => [item, count('categories', item.slug), seriesCountForCategory(item.slug)] as const,
+);
 const tagCounts = tags.map((item) => [item, count('tags', item.slug)] as const);
+const formatCategoryStat = (postCount: number, seriesCount: number) => {
+    if (seriesCount > 0 && postCount > 0) return `${postCount} 篇 · ${seriesCount} 系列`;
+    if (seriesCount > 0) return `${seriesCount} 系列`;
+    return String(postCount);
+};
 ---
 
 <aside class="archive-aside" aria-label="分类与标签">
-    {posts.length > 0 && (
+    {(posts.length > 0 || seriesList.length > 0) && (
         <details class="taxonomy-panel" open>
             <summary>分类与标签</summary>
             <div class="taxonomy-groups">
@@ -30,15 +43,19 @@ const tagCounts = tags.map((item) => [item, count('tags', item.slug)] as const);
                             </a>
                         </li>
                         {categoryCounts
-                            .filter(([, count]) => count > 0)
-                            .map(([{ slug, name }, count]) => (
+                            .filter(
+                                ([, postCount, seriesCount]) => postCount > 0 || seriesCount > 0,
+                            )
+                            .map(([{ slug, name }, postCount, seriesCount]) => (
                                 <li>
                                     <a
                                         href={categoryUrl(slug)}
                                         aria-current={category === slug ? 'page' : undefined}
                                     >
                                         {name}
-                                        <span class="num">{count}</span>
+                                        <span class="num">
+                                            {formatCategoryStat(postCount, seriesCount)}
+                                        </span>
                                     </a>
                                 </li>
                             ))}
@@ -65,9 +82,14 @@ const tagCounts = tags.map((item) => [item, count('tags', item.slug)] as const);
             </div>
         </details>
     )}
-    <a class="btn btn-ghost btn-sm" href="/rss.xml">
-        订阅文章 RSS
-    </a>
+    <div class="aside-actions">
+        <a class="btn btn-ghost btn-sm" href="/series/">
+            浏览体系化专栏
+        </a>
+        <a class="btn btn-ghost btn-sm" href="/rss.xml">
+            订阅文章 RSS
+        </a>
+    </div>
 </aside>
 <script>
     const details = document.querySelector<HTMLDetailsElement>('.taxonomy-panel');

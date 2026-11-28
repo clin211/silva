@@ -321,8 +321,10 @@
 }
 
 .prose-ink pre {
-    background: #0a1e1c;
-    color: #d7eeea;
+    position: relative;
+    background: #0d1117;
+    color: #e6edf3;
+    border: 1px solid #21262d;
     padding: 1rem 1.15rem;
     border-radius: 10px;
     overflow-x: auto;
@@ -334,6 +336,48 @@
     background: transparent;
     padding: 0;
     color: inherit;
+    white-space: pre;
+}
+
+/* Shiki CodeBlock container shared by Tiptap Editor & SafeHtmlPreview */
+.prose-ink .silva-code-block {
+    margin: 1.05em 0;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid #21262d;
+    background: #0d1117;
+}
+
+.prose-ink .silva-code-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: #161b22;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    user-select: none;
+}
+
+.prose-ink .silva-code-block .silva-code-block-pre {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.95rem 1.1rem;
+    color: #e6edf3;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+}
+
+.prose-ink .silva-code-block .silva-code-block-pre code {
+    display: block;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font-family: var(--font-code);
+    white-space: pre !important;
 }
 
 .prose-ink img {

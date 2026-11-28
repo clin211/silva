@@ -1,31 +1,33 @@
 ---
-import type { GetStaticPaths } from 'astro';
+import { siteOrigin } from '../../lib/origin';
 import ArticleToc from '../../components/ArticleToc.astro';
 import Body from '../../components/Body.astro';
 import Breadcrumb from '../../components/Breadcrumb.astro';
 import Cover from '../../components/Cover.astro';
 import Icon from '../../components/Icon.astro';
+import SeriesOutline from '../../components/SeriesOutline.astro';
 import ShareDialog from '../../components/ShareDialog.astro';
 import SiteLayout from '../../layouts/SiteLayout.astro';
-import { getProfile, listPosts } from '../../lib/data';
 import { day, number } from '../../lib/format';
-import { categoryUrl, postUrl, tagUrl } from '../../lib/site';
+import { categoryUrl, postUrl, seriesUrl, tagUrl } from '../../lib/site';
 
-export const getStaticPaths = (async () => {
-    const posts = await listPosts();
-    return posts.map((post, index) => ({
-        params: { slug: post.slug },
-        props: { post, newer: posts[index - 1], older: posts[index + 1] },
-    }));
-}) satisfies GetStaticPaths;
-
-const { post, newer, older } = Astro.props;
+const posts = await Astro.locals.content.listPosts();
+const index = posts.findIndex((item) => item.slug === Astro.params.slug);
+const post = posts[index];
+if (!post) return Astro.rewrite('/404');
+const newer = posts[index - 1];
+const older = posts[index + 1];
 const { title, summary, published, updated, tags, cover } = post;
 const category = post.categories[0];
 const description = post.seoDescription ?? summary;
-const profile = await getProfile();
+const [profile, postSeriesMap] = await Promise.all([
+    Astro.locals.content.getProfile(),
+    Astro.locals.content.getPostSeriesMap(),
+]);
+const seriesContext = postSeriesMap.get(post.slug);
 const headings = post.headings.filter(({ depth }) => depth === 2 || depth === 3);
 const { count, minutes } = post.reading;
+const padIndex = (value: number) => String(value).padStart(2, '0');
 const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
@@ -33,7 +35,7 @@ const structuredData = {
     description,
     datePublished: published,
     dateModified: updated ?? published,
-    mainEntityOfPage: new URL(postUrl(post.slug), Astro.site ?? Astro.url).href,
+    mainEntityOfPage: new URL(postUrl(post.slug), siteOrigin(Astro)).href,
     author: profile && { '@type': 'Person', name: profile.name },
 };
 ---
@@ -49,7 +51,23 @@ const structuredData = {
     image={cover?.kind === 'image' ? { path: cover.src, alt: cover.alt } : undefined}
 >
     <div class="wrap article-page">
-        <Breadcrumb section={{ href: '/blog/', label: '文章' }} current={title} />
+        <Breadcrumb
+            items={
+                seriesContext
+                    ? [
+                          { href: '/series/', label: '博客' },
+                          {
+                              href: seriesUrl(seriesContext.series.slug),
+                              label: seriesContext.series.title,
+                          },
+                      ]
+                    : [
+                          { href: '/series/', label: '博客' },
+                          { href: '/blog/', label: '全部文章' },
+                      ]
+            }
+            current={title}
+        />
         <article>
             <header class="article-header">
                 {category && (
@@ -58,6 +76,22 @@ const structuredData = {
                     </a>
                 )}
                 <h1>{title}</h1>
+                {seriesContext && (
+                    <a class="series-banner" href={seriesUrl(seriesContext.series.slug)}>
+                        <span class="series-banner-main">
+                            <Icon name="series" size={16} />
+                            <span>
+                                系列：<strong>《{seriesContext.series.title}》</strong>
+                                {seriesContext.entry.sectionTitle && (
+                                    <span class="muted"> · {seriesContext.entry.sectionTitle}</span>
+                                )}
+                            </span>
+                        </span>
+                        <span class="series-banner-progress mono num">
+                            第 {seriesContext.index} / {seriesContext.total} 篇
+                        </span>
+                    </a>
+                )}
                 <div class="article-meta">
                     <div class="metadata">
                         {profile && (
@@ -114,6 +148,18 @@ const structuredData = {
 
             <div class="reading-layout">
                 <div class="reading-main">
+                    {seriesContext && (
+                        <details class="panel toc-mobile series-outline-mobile">
+                            <summary>
+                                系列目录（第 {seriesContext.index} / {seriesContext.total} 篇）
+                            </summary>
+                            <SeriesOutline
+                                series={seriesContext.series}
+                                currentSlug={post.slug}
+                                mobile
+                            />
+                        </details>
+                    )}
                     {headings.length >= 2 && (
                         <details class="panel toc-mobile">
                             <summary>文章目录</summary>
@@ -124,9 +170,28 @@ const structuredData = {
                         <Body body={post.body} />
                     </div>
                     <div class="article-actions">
-                        <a class="btn btn-ghost btn-sm" href="/blog/">
-                            返回文章列表
-                        </a>
+                        {seriesContext ? (
+                            <>
+                                <a
+                                    class="btn btn-ghost btn-sm"
+                                    href={seriesUrl(seriesContext.series.slug)}
+                                >
+                                    返回专栏目录
+                                </a>
+                                <a class="btn btn-ghost btn-sm" href="/series/">
+                                    全部专栏
+                                </a>
+                            </>
+                        ) : (
+                            <>
+                                <a class="btn btn-ghost btn-sm" href="/series/">
+                                    返回博客
+                                </a>
+                                <a class="btn btn-ghost btn-sm" href="/blog/">
+                                    全部文章归档
+                                </a>
+                            </>
+                        )}
                         <button
                             type="button"
                             hidden
@@ -139,21 +204,64 @@ const structuredData = {
                             分享这篇文章
                         </button>
                     </div>
-                    {(newer || older) && (
-                        <nav aria-label="相邻文章" class="article-neighbors">
-                            {newer && (
-                                <a href={postUrl(newer.slug)} class="hover-accent">
-                                    <span class="muted">上一篇</span>
-                                    {newer.title}
+                    {seriesContext ? (
+                        <nav aria-label="系列内相邻文章" class="article-neighbors">
+                            {seriesContext.prev ? (
+                                <a
+                                    href={postUrl(seriesContext.prev.post.slug)}
+                                    class="hover-accent"
+                                >
+                                    <span class="muted">系列上一篇</span>
+                                    <span>
+                                        <span class="mono num">
+                                            {padIndex(seriesContext.prev.index)}
+                                        </span>{' '}
+                                        {seriesContext.prev.displayTitle}
+                                    </span>
                                 </a>
+                            ) : (
+                                <span aria-hidden="true"></span>
                             )}
-                            {older && (
-                                <a href={postUrl(older.slug)} class="hover-accent">
-                                    <span class="muted">下一篇</span>
-                                    {older.title}
+                            {seriesContext.next ? (
+                                <a
+                                    href={postUrl(seriesContext.next.post.slug)}
+                                    class="hover-accent article-neighbor-next"
+                                >
+                                    <span class="muted">系列下一篇</span>
+                                    <span>
+                                        <span class="mono num">
+                                            {padIndex(seriesContext.next.index)}
+                                        </span>{' '}
+                                        {seriesContext.next.displayTitle}
+                                    </span>
+                                </a>
+                            ) : (
+                                <a
+                                    href={seriesUrl(seriesContext.series.slug)}
+                                    class="hover-accent article-neighbor-next"
+                                >
+                                    <span class="muted">返回系列目录</span>
+                                    <span>《{seriesContext.series.title}》</span>
                                 </a>
                             )}
                         </nav>
+                    ) : (
+                        (newer || older) && (
+                            <nav aria-label="相邻文章" class="article-neighbors">
+                                {newer && (
+                                    <a href={postUrl(newer.slug)} class="hover-accent">
+                                        <span class="muted">上一篇</span>
+                                        {newer.title}
+                                    </a>
+                                )}
+                                {older && (
+                                    <a href={postUrl(older.slug)} class="hover-accent">
+                                        <span class="muted">下一篇</span>
+                                        {older.title}
+                                    </a>
+                                )}
+                            </nav>
+                        )
                     )}
                 </div>
                 <aside class="reading-rail" aria-label="阅读辅助">
@@ -162,6 +270,15 @@ const structuredData = {
                             <section>
                                 <h2 class="t-small">文章目录</h2>
                                 <ArticleToc {headings} />
+                            </section>
+                        )}
+                        {seriesContext && (
+                            <section class="reading-series">
+                                <h2 class="t-small">系列目录</h2>
+                                <SeriesOutline
+                                    series={seriesContext.series}
+                                    currentSlug={post.slug}
+                                />
                             </section>
                         )}
                         <section class="reading-indicator" hidden>

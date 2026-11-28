@@ -33,4 +33,12 @@ describe('safe markdown rendering & sanitization', () => {
         expect(html).not.toContain(`/api/v1/public/media/${id}`);
         expect(html).toContain('data-silva-alt-color="#137a4d"');
     });
+
+    it('preserves fenced code block language classes through DOMPurify sanitization', () => {
+        const html = renderSafeMarkdown(
+            '```rust\nfn main() {}\n```\n\n```c++\nint main() { return 0; }\n```',
+        );
+        expect(html).toContain('class="language-rust"');
+        expect(html).toContain('class="language-c++"');
+    });
 });

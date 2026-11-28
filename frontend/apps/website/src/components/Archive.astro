@@ -1,14 +1,16 @@
 ---
-import type { Post } from '../lib/data';
-import { categoryUrl, postUrl } from '../lib/site';
+import { type Post } from '../lib/data';
+import { categoryUrl, postUrl, seriesUrl } from '../lib/site';
 import { day, monthLabel } from '../lib/format';
 import Cover from './Cover.astro';
+import Icon from './Icon.astro';
 
 interface Props {
     posts: Post[];
     empty?: string;
 }
 const { posts, empty = '还没有发布的文章。' } = Astro.props;
+const postSeriesMap = await Astro.locals.content.getPostSeriesMap();
 const groups = new Map<string, Post[]>();
 for (const post of posts) {
     const month = post.published.slice(0, 7);
@@ -31,6 +33,7 @@ for (const post of posts) {
                     {group.map((post) => {
                         const { slug, title, summary, published, cover, reading } = post;
                         const primary = post.categories[0];
+                        const seriesCtx = postSeriesMap.get(slug);
                         return (
                             <li>
                                 <article class="archive-entry">
@@ -42,6 +45,23 @@ for (const post of posts) {
                                                     class:list={['chip', primary.color]}
                                                 >
                                                     {primary.name}
+                                                </a>
+                                            )}
+                                            {seriesCtx && (
+                                                <a
+                                                    href={seriesUrl(seriesCtx.series.slug)}
+                                                    class="chip chip-series"
+                                                >
+                                                    <Icon name="series" size={13} />
+                                                    <span>
+                                                        {seriesCtx.series.title} ·{' '}
+                                                        <span class="num">
+                                                            {String(seriesCtx.index).padStart(
+                                                                2,
+                                                                '0',
+                                                            )}
+                                                        </span>
+                                                    </span>
                                                 </a>
                                             )}
                                             <time datetime={published} class="num">

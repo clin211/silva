@@ -2,9 +2,8 @@
 import PageIntro from '../../components/PageIntro.astro';
 import TrendingBoard from '../../islands/TrendingBoard';
 import SiteLayout from '../../layouts/SiteLayout.astro';
-import { getTrending } from '../../lib/data';
 
-const snapshot = await getTrending();
+const snapshot = await Astro.locals.content.getTrending();
 const description = '观察已收录的 GitHub AI 开源项目，按 Stars 和 Forks 的净增长探索项目。';
 ---
 
@@ -13,7 +12,7 @@ const description = '观察已收录的 GitHub AI 开源项目，按 Stars 和 F
         <PageIntro title="AI 开源趋势" {description}>
             {snapshot && (
                 <p class="snapshot-notice t-small">
-                    示例榜单 · 快照日期{' '}
+                    快照日期{' '}
                     <time class="num" datetime={snapshot.date}>
                         {snapshot.date}
                     </time>{' '}

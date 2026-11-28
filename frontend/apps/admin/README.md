@@ -15,10 +15,21 @@ pnpm dev:admin
 
 ## 环境变量
 
-| 变量               | 说明                                 | 默认值                  |
-| ------------------ | ------------------------------------ | ----------------------- |
-| `SILVA_API_TARGET` | Vite 开发代理指向的 Rust API 地址    | `http://127.0.0.1:8088` |
-| `VITE_WEBSITE_URL` | 顶部「查看站点 ↗」跳转的公开站点地址 | `http://localhost:4321` |
+| 变量               | 说明                                                                 | 默认值                                                                  |
+| ------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `SILVA_API_TARGET` | Vite 开发代理指向的 Rust API 地址                                    | `http://127.0.0.1:8088`                                                 |
+| `VITE_WEBSITE_URL` | 「查看站点」及已上线文章链接的公开地址；分域部署时设为读者使用的域名 | 开发环境 `http://localhost:4321`（`pnpm dev`），生产环境使用当前 origin |
+
+使用 Compose 网关时，在 `apps/admin/.env.local` 配置三个上游。管理请求、公开站预览和系统健康页面仍使用浏览器同源路径。
+
+```dotenv
+SILVA_API_TARGET=http://127.0.0.1:8089
+SILVA_PUBLIC_API_TARGET=http://127.0.0.1:8088
+SILVA_OPERATIONS_TARGET=http://127.0.0.1:8090
+VITE_WEBSITE_URL=http://localhost:8088
+```
+
+宿主机直接运行 Rust API 时，公开与运维代理默认沿用 `SILVA_API_TARGET`。
 
 ## OpenAPI 类型同步与校验
 

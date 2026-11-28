@@ -86,6 +86,51 @@
             "seo_description": null,
             "published_at": "2026-10-12T08:00:00+08:00",
             "updated_at": "2026-10-12T08:00:00+08:00"
+        },
+        {
+            "id": "019535d9-3df7-79fb-b466-fa907fa17fa2",
+            "revision_id": "019535da-0000-7000-8000-000000000006",
+            "slug": "rust-ownership-basics",
+            "title": "Rust 所有权与借用速览",
+            "excerpt": "梳理所有权转移、不可变借用与可变借用的核心边界。",
+            "html": "<p>所有权规则让内存安全在编译期完成校验。</p>\n<h2 id=\"移动语义\">移动语义</h2><p>值在同一时刻只有一个所有者。</p>\n<h2 id=\"借用检查\">借用检查</h2><p>不可变引用与可变引用不能同时活跃。</p>\n",
+            "headings": [
+                {
+                    "depth": 2,
+                    "slug": "移动语义",
+                    "text": "移动语义"
+                },
+                {
+                    "depth": 2,
+                    "slug": "借用检查",
+                    "text": "借用检查"
+                }
+            ],
+            "categories": ["backend"],
+            "tags": ["rust"],
+            "featured": false,
+            "cover": null,
+            "seo_title": null,
+            "seo_description": null,
+            "published_at": "2026-10-20T11:00:00+08:00",
+            "updated_at": "2026-10-20T11:00:00+08:00"
+        },
+        {
+            "id": "019535d9-3df7-79fb-b466-fa907fa17fa3",
+            "revision_id": "019535da-0000-7000-8000-000000000007",
+            "slug": "standalone-cache-notes",
+            "title": "构建缓存失效排查记录",
+            "excerpt": "记录一次静态站点构建缓存未命中的排查过程。",
+            "html": "<p>独立文章不属于任何系列，保持原有文章页布局与相邻导航。</p>\n",
+            "headings": [],
+            "categories": ["devops"],
+            "tags": [],
+            "featured": false,
+            "cover": null,
+            "seo_title": null,
+            "seo_description": null,
+            "published_at": "2026-10-05T09:00:00+08:00",
+            "updated_at": "2026-10-05T09:00:00+08:00"
         }
     ],
     "categories": [
@@ -131,6 +176,85 @@
             "mime_type": "image/webp",
             "width": 1200,
             "height": 675
+        }
+    ],
+    "series": [
+        {
+            "id": "019535e0-0000-7000-8000-000000000001",
+            "slug": "cms-publishing",
+            "title": "CMS 发布实践",
+            "description": "从不可变修订、错误处理到所有权基础，覆盖服务端核心实践。",
+            "category": {
+                "slug": "backend",
+                "name": "后端",
+                "description": "服务端架构与工程实践。"
+            },
+            "completion_status": "ongoing",
+            "featured": true,
+            "cover": {
+                "media_id": "019535db-0000-7000-8000-000000000002",
+                "mime_type": "image/png",
+                "width": 1600,
+                "height": 900,
+                "alt": null
+            },
+            "seo_title": null,
+            "seo_description": null,
+            "published_at": "2026-11-20T10:00:00+08:00",
+            "updated_at": "2026-11-22T14:00:00+08:00",
+            "items": [
+                {
+                    "post_slug": "immutable-cms-revisions",
+                    "display_title": "修订与发布"
+                }
+            ],
+            "sections": [
+                {
+                    "title": "一、接口与错误约定",
+                    "description": "统一 HTTP 错误响应结构。",
+                    "items": [
+                        {
+                            "post_slug": "rust-axum-error-handling",
+                            "display_title": null
+                        }
+                    ]
+                },
+                {
+                    "title": "二、语言基础回顾",
+                    "description": null,
+                    "items": [
+                        {
+                            "post_slug": "rust-ownership-basics",
+                            "display_title": "所有权速览"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "019535e0-0000-7000-8000-000000000002",
+            "slug": "rust-notes",
+            "title": "Rust 学习随笔",
+            "description": "单篇完结的构建与学习笔记。",
+            "category": {
+                "slug": "rust",
+                "name": "Rust",
+                "description": "Rust 语言与系统工程实践。"
+            },
+            "completion_status": "completed",
+            "featured": false,
+            "cover": null,
+            "seo_title": "Rust 学习随笔专栏",
+            "seo_description": null,
+            "published_at": "2026-10-15T09:00:00+08:00",
+            "updated_at": "2026-10-15T09:00:00+08:00",
+            "items": [
+                {
+                    "post_slug": "weekly-notes-2026-41",
+                    "display_title": "单篇导读"
+                }
+            ],
+            "sections": []
         }
     ]
 }

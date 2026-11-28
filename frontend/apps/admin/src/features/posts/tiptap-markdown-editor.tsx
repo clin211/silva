@@ -39,6 +39,7 @@ import {
     type ReactNode,
     type Ref,
 } from 'react';
+import { SilvaCodeBlock } from './tiptap-code-block';
 import { AuthenticatedImage } from '@/components/media/authenticated-media';
 import { cn } from '@/lib/cn';
 import {
@@ -474,6 +475,7 @@ export function TiptapMarkdownEditor({
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
+                codeBlock: false,
                 heading: { levels: [1, 2, 3, 4] },
                 link: {
                     openOnClick: false,
@@ -481,6 +483,7 @@ export function TiptapMarkdownEditor({
                 },
                 underline: false,
             }),
+            SilvaCodeBlock,
             SilvaImage.configure({
                 inline: true,
                 allowBase64: false,

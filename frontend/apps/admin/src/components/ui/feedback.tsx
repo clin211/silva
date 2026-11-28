@@ -158,14 +158,19 @@ export interface PaginationBarProps {
     totalPages: number;
     onPageChange: (page: number) => void;
     unit?: string;
+    perPageOptions?: number[];
+    onPerPageChange?: (perPage: number) => void;
 }
 
 export function PaginationBar({
     page,
+    perPage,
     total,
     totalPages,
     onPageChange,
     unit = '条',
+    perPageOptions,
+    onPerPageChange,
 }: PaginationBarProps) {
     const safeTotalPages = Math.max(1, totalPages);
     const pages: number[] = [];
@@ -177,11 +182,30 @@ export function PaginationBar({
 
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ui-line bg-ui-subtle/60 px-4 py-3 text-[13px] text-ui-sub">
-            <span>
-                共 <span className="tnum font-medium text-ui-text">{total}</span> {unit} · 第{' '}
-                <span className="tnum font-medium text-ui-text">{page}</span> /{' '}
-                <span className="tnum">{safeTotalPages}</span> 页
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+                <span>
+                    共 <span className="tnum font-medium text-ui-text">{total}</span> {unit} · 第{' '}
+                    <span className="tnum font-medium text-ui-text">{page}</span> /{' '}
+                    <span className="tnum">{safeTotalPages}</span> 页
+                </span>
+                {perPageOptions && perPageOptions.length > 0 && onPerPageChange ? (
+                    <label className="inline-flex items-center gap-1.5 text-[12.5px] text-ui-sub">
+                        <span>每页</span>
+                        <select
+                            aria-label="每页显示条数"
+                            value={perPage}
+                            onChange={(event) => onPerPageChange(Number(event.target.value))}
+                            className="tnum h-8 rounded-lg border border-ui-line bg-white px-2 text-[12.5px] text-ui-text transition-colors hover:border-ui-line-strong focus:border-accent focus:outline-none"
+                        >
+                            {perPageOptions.map((option) => (
+                                <option key={option} value={option}>
+                                    {option} {unit}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                ) : null}
+            </div>
             <nav aria-label="分页" className="flex items-center gap-1">
                 <button
                     type="button"

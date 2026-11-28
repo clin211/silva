@@ -1,24 +1,41 @@
-import { unified } from '@astrojs/markdown-remark';
+import { existsSync } from 'node:fs';
+import { loadEnvFile } from 'node:process';
+import node from '@astrojs/node';
 import react from '@astrojs/react';
-import sitemap from '@astrojs/sitemap';
 import { defineConfig } from 'astro/config';
-import sanitize from 'rehype-sanitize';
-import { loadSnapshot } from './src/lib/snapshot.ts';
+
+const localEnv = new URL('./.env', import.meta.url);
+if (existsSync(localEnv)) loadEnvFile(localEnv);
 
 const site = process.env.SITE_URL || 'http://localhost:4321';
 
 export default defineConfig({
     site,
-    output: 'static',
     outDir: process.env.SILVA_SITE_OUT_DIR || './dist',
-    trailingSlash: 'always',
+    output: 'server',
+    // Rust uses slashless API URLs; the SSR middleware canonicalizes HTML routes only.
+    trailingSlash: 'ignore',
+    adapter: node({ mode: 'standalone' }),
     integrations: [
         react(),
-        // 快照模式下在构建开始前完成校验，失败即中止
-        { name: 'silva-snapshot', hooks: { 'astro:config:setup': () => loadSnapshot() } },
-        sitemap({ filter: (url) => !new URL(url).pathname.startsWith('/404') }),
+        {
+            name: 'silva-live-routes',
+            hooks: {
+                'astro:config:setup'({ injectRoute }) {
+                    injectRoute({
+                        pattern: '/api/v1/public/[...path]',
+                        entrypoint: './src/ssr/public-api.ts',
+                    });
+                    injectRoute({
+                        pattern: '/sitemap-index.xml',
+                        entrypoint: './src/ssr/sitemap-index.ts',
+                    });
+                    injectRoute({
+                        pattern: '/sitemap-[page].xml',
+                        entrypoint: './src/ssr/sitemap-page.ts',
+                    });
+                },
+            },
+        },
     ],
-    markdown: {
-        processor: unified({ rehypePlugins: [sanitize] }),
-    },
 });

@@ -20,14 +20,6 @@ export function decodeEntities(value: string) {
     });
 }
 
-/** Markdown 正文去掉代码块、图片和链接地址后的文本。 */
-export function markdownText(markdown = '') {
-    return markdown
-        .replace(/^\s*(?:`{3,}|~{3,})[^\n]*\n[\s\S]*?^\s*(?:`{3,}|~{3,})\s*$/gm, '')
-        .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-}
-
 /** 消毒后的 HTML 去掉代码块和标签后的文本。 */
 export function htmlText(html: string) {
     return decodeEntities(

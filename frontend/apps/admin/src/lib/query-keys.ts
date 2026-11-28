@@ -5,15 +5,14 @@ export const queryKeys = {
     posts: {
         all: ['posts'] as const,
         list: (filters: Record<string, unknown>) => ['posts', 'list', filters] as const,
+        categoryCounts: (filters: Record<string, unknown>) =>
+            ['posts', 'category-counts', filters] as const,
         detail: (id: string) => ['posts', 'detail', id] as const,
-        revisions: (postId: string, page?: number, perPage?: number) =>
-            ['posts', 'detail', postId, 'revisions', { page, perPage }] as const,
-        revision: (postId: string, revisionId: string) =>
-            ['posts', 'detail', postId, 'revisions', revisionId] as const,
-        reviews: (postId: string, page?: number, perPage?: number) =>
-            ['posts', 'detail', postId, 'reviews', { page, perPage }] as const,
-        review: (postId: string, reviewId: string) =>
-            ['posts', 'detail', postId, 'reviews', reviewId] as const,
+    },
+    series: {
+        all: ['series'] as const,
+        list: (filters: Record<string, unknown>) => ['series', 'list', filters] as const,
+        detail: (id: string) => ['series', 'detail', id] as const,
     },
     taxonomy: {
         categories: ['taxonomy', 'categories'] as const,
@@ -26,11 +25,6 @@ export const queryKeys = {
     },
     profile: {
         current: ['profile', 'current'] as const,
-    },
-    publishing: {
-        all: ['publishing'] as const,
-        jobs: (filters: Record<string, unknown>) => ['publishing', 'jobs', filters] as const,
-        job: (id: string) => ['publishing', 'job', id] as const,
     },
     users: {
         all: ['users'] as const,

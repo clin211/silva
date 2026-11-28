@@ -1,8 +1,7 @@
 ---
-import { getProfile } from '../lib/data';
 import { navigation, siteDescription } from '../lib/site';
 
-const profile = await getProfile();
+const profile = await Astro.locals.content.getProfile();
 ---
 
 <footer class="site-foot band-paper">

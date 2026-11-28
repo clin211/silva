@@ -13,14 +13,13 @@ Public Website (Astro) ─┐
                         ├── REST API (Axum) ─── PostgreSQL
 Admin SPA (React) ──────┘          │
                                   ├── S3/R2
-                                  ├── Outbox Events
                                   └── Worker (Tokio)
                                         ├── AI ingestion
                                         ├── trend aggregation
                                         └── site build/deploy
 ```
 
-API Server 负责请求、授权、业务用例和数据库事务。Worker 负责长任务、定时任务、外部 API 采集、趋势计算和站点构建。初期保持同一代码仓库和领域模型，但作为独立进程部署。
+API Server 负责请求、授权、业务用例和数据库事务。Worker 负责长任务、定时任务、外部 API 采集和趋势计算。初期保持同一代码仓库和领域模型，但作为独立进程部署。
 
 ## 2. Rust Workspace
 
@@ -72,7 +71,7 @@ backend/
 - `application`：用例编排，定义 repository、storage、provider 等 ports。
 - `infrastructure`：SQLx、S3、GitHub API、发布服务等适配器。
 - `apps/api`：HTTP 路由、认证中间件、DTO、OpenAPI。
-- `apps/worker`：消费 Outbox、定时调度、采集和构建任务。
+- `apps/worker`：维护会话与媒体。
 - `apps/cli`：迁移辅助、管理员初始化、运维命令。
 
 不要让 domain 直接依赖 infrastructure。不要把所有业务逻辑写进 Axum handler。
@@ -97,7 +96,7 @@ backend/
 
 ### 3.2 ID 生成与约束
 
-- 业务实体主键、引用这些实体的 ID、Outbox 事件 ID、审计日志 ID 和服务端 `request_id` 均使用 UUIDv7。服务端通过 `shared::ids` 统一生成，Rust 使用 `uuid` crate 的 `v7` 特性和 `Uuid::now_v7()`。API、Worker、CLI、种子和测试数据遵守同一规范；客户端不分配新实体 ID。需在事务中相互引用的新记录可预先生成 ID。
+- 业务实体主键、引用这些实体的 ID、审计日志 ID 和服务端 `request_id` 均使用 UUIDv7。服务端通过 `shared::ids` 统一生成，Rust 使用 `uuid` crate 的 `v7` 特性和 `Uuid::now_v7()`。API、Worker、CLI、种子和测试数据遵守同一规范；客户端不分配新实体 ID。需在事务中相互引用的新记录可预先生成 ID。
 - PostgreSQL 仍用原生 `uuid` 存储，通过 `is_uuid_v7()` 校验所有 UUID 实体主键和无法用外键保证的 UUID 引用；普通外键及复合外键通过引用已校验的主键保证版本。不把普通 `uuid` 类型视为版本校验，也不依赖数据库版本特有的 UUIDv7 生成函数。
 - 数据源原生标识（如 GitHub `external_id`）保持原格式。Slug、角色键、`generation`、`revision_no`、会话及租约令牌是路由键、业务序号或令牌，不是实体 ID；关联表复合键与 `site_state` 的单例键保持原结构。
 - UUIDv7 自带时间信息，但不作为业务时间或授权依据；展示与排序以显式时间和版本字段为准。CI 应验证 v7 可写入、v4 和错误变体被迁移后的数据库拒绝，并覆盖 API 拒绝非 v7 ID 的行为。
@@ -203,28 +202,20 @@ COMMENT ON COLUMN sessions.last_seen_at IS '最近一次记录的会话活动时
 CREATE TABLE posts (
   id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
   slug text NOT NULL UNIQUE,
-  post_type text NOT NULL DEFAULT 'article',
   current_revision_id uuid NOT NULL,
-  desired_published_revision_id uuid,
   publication_version bigint NOT NULL DEFAULT 0,
-  slug_locked boolean NOT NULL DEFAULT false,
   author_id uuid REFERENCES users(id),
-  desired_published_at timestamptz,
+  first_published_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((desired_published_revision_id IS NULL) = (desired_published_at IS NULL))
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE posts IS '文章主记录，跟踪当前编辑目标和期望公开目标，不直接代表线上内容。';
+COMMENT ON TABLE posts IS '文章主记录，跟踪当前草稿和发布并发版本。';
 COMMENT ON COLUMN posts.id IS '该记录的 UUIDv7 主键。';
 COMMENT ON COLUMN posts.slug IS '文章的唯一公开路由标识，首发请求被接受后锁定';
-COMMENT ON COLUMN posts.post_type IS '内容类型，一期默认 article';
 COMMENT ON COLUMN posts.current_revision_id IS '当前编辑修订 ID，必须属于本篇文章';
-COMMENT ON COLUMN posts.desired_published_revision_id IS '期望公开的修订 ID，NULL 表示没有公开目标，不代表已撤下';
 COMMENT ON COLUMN posts.publication_version IS '发布和取消发布共用的乐观锁版本号，每次成功变更时递增';
-COMMENT ON COLUMN posts.slug_locked IS '文章路由是否已锁定，取消发布不解锁';
 COMMENT ON COLUMN posts.author_id IS '用于文章归属授权的作者用户 ID，NULL 表示没有关联用户';
-COMMENT ON COLUMN posts.desired_published_at IS '期望公开版本被接受的时间，未设公开目标时为 NULL，不代表线上切换时间';
 COMMENT ON COLUMN posts.created_at IS '该记录首次写入本系统的时间。';
 COMMENT ON COLUMN posts.updated_at IS '该记录在本系统最近一次更新的时间。';
 
@@ -242,11 +233,11 @@ CREATE TABLE post_revisions (
   seo_description text,
   created_by uuid REFERENCES users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (post_id, revision_no),
+  UNIQUE (post_id),
   UNIQUE (post_id, id)
 );
 
-COMMENT ON TABLE post_revisions IS '文章的不可变修订，每次保存产生一条记录。';
+COMMENT ON TABLE post_revisions IS '文章的当前编辑内容，每篇最多一份。';
 COMMENT ON COLUMN post_revisions.id IS '该记录的 UUIDv7 主键。';
 COMMENT ON COLUMN post_revisions.post_id IS '修订所属的文章 ID';
 COMMENT ON COLUMN post_revisions.revision_no IS '同一篇文章内唯一的修订序号';
@@ -267,11 +258,7 @@ ALTER TABLE posts
   REFERENCES post_revisions(post_id, id)
   DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE posts
-  ADD CONSTRAINT posts_desired_revision_fk
-  FOREIGN KEY (id, desired_published_revision_id)
-  REFERENCES post_revisions(post_id, id)
-  DEFERRABLE INITIALLY DEFERRED;
+-- 公开副本通过 published_posts.post_id 唯一关联文章。
 
 CREATE TABLE categories (
   id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
@@ -321,36 +308,15 @@ COMMENT ON TABLE post_revision_tags IS '文章修订与标签的关联，冻结�
 COMMENT ON COLUMN post_revision_tags.revision_id IS '引用标签的文章修订 ID';
 COMMENT ON COLUMN post_revision_tags.tag_id IS '该修订选用的标签 ID';
 
-CREATE TABLE post_reviews (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  post_id uuid NOT NULL,
-  revision_id uuid NOT NULL,
-  reviewer_id uuid REFERENCES users(id),
-  status text NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
-  comment text,
-  reviewed_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (post_id, revision_id),
-  FOREIGN KEY (post_id, revision_id) REFERENCES post_revisions(post_id, id) ON DELETE CASCADE
-);
 
-COMMENT ON TABLE post_reviews IS '文章修订的审核记录，每个修订最多提交一次审核。';
-COMMENT ON COLUMN post_reviews.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN post_reviews.post_id IS '被审核修订所属的文章 ID';
-COMMENT ON COLUMN post_reviews.revision_id IS '本次审核针对的不可变修订 ID';
-COMMENT ON COLUMN post_reviews.reviewer_id IS '作出审核决定的用户 ID，待审核时为 NULL';
-COMMENT ON COLUMN post_reviews.status IS '审核状态：pending 待审核、approved 已批准、rejected 已拒绝';
-COMMENT ON COLUMN post_reviews.comment IS '审核意见，未填写时为 NULL';
-COMMENT ON COLUMN post_reviews.reviewed_at IS '作出审核决定的时间，待审核时为 NULL';
-COMMENT ON COLUMN post_reviews.created_at IS '该修订提交审核的时间';
 ```
 
 约束说明：
 
-- 创建文章时预分配首条 revision ID，在一个事务内写入 post、revision 及关联；此后 revision、分类标签选择、封面和媒体引用只追加。`rendered_html` 若保存，应在创建 revision 时生成并消毒；公开导出只用安全 HTML，不透传 Markdown 原文。
-- `current_revision_id` 只表示当前编辑版本。`desired_published_revision_id` 只表示下一次站点构建应采用的目标；当前线上的 revision 由 `active_generation` 的 manifest 决定。三者独立，不用单一文章状态表达。
-- 一期每个 revision 最多提交一次；审核由 `pending` 转为 `approved` 或 `rejected`，拒绝后需要创建新 revision 再送审。新 revision 不继承旧批准，已批准的历史 revision 可重新发布。
-- 首次接受发布后锁定文章 slug，取消发布不解锁；一期分类、标签及其他详情实体的 slug 创建后也不改名。分类、标签名称可独立修改并进入站点发布流程；有历史 revision 引用时不能删除（`409 taxonomy_in_use`）。
+- 创建文章时预分配首条 revision ID，在一个事务内写入 post、revision 及关联；再次保存时，在同一事务内替换 revision 及其关联。`rendered_html` 若保存，应在创建 revision 时生成并消毒；公开导出只用安全 HTML，不透传 Markdown 原文。
+- `current_revision_id` 只表示当前编辑版本。API 字段 `published_revision_id` 取自 `published_posts.id`。发布和撤回时同时提交线上版本，编辑草稿时只更新当前修订。
+- 显式发布在同一事务中写入 `published_posts`、公开分类标签及媒体引用，并推进公开内容版本。完整 DDL 见 [单修订迁移](../server/migrations/20261126000003_single_post_revision.sql)。
+- 首次接受发布后锁定文章 slug，取消发布不解锁；一期分类、标签及其他详情实体的 slug 创建后也不改名。分类、标签名称可独立修改，变更提交后在公开页面生效；有当前草稿或发布目标引用时不能删除（`409 taxonomy_in_use`）。
 
 ### 4.3 Media
 
@@ -402,7 +368,7 @@ COMMENT ON COLUMN post_revision_media.revision_id IS '使用该媒体的文章�
 COMMENT ON COLUMN post_revision_media.media_id IS '该修订正文引用的已校验媒体 ID';
 ```
 
-一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。服务端鉴权后按文件头识别格式，接收时检查实际长度并流式写入私有存储，完整解码通过才提交对象并标记 `ready`。仅 `ready` 且调用者有权引用的媒体可用于文章封面、正文或个人头像。正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许当前 manifest 包含的媒体 ID。清理弃置的临时对象；删除正式对象前须确认当前及历史文章修订、个人资料、当前线上或待切换产物均无引用。
+一期只接收图片 JPEG、PNG、WebP，单文件上限 10 MiB，并限制解码像素数。服务端鉴权后按文件头识别格式，每个 API 进程的上传与确认共用 4 个并发名额，在单文件上限内缓冲并检查实际长度。完整解码后按原始字节的 SHA-256 预留对象键，在事务外写入私有存储，再以短事务确认凭证、登记引用并标记 `ready`。仅 `ready` 且调用者有权引用的媒体可用于文章封面、正文或个人头像。正文图片只允许受控媒体 ID 引用，保存时提取并持久化引用；管理预览和公开渲染分别解析为对应的授权读取路径。后台媒体读取要求授权，公开读取只允许公开内容引用的媒体 ID。清理弃置的临时对象；删除正式对象前须确认草稿、已发布文章、个人资料及系列均无引用。
 
 ### 4.4 个人资料
 
@@ -626,83 +592,16 @@ CREATE INDEX ai_repositories_featured_idx
 - `ai_ingestion_runs` 记录每日批次；`ai_repository_snapshots` 关联批次且只追加成功样本。写入用例校验批次与仓库属于同一数据源。窗口和排序见 §7.1。
 - `ai_sources.config` 保存 topic 白名单和采集上限等配置；凭据放 Secret/环境变量，不进入数据库配置或公开 API。一期只启用 GitHub 数据源。
 
-### 4.6 发布、Outbox、审计
+### 4.6 公开内容版本与审计
 
 ```sql
-CREATE TABLE publish_jobs (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  generation bigint NOT NULL UNIQUE CHECK (generation > 0),
-  status text NOT NULL CHECK (status IN ('queued', 'building', 'active', 'failed', 'superseded', 'retired')),
-  trigger_type text NOT NULL,
-  requested_by uuid REFERENCES users(id),
-  manifest_key text,
-  artifact_prefix text,
-  attempts integer NOT NULL DEFAULT 0,
-  lease_token uuid,
-  lease_expires_at timestamptz,
-  started_at timestamptz,
-  finished_at timestamptz,
-  error_message text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-COMMENT ON TABLE publish_jobs IS '站点发布任务，每条记录跟踪一个 generation 的构建与线上切换。';
-COMMENT ON COLUMN publish_jobs.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN publish_jobs.generation IS '站点版本号，随新目标递增，一个版本仅有一个任务';
-COMMENT ON COLUMN publish_jobs.status IS '任务状态：queued 排队、building 构建中、active 已上线、failed 失败、superseded 已被取代、retired 已退役';
-COMMENT ON COLUMN publish_jobs.trigger_type IS '触发发布的业务事件类型';
-COMMENT ON COLUMN publish_jobs.requested_by IS '触发操作的后台用户 ID，自动触发时可为 NULL';
-COMMENT ON COLUMN publish_jobs.manifest_key IS '此版本公开数据投影的私有对象键，尚未登记时为 NULL';
-COMMENT ON COLUMN publish_jobs.artifact_prefix IS '此版本静态产物的私有存储前缀，尚未登记时为 NULL';
-COMMENT ON COLUMN publish_jobs.attempts IS '该 generation 的构建尝试次数';
-COMMENT ON COLUMN publish_jobs.lease_token IS '构建 Worker 的租约令牌，无租约时为 NULL';
-COMMENT ON COLUMN publish_jobs.lease_expires_at IS '构建租约截止时间，无租约时为 NULL';
-COMMENT ON COLUMN publish_jobs.started_at IS '开始构建的时间，未领取时为 NULL';
-COMMENT ON COLUMN publish_jobs.finished_at IS '任务结束时间，未结束时为 NULL';
-COMMENT ON COLUMN publish_jobs.error_message IS '失败原因摘要，无错误时为 NULL，不记录凭据';
-COMMENT ON COLUMN publish_jobs.created_at IS '该记录首次写入本系统的时间。';
-
 CREATE TABLE site_state (
   singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-  desired_generation bigint REFERENCES publish_jobs(generation),
-  active_generation bigint REFERENCES publish_jobs(generation),
-  activated_at timestamptz,
-  CHECK (active_generation IS NULL OR (desired_generation IS NOT NULL AND active_generation <= desired_generation))
+  generation bigint NOT NULL DEFAULT 0 CHECK (generation >= 0),
+  updated_at timestamptz NOT NULL DEFAULT 'epoch'
 );
-
-COMMENT ON TABLE site_state IS '站点发布状态单例，记录最新提交目标与统一的线上读取指针。';
-COMMENT ON COLUMN site_state.singleton IS '固定为 true 的主键，限制表最多一条记录';
-COMMENT ON COLUMN site_state.desired_generation IS '最新提交的站点目标版本，尚未提交发布时为 NULL';
-COMMENT ON COLUMN site_state.active_generation IS '静态站点与 Public API 共同读取的当前线上版本，首次上线前为 NULL';
-COMMENT ON COLUMN site_state.activated_at IS '当前线上版本的实际切换时间，首次上线前为 NULL';
 
 INSERT INTO site_state (singleton) VALUES (true);
-
-CREATE TABLE outbox_events (
-  id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
-  aggregate_type text NOT NULL,
-  aggregate_id uuid NOT NULL CHECK (is_uuid_v7(aggregate_id)),
-  event_type text NOT NULL,
-  payload jsonb NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  processed_at timestamptz,
-  attempts integer NOT NULL DEFAULT 0,
-  last_error text
-);
-
-COMMENT ON TABLE outbox_events IS '随业务事务持久化并供 Worker 异步处理的领域事件。';
-COMMENT ON COLUMN outbox_events.id IS '该记录的 UUIDv7 主键。';
-COMMENT ON COLUMN outbox_events.aggregate_type IS '产生事件的业务实体类型';
-COMMENT ON COLUMN outbox_events.aggregate_id IS '产生事件的业务实体 UUIDv7；站点发布事件填写 publish_jobs.id，不填写 generation。';
-COMMENT ON COLUMN outbox_events.event_type IS '消费者用于分派处理的事件类型';
-COMMENT ON COLUMN outbox_events.payload IS '事件业务载荷，例如发布事件携带 generation，不存储凭据';
-COMMENT ON COLUMN outbox_events.created_at IS '该记录首次写入本系统的时间。';
-COMMENT ON COLUMN outbox_events.processed_at IS '消费者确认处理的时间，尚未确认时为 NULL';
-COMMENT ON COLUMN outbox_events.attempts IS '事件处理的尝试次数';
-COMMENT ON COLUMN outbox_events.last_error IS '最近一次事件处理失败的摘要，无错误时为 NULL';
-
-CREATE INDEX outbox_unprocessed_idx
-  ON outbox_events(created_at) WHERE processed_at IS NULL;
 
 CREATE TABLE audit_logs (
   id uuid PRIMARY KEY CHECK (is_uuid_v7(id)),
@@ -776,7 +675,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 ### 5.3 Public API
 
-只读取当前 `active_generation` 的不可变公开投影（见 §7.2），不读草稿或期望发布数据。每个请求固定本次读取的 generation，并在响应返回 `X-Site-Generation`。客户端可传 `X-Expected-Generation`；若不一致返回 `409 site_generation_changed`，不提供访问旧 generation 的公开入口。尚无任何上线版本时返回 `503 site_not_ready`，不能假装数据为空。
+只读取当前 `site_state.generation` 的不可变公开投影（见 §7.2），不读草稿或期望发布数据。每个请求固定本次读取的 generation，并在响应返回 `X-Site-Generation`。客户端可传 `X-Expected-Generation`；若不一致返回 `409 site_generation_changed`，不提供访问旧 generation 的公开入口。空站点的公开版本为 0。
 
 | Method | Endpoint | 说明 |
 | ------ | -------- | ---- |
@@ -806,32 +705,30 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 | PUT                | `/users/me/password`                                                                                      | 校验当前密码后替换本人密码；204                                             |
 | GET, POST          | `/posts`                                                                                                  | 列表及创建；Author 只看到自己的文章                                         |
 | GET                | `/posts/{id}`                                                                                             | 文章详情，含当前、期望、线上三个 revision ID                                |
+| DELETE             | `/posts/{id}` | Editor/Admin 永久删除未归属系列且已离线的文章，须携带当前修订 ID 和发布版本号；204 |
 | POST               | `/posts/{id}/revisions`                                                                                   | 创建修订，见 §6.1                                                           |
-| GET                | `/posts/{id}/revisions`、`/posts/{id}/revisions/{revision_id}`                                            | 修订列表及详情，供编辑、预览和历史查看                                      |
-| POST               | `/posts/{id}/reviews`                                                                                     | Author 为自己的指定修订创建待审核记录，201                                  |
-| PATCH              | `/posts/{id}/reviews/{review_id}`                                                                         | Editor/Admin 批准或拒绝待审核记录                                           |
+| GET                | `/posts/{id}/revisions`、`/posts/{id}/revisions/{revision_id}`                                            | 当前修订列表（至多一条）和详情，供编辑和预览                                      |
 | PUT, DELETE        | `/posts/{id}/publication`                                                                                 | Editor/Admin 设置或撤下上线目标，202，见 §6.2                               |
 | CRUD               | `/categories`、`/tags`                                                                                    | 分类标签维护；有引用时不允许删除                                            |
-| POST               | `/media`                                                                                                  | 流式上传图片并返回只读链接，201，见 §6.4                                    |
+| POST               | `/media`                                                                                                  | 校验并按内容去重后返回只读链接，新建 201、复用 200，见 §6.4                                    |
 | GET, PATCH, DELETE | `/media/{id}`                                                                                             | 媒体元数据、修改替代文本和授权删除；列表使用 `GET /media` |
 | GET                | `/media/{id}/content`                                                                                     | 授权读取已校验文件，管理域不缓存                                            |
 | PUT                | `/users/profile`                                                                                                | 整体保存 About 页面的单例个人资料                                                  |
 | GET                | `/ai-trending/repositories`、`/ai-trending/repositories/{id}`、`/ai-trending/repositories/{id}/snapshots` | 仓库与成功批次快照                                                          |
 | PATCH              | `/ai-trending/repositories/{id}`                                                                          | 隐藏/恢复、精选、分类修正                                                   |
 | GET, POST          | `/ai-trending/ingestion-runs`                                                                             | 采集批次、错误与限流信息；Admin 请求当日批次，运行中或已成功返回现有记录    |
-| GET                | `/publishing/jobs`、`/publishing/jobs/{id}`                                                               | 列表和详情；支持通过 generation 定位任务                                    |
-| POST               | `/publishing/jobs/{id}/attempts`                                                                          | Admin 为仍是最新目标的失败任务创建重试，202                                 |
 | GET, POST          | `/users`                                                                                                  | Admin 列表和创建账户；创建返回 201 与 `Location`                            |
+| DELETE             | `/users/{id}` | Admin 删除其他账户，保留内容归属与审计，返回 204 |
 | PATCH              | `/users/{id}`                                                                                             | Admin 停用、启用及分配内置角色                                              |
 | GET                | `/roles`、`/audit-logs`                                                                                   | Admin 读取内置角色及审计                                                    |
 
-默认由 Editor/Admin 维护个人资料和分类标签。Author 仅可操作自己名下的文章与媒体，以及读取自己有权访问的任务。个人资料、公开分类标签和 AI 榜单展示设置保存成功后，响应包含 `publish_job_id` 和 `desired_generation`，供后台单独显示上线状态。
+Editor/Admin 维护个人资料和分类标签。公开内容受到影响时，写入事务推进公开版本并记录审计。Author 仅可操作自己的文章与媒体。
 
 ### 5.5 Internal API
 
 内部接口仅在 Worker 与 API 分离部署且确有需要时启用。优先让 Worker 直接调用 application use case 和共享数据库，而不是为内部调用无谓增加 HTTP hop。
 
-若生产入口独立于 Axum，入口使用服务身份调用 `GET /api/v1/internal/site/active` 解析 `active_generation` 和产物位置；不将产物位置直接透传给访客。不使用 HTTP 也可由同进程的 Axum handler 解析。Worker 的领任务、续租和发布确认一期直接走共享用例，不暴露额外的完成接口。
+Compose 的 Astro 服务使用私有网络的 `/internal/site-snapshot` 校验公开内容版本，网关仅暴露公开读接口。
 
 ## 6. 核心 DTO 示例
 
@@ -852,9 +749,9 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 }
 ```
 
-创建返回 201、`Location` 与文章详情（含首条修订）。`POST /posts/{id}/revisions` 采用同样的完整修订内容，去掉 `slug`，新增必填 `expected_revision_id`。事务中校验文章权限、锁定文章行并比较当前指针，再追加 revision 和更新指针；不一致返回 `409 revision_conflict`，不创建修订，客户端重新读取文章取得当前指针。内容与当前编辑版本相同时不追加修订，返回 200 与当前版本，供自动保存使用。
+创建返回 201、`Location` 与文章详情（含首条修订）。`POST /posts/{id}/revisions` 采用同样的完整修订内容，去掉 `slug`，新增必填 `expected_revision_id`。事务中校验文章权限、锁定文章行并比较当前指针，再替换 revision 和更新指针；不一致返回 `409 revision_conflict`，不创建修订，客户端重新读取文章取得当前指针。内容与当前编辑版本相同时不追加修订，返回 200 与当前版本，供自动保存使用。
 
-`POST /posts/{id}/reviews` 传 `revision_id`，创建 `pending` 审核并返回 201 与 `Location`；重复提交返回 `409 review_already_submitted`。`PATCH /posts/{id}/reviews/{review_id}` 传 `decision`（`approved` 或 `rejected`）及可选 `comment`，返回审核记录；不是待审核状态时返回 `409 review_not_pending`。文章详情返回 `current_revision_id`、可空的 `desired_published_revision_id` 和 `live_revision_id`、`publication_version` 及 `desired_generation`、`active_generation`。
+文章详情返回当前草稿 `current_revision_id`，以及 `publication` 中的 `published_revision_id`、发布时间和并发版本 `publication_version`。
 
 ### 6.2 发布与取消发布
 
@@ -865,7 +762,7 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 }
 ```
 
-上线使用 `PUT /posts/{id}/publication`，正文如上；撤下使用 `DELETE /posts/{id}/publication?expected_publication_version=N`，不带正文。事务校验当前 `publication_version`、权限及指定 revision 的归属和审批结果；更新或清空期望公开 revision 和时间，同时增加 `publication_version`、创建 job 和 Outbox 事件。两类操作均返回 202，含 `publish_job_id`、`desired_generation`、`publication_version`，并不保证已上线。并发冲突为 `409 publication_conflict`，未批准为 `409 revision_not_approved`，无期望公开版本可撤下为 `409 already_unpublished`。
+上线使用 `PUT /posts/{id}/publication`，撤回使用 `DELETE /posts/{id}/publication?expected_publication_version=N`。事务内校验发布版本和指定修订，更新或清除公开副本、记录操作者并递增站点版本。两类操作均在提交后返回 200 与 `generation`、`publication_version`。版本冲突返回 409。
 
 ### 6.3 AI Trending 列表参数
 
@@ -885,22 +782,20 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 1. Scheduler 每天 02:00 UTC 创建该 UTC 日期的批次；手动触发也使用请求当日的 `(source_id, slot_date)`。通过唯一约束合并请求，仅可重试当日未成功批次，不补写逾期日期。租约过期的旧 Worker 不得提交结果。
 2. Provider 从管理员配置的 topic 白名单发现公开 GitHub 仓库（初始可使用 `artificial-intelligence`、`machine-learning`、`llm`）。每个 topic 按 GitHub Stars 排序获取前 100 个候选，过滤 fork、归档及非公开仓库，按 GitHub ID 合并；按 Stars 降序、外部 ID 升序截取前 200 项。只采集当批候选，掉出收录范围的项目不在该批榜单及详情中出现，但保留历史样本。
 3. 分页、ETag 缓存和限流重试只作用于采集层。必需的发现或详情请求未完成则整批失败；无 release 可以是有效空值，不把请求失败或缺失指标映射为 0。完整候选集可以为空；不能将请求失败当作空集。采集网络 I/O 不持有 DB 事务。
-4. 仅在整批准备就绪后开启事务：校验租约与采集日，根据 `(source_id, external_id)` upsert 项目（保留人工字段），写入每个 `(run_id, repository_id)` 快照，将批次标记为 `succeeded`，并按 §7.2 创建新的站点目标。失败仅更新批次的状态、错误及统计，不提交业务数据或发布新批次。公开站点仍使用最近一次已上线的成功批次；下一次站点构建选择最新成功的 UTC 批次，与其他站点内容一同上线。
+4. 仅在整批准备就绪后开启事务：校验租约与采集日，根据 `(source_id, external_id)` upsert 项目（保留人工字段），写入每个 `(run_id, repository_id)` 快照，将批次标记为 `succeeded`，并按 §7.2 推进公开内容版本。失败仅更新批次的状态、错误及统计，不提交业务数据或发布新批次。公开站点仍使用最近一次已上线的成功批次；下一次成功采集事务按 §7.2 递增公开版本。
 5. 以最新成功批次的 UTC 日期 `T` 为终点。对 `W=7/30` 天，在 `[T-W-2 天, T-W]`（均含边界）内选该项目日期最新的成功样本作为基线。`增长 = 终点计数 - 基线计数`，没有基线时为 `null`，保留负数；不跨批拼出终点。快照同时保留真实观测时间 `snapshot_at`。
 6. 自然榜单只含该批次、未隐藏的项目；主排序按请求字段降序，增长为 `null` 者排在全部有值项之后；再按 Stars 降序、外部 ID 升序稳定排序。`recently_updated` 使用上游更新时间。精选为独立分区，其标记不参与自然榜单排序。历史接口只提供当前可见项目截至 `T` 的最近 90 天成功样本。页面显示 `T`；无成功批次时为暂无数据。
 
-### 7.2 站点发布流程
+### 7.2 同步更新公开内容
 
-1. **登记站点目标。** 文章发布或取消发布、公开分类标签修改、个人资料保存、AI 榜单展示调整和成功采集均调用 `enqueue_site_publish`。锁定 `site_state` 单例后递增 `desired_generation`（首次为 1），并在同一事务内保存业务变更、创建 `queued` 的 `publish_jobs` 与业务键为 generation 的 Outbox 事件。保存草稿、上传和审核不重建。初次部署以 `bootstrap` 触发，未上线前站点返回 503。
-2. **领取与导出。** Worker 短事务领取任务，写入租约后提交。导出使用同一 `REPEATABLE READ` 视图，首先确认请求 generation 为该视图的 `desired_generation`，再一次性导出期望公开的 revision、分类标签、个人资料、最新成功 AI 批次、媒体 ID 与页面索引。输出带 `generation`、`schema_version` 和完整性摘要的不可变快照：仅含公开投影（不含账户、草稿、原始外部 payload 或内部 key），站点构建及 Public API 使用同一数据；文章 ID 与公开 revision 的映射也写入快照，供后台查询线上状态。
-3. **构建候选产物。** Worker 将快照以只读文件交给 Astro，并将 HTML、sitemap、RSS 等输出上传至按 generation 和尝试隔离的私有产物位置。验证上传完成及产物清单后才能尝试上线。构建、上传均不修改生产路由；过期租约不能覆盖后续尝试的产物。
-4. **原子切换。** 生产站点入口和 Public API 均以数据库 `site_state.active_generation` 为唯一线上指针。成功候选在短事务内锁定同一单例行，验证 `generation == desired_generation`、租约仍有效且产物已就绪，然后一次性写入对应快照与产物位置、推进 `active_generation`、标记当前任务为 `active` 与上一线上任务为 `retired`。若 `desired_generation` 已变，旧候选标记 `superseded`，不切流量；同一已激活任务重复确认是空操作。
-5. **处理失败与重试。** 构建或校验失败保持上一指针，记录错误并把仍为最新目标的任务标为 `failed`；落后的未上线任务可直接合并为 `superseded`。Admin 只可把仍为最新目标的失败 generation 重新排队（否则 `409 publish_job_not_retryable`），不能激活旧站点产物。后续站点变更生成新 generation，并包含此前尚未上线的期望变更。
-6. **访问与撤下。** 每次生产请求解析一次指针，并只提供该版本的内容；未命中的详情返回 404，不查询旧产物。Canonical URL 与公开媒体在切换后不能从过期缓存继续返回旧内容：一期 HTML、公共 API、媒体及 SEO 路由使用 `Cache-Control: no-store`；可按不可变产物键做内部缓存，哈希静态资产可长期缓存。上线后的撤下同时覆盖静态页、Public API、列表、sitemap 与 RSS。
+1. 文章发布固定当前修订的净化正文、封面、分类、标签及媒体引用，撤回删除该公开副本。系列、公开分类或个人资料变更也在各自事务内更新公开版本。
+2. 在同一事务递增单例的 `generation` 并更新时间，同时写入业务审计。数据库失败回滚整个操作。
+3. 公开 API 以一致的数据库快照组装本版本的公开投影。Astro 通过 `GET /api/v1/public/site-snapshot` 读取并渲染页面、RSS 及 sitemap；媒体接口校验公开引用。
+4. 从旧版迁移时，若待发布目标与线上不一致，保留原服务供作者核对后再切换。
 
 ## 8. Worker 与任务可靠性
 
-- Outbox 至少一次投递；用 `FOR UPDATE SKIP LOCKED` 在短事务领取/确认通知，以 generation 去重。`publish_jobs` 和 `ai_ingestion_runs` 是持久任务；Worker 同时扫描可领取或可回收的记录，不能只依赖收到通知。
+- Worker 负责后台维护。未来采集任务独立持久化并按采集日期去重。
 - 长任务领取、续租、抢占与完成都校验租约令牌，记录 attempts 与错误。崩溃或超时可回收，达到重试上限停止自动重试；构建和外部 I/O 不持有行锁。
 - 对外部 API 使用 timeout、限流、指数退避和最大重试次数；同一采集日由唯一约束与租约协调，过期采集批次不补跑。
 
@@ -919,14 +814,14 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 
 - tracing + structured logging。
 - 每个请求有 request_id。
-- 记录 API latency、5xx、DB pool、Worker queue、采集成功率、构建耗时及变更从提交到上线的时延；仍有待上线变更超过 5 分钟时记录告警指标。
+- 记录 API latency、5xx、DB pool、Worker queue、采集成功率、同步发布接口耗时和失败率。
 - 审计日志记录管理操作，但避免记录密码、Session token 和敏感凭据。
 
 ### 10.2 部署建议
 
 第一阶段：
 
-- Astro：只生成静态产物；一期由公开域入口（可由 Axum 路由实现）按线上指针从私有 S3/R2 读取对应静态文件。不要使用构建完自动切换生产域名的托管路径绕过 §7.2。
+- Astro：网站代码在部署时编译为 Node SSR 服务，公开域入口分别转发 API 和页面请求。
 - React Admin：独立子域名静态托管，入口把同源 `/api/v1/admin` 代理到 Axum；公共域只暴露公共 API 和前台路由。Vite 开发代理遵守同源访问方式。
 - Axum API 和 Worker 分别部署为 Docker 容器，使用托管或受控 PostgreSQL。私有对象存储用于上传临时对象、正式媒体、快照和站点产物，并按用途设置生命周期策略。
 - 在生产上线前演练 PostgreSQL 和线上版本所依赖的对象恢复；退役产物按保留策略清理，禁止清理当前线上及待切换版本的依赖。Docker Compose 可用于本地开发和小规模部署。
@@ -936,8 +831,8 @@ COMMENT ON COLUMN audit_logs.created_at IS '该记录首次写入本系统的时
 ## 11. 实施里程碑
 
 1. Workspace、配置、迁移、健康检查、认证和 RBAC。
-2. 媒体流式上传与校验、Markdown 修订、分类标签、审核、发布和取消发布。
-3. Outbox、generation 快照、Astro 构建与生产指针切换；Public API 和 Admin 任务页面。
+2. 媒体限长上传、校验与去重、Markdown 修订、分类标签、发布和取消发布。
+3. 同步公开副本、Astro SSR、Public API 与发布历史。
 4. 个人资料维护与公开投影。
 5. GitHub 采集、快照、趋势计算和后台运行记录。
-6. 审计、监控、备份恢复和端到端测试。优先覆盖过期租约、旧构建晚完成、新草稿不影响线上、部分采集失败、取消发布后的 404 和媒体引用权限。
+6. 审计、监控、备份恢复和端到端测试。优先覆盖版本冲突、旧站迁移保护、新草稿不影响线上、部分采集失败、取消发布后的 404 和媒体引用权限。

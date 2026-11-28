@@ -1,22 +1,31 @@
+import { websiteUrl } from '@/lib/website';
+import { postPublicationStatus } from './post-publication-status';
 import type { Schemas } from '@silva/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Columns2, PenLine, SlidersHorizontal } from 'lucide-react';
+import {
+    ArrowLeft,
+    BookOpen,
+    Columns2,
+    ExternalLink,
+    PenLine,
+    SlidersHorizontal,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TiptapMarkdownEditor, type TiptapMarkdownEditorHandle } from './tiptap-markdown-editor';
 import { AuthenticatedImage, SafeHtmlPreview } from '@/components/media/authenticated-media';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner, LoadingCard } from '@/components/ui/feedback';
 import { Drawer, Modal } from '@/components/ui/overlay';
+import { Select } from '@/components/ui/select';
 import { StatusChip } from '@/components/ui/status-chip';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/auth/auth-context';
-import { publishJobStatusMeta, reviewStatusChip } from '@/features/dashboard/dashboard-page';
 import { MediaPickerDrawer } from '@/features/media/media-picker-drawer';
 import { apiClient, unwrapResponse, uploadMediaFile } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatErrorWithRequestId, getMediaRejectionMessage, isApiError } from '@/lib/errors';
-import { formatGeneration, formatRelativeTime, utf8ByteLength } from '@/lib/format';
+import { formatRelativeTime, utf8ByteLength } from '@/lib/format';
 import { renderSafeMarkdown } from '@/lib/markdown';
 import { hasAnyPermission, hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { queryKeys } from '@/lib/query-keys';
@@ -103,15 +112,21 @@ function toRevisionBody(draft: DraftFields) {
     };
 }
 
-export function PostEditorPage({ postId }: { postId?: string }) {
+export function PostEditorPage({
+    postId,
+    initialCategoryId,
+}: {
+    postId?: string;
+    initialCategoryId?: string;
+}) {
     const isCreateMode = !postId;
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { user } = useAuth();
 
-    const canSubmitReview = hasPermission(user, PERMISSIONS.POSTS_SUBMIT_OWN);
     const canPublish = hasPermission(user, PERMISSIONS.POSTS_PUBLISH);
+    const canManageSeries = hasPermission(user, PERMISSIONS.SERIES_MANAGE);
     const canUploadMedia = hasAnyPermission(user, [
         PERMISSIONS.MEDIA_MANAGE_OWN,
         PERMISSIONS.MEDIA_MANAGE,
@@ -120,14 +135,23 @@ export function PostEditorPage({ postId }: { postId?: string }) {
     const editorRef = useRef<TiptapMarkdownEditorHandle>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
     const slugInputRef = useRef<HTMLInputElement>(null);
-    const autoSaveTimerRef = useRef<number | null>(null);
+    const editSequence = useRef(0);
+    const activeSave = useRef<{ sequence: number; result: Promise<Schemas['Revision']> } | null>(
+        null,
+    );
+    const publishing = useRef(false);
+    const [isPublishing, setIsPublishing] = useState(false);
+    const [uploadingImages, setUploadingImages] = useState(0);
     const hydratedPostIdRef = useRef<string | null>(null);
     const confirmedLeaveRef = useRef(false);
 
-    const [draft, setDraft] = useState<DraftFields>(EMPTY_DRAFT);
+    const [draft, setDraft] = useState<DraftFields>(() =>
+        !postId && initialCategoryId
+            ? { ...EMPTY_DRAFT, category_ids: [initialCategoryId] }
+            : EMPTY_DRAFT,
+    );
     const [expectedRevisionId, setExpectedRevisionId] = useState<string | null>(null);
-    const [currentRevNo, setCurrentRevNo] = useState<number>(0);
-    const [currentReview, setCurrentReview] = useState<Schemas['ReviewSummary'] | null>(null);
+
     const [isDirty, setIsDirty] = useState(false);
     const [hasConflict, setHasConflict] = useState(false);
     const [saveState, setSaveState] = useState<SaveState>({
@@ -138,20 +162,11 @@ export function PostEditorPage({ postId }: { postId?: string }) {
     const [mobileTab, setMobileTab] = useState<'source' | 'preview'>('source');
     const [previewOpen, setPreviewOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [settingsPromptedByCreate, setSettingsPromptedByCreate] = useState(false);
     const [slugError, setSlugError] = useState<string | null>(null);
     const [leaveModalOpen, setLeaveModalOpen] = useState(false);
     const [pickerMode, setPickerMode] = useState<'body' | 'cover' | null>(null);
-    const [submitModalOpen, setSubmitModalOpen] = useState(false);
-    const [publishModalOpen, setPublishModalOpen] = useState(false);
     const [unpublishModalOpen, setUnpublishModalOpen] = useState(false);
-    const [selectedPublishRevId, setSelectedPublishRevId] = useState<string>('');
-    const [pendingJob, setPendingJob] = useState<{
-        jobId: string;
-        generation: number;
-        summary: string;
-    } | null>(null);
-
+    const [selectedSeriesId, setSelectedSeriesId] = useState<string>('');
     const hasContentToConfirmLeave = isCreateMode
         ? draft.title.trim().length > 0 || draft.markdown_body.trim().length > 0
         : isDirty;
@@ -169,17 +184,6 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         enabled: Boolean(postId),
     });
 
-    const revisionsQuery = useQuery({
-        queryKey: queryKeys.posts.revisions(postId ?? '', 1, 100),
-        queryFn: async () =>
-            unwrapResponse(
-                apiClient.GET('/api/v1/admin/posts/{id}/revisions', {
-                    params: { path: { id: postId! }, query: { page: 1, per_page: 100 } },
-                }),
-            ),
-        enabled: Boolean(postId),
-    });
-
     const categoriesQuery = useQuery({
         queryKey: queryKeys.taxonomy.categories,
         queryFn: async () => unwrapResponse(apiClient.GET('/api/v1/admin/categories')),
@@ -190,34 +194,224 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         queryFn: async () => unwrapResponse(apiClient.GET('/api/v1/admin/tags')),
     });
 
-    // 轮询待上线发布任务
-    const pendingJobQuery = useQuery({
-        queryKey: queryKeys.publishing.job(pendingJob?.jobId ?? ''),
+    const seriesOptionsQuery = useQuery({
+        queryKey: queryKeys.series.list({ page: 1, per_page: 100 }),
+        queryFn: async () =>
+            unwrapResponse(
+                apiClient.GET('/api/v1/admin/series', {
+                    params: { query: { page: 1, per_page: 100 } },
+                }),
+            ),
+        enabled: !isCreateMode && canManageSeries && settingsOpen,
+    });
+
+    const currentSeriesId = postQuery.data?.series?.id ?? null;
+
+    const currentSeriesQuery = useQuery({
+        queryKey: queryKeys.series.detail(currentSeriesId ?? ''),
         queryFn: async () => {
             const res = await unwrapResponse(
-                apiClient.GET('/api/v1/admin/publishing/jobs/{id}', {
-                    params: { path: { id: pendingJob!.jobId } },
+                apiClient.GET('/api/v1/admin/series/{id}', {
+                    params: { path: { id: currentSeriesId! } },
                 }),
             );
             return res.data;
         },
-        enabled: Boolean(pendingJob?.jobId),
-        refetchInterval: (query) => {
-            const st = query.state.data?.status;
-            if (!st || st === 'queued' || st === 'building') return 3000;
-            return false;
-        },
+        enabled: !isCreateMode && canManageSeries && settingsOpen && Boolean(currentSeriesId),
     });
 
-    useEffect(() => {
-        const st = pendingJobQuery.data?.status;
-        if (st === 'active' || st === 'superseded' || st === 'retired') {
+    const currentSeriesItem = (() => {
+        const seriesDetail = currentSeriesQuery.data;
+        if (!seriesDetail || !postId) return null;
+        const rootMatch = seriesDetail.items.find((it) => it.post_id === postId);
+        if (rootMatch) {
+            return { sectionId: '', displayTitle: rootMatch.display_title ?? '' };
+        }
+        for (const sec of seriesDetail.sections) {
+            const match = sec.items.find((it) => it.post_id === postId);
+            if (match) {
+                return { sectionId: sec.id, displayTitle: match.display_title ?? '' };
+            }
+        }
+        return null;
+    })();
+
+    const seriesItemVersionKey = currentSeriesId
+        ? `${currentSeriesId}:${currentSeriesQuery.data?.edit_version ?? 0}`
+        : '';
+    const [seriesItemDraft, setSeriesItemDraft] = useState<{
+        key: string;
+        displayTitle: string;
+        sectionId: string;
+    } | null>(null);
+
+    const activeSeriesDisplayTitle =
+        seriesItemDraft?.key === seriesItemVersionKey
+            ? seriesItemDraft.displayTitle
+            : (currentSeriesItem?.displayTitle ?? '');
+    const activeSeriesSectionId =
+        seriesItemDraft?.key === seriesItemVersionKey
+            ? seriesItemDraft.sectionId
+            : (currentSeriesItem?.sectionId ?? '');
+
+    const seriesItemDirty =
+        Boolean(currentSeriesItem) &&
+        (activeSeriesDisplayTitle.trim() !== currentSeriesItem!.displayTitle.trim() ||
+            activeSeriesSectionId !== currentSeriesItem!.sectionId);
+
+    // 更新文章在专栏中的目录短标题与所属篇章
+    const updateSeriesItemMutation = useMutation({
+        mutationFn: async (input: {
+            seriesId: string;
+            displayTitle: string;
+            targetSectionId: string;
+        }) => {
+            if (!postId) throw new Error('无效的文章 ID');
+            const detailRes = await unwrapResponse(
+                apiClient.GET('/api/v1/admin/series/{id}', {
+                    params: { path: { id: input.seriesId } },
+                }),
+            );
+            const latest = detailRes.data;
+            const normalizedTitle = input.displayTitle.trim() || null;
+
+            const toOutlineItem = (it: Schemas['SeriesItem']) => ({
+                post_id: it.post_id,
+                display_title: it.post_id === postId ? normalizedTitle : it.display_title,
+            });
+
+            const inRoot = latest.items.some((it) => it.post_id === postId);
+            const currentSecId = inRoot
+                ? ''
+                : (latest.sections.find((sec) => sec.items.some((it) => it.post_id === postId))
+                      ?.id ?? '');
+            const movedGroup = currentSecId !== input.targetSectionId;
+
+            const nextRootItems = movedGroup
+                ? latest.items.filter((it) => it.post_id !== postId).map(toOutlineItem)
+                : latest.items.map(toOutlineItem);
+            if (movedGroup && input.targetSectionId === '') {
+                nextRootItems.push({ post_id: postId, display_title: normalizedTitle });
+            }
+
+            const nextSections = latest.sections.map((sec) => {
+                const baseItems = movedGroup
+                    ? sec.items.filter((it) => it.post_id !== postId).map(toOutlineItem)
+                    : sec.items.map(toOutlineItem);
+                if (movedGroup && sec.id === input.targetSectionId) {
+                    baseItems.push({ post_id: postId, display_title: normalizedTitle });
+                }
+                return {
+                    id: sec.id,
+                    title: sec.title,
+                    description: sec.description,
+                    items: baseItems,
+                };
+            });
+
+            const res = await unwrapResponse(
+                apiClient.PUT('/api/v1/admin/series/{id}/outline', {
+                    params: { path: { id: input.seriesId } },
+                    body: {
+                        expected_edit_version: latest.edit_version,
+                        items: nextRootItems,
+                        sections: nextSections,
+                    },
+                }),
+            );
+            return res.data;
+        },
+        onSuccess: (edited) => {
+            setSeriesItemDraft(null);
+            queryClient.setQueryData(queryKeys.series.detail(edited.series.id), edited.series);
             if (postId) {
                 void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
             }
-            void queryClient.invalidateQueries({ queryKey: queryKeys.publicSite.current });
-        }
-    }, [pendingJobQuery.data?.status, postId, queryClient]);
+            void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.series.all });
+            if (edited.publication) {
+            }
+            toast(edited.publication ? '专栏目录已更新' : '专栏目录设置已保存', 'ok');
+        },
+        onError: (error) => {
+            toast(formatErrorWithRequestId(error), 'bad');
+        },
+    });
+
+    // 加入系列末尾（按 §5.3 先读取系列详情获取最新 edit_version）
+    const addToSeriesMutation = useMutation({
+        mutationFn: async (targetSeriesId: string) => {
+            if (!postId) throw new Error('请先保存创建文章');
+            const detailRes = await unwrapResponse(
+                apiClient.GET('/api/v1/admin/series/{id}', {
+                    params: { path: { id: targetSeriesId } },
+                }),
+            );
+            const res = await unwrapResponse(
+                apiClient.POST('/api/v1/admin/series/{id}/items', {
+                    params: { path: { id: targetSeriesId } },
+                    body: {
+                        expected_edit_version: detailRes.data.edit_version,
+                        post_id: postId,
+                    },
+                }),
+            );
+            return { series: detailRes.data, added: res.data };
+        },
+        onSuccess: ({ series, added }) => {
+            setSelectedSeriesId('');
+            toast(
+                added.publication
+                    ? `已加入系列《${series.title}》，公开目录已更新`
+                    : `已加入系列《${series.title}》末尾`,
+                'ok',
+            );
+            if (postId) {
+                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
+            }
+            void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.series.detail(series.id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.series.all });
+            if (added.publication) {
+            }
+        },
+        onError: (error) => {
+            toast(formatErrorWithRequestId(error), 'bad');
+        },
+    });
+
+    // 从系列移出（按 §5.3 先读取系列详情获取最新 edit_version）
+    const removeFromSeriesMutation = useMutation({
+        mutationFn: async (targetSeriesId: string) => {
+            if (!postId) throw new Error('无效的文章 ID');
+            const detailRes = await unwrapResponse(
+                apiClient.GET('/api/v1/admin/series/{id}', {
+                    params: { path: { id: targetSeriesId } },
+                }),
+            );
+            await unwrapResponse(
+                apiClient.DELETE('/api/v1/admin/series/{id}/items/{post_id}', {
+                    params: {
+                        path: { id: targetSeriesId, post_id: postId },
+                        query: { expected_edit_version: detailRes.data.edit_version },
+                    },
+                }),
+            );
+            return detailRes.data;
+        },
+        onSuccess: (series) => {
+            toast(`已从系列《${series.title}》移出`, 'ok');
+            if (postId) {
+                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
+            }
+            void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.series.detail(series.id) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.series.all });
+        },
+        onError: (error) => {
+            toast(formatErrorWithRequestId(error), 'bad');
+        },
+    });
 
     // 首次加载文章数据时同步到编辑表单
     useEffect(() => {
@@ -227,25 +421,15 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             hydratedPostIdRef.current = post.id;
             setDraft(postToDraft(post));
             setExpectedRevisionId(post.current_revision_id);
-            setCurrentRevNo(post.current_revision.revision_no);
-            setCurrentReview(post.current_revision.review);
+
             setIsDirty(false);
             setHasConflict(false);
             setSaveState({
                 kind: 'saved',
-                text: `已保存为 r${post.current_revision.revision_no} · ${formatRelativeTime(post.current_revision.created_at)}`,
+                text: `已保存 · ${formatRelativeTime(post.current_revision.created_at)}`,
             });
         }
     }, [postQuery.data]);
-
-    // 清理定时器
-    useEffect(() => {
-        return () => {
-            if (autoSaveTimerRef.current !== null) {
-                window.clearTimeout(autoSaveTimerRef.current);
-            }
-        };
-    }, []);
 
     // 浏览器刷新 / 关闭页签前的防误触提示
     useEffect(() => {
@@ -272,14 +456,12 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             return res.data;
         },
         onSuccess: (created) => {
-            confirmedLeaveRef.current = true;
             setSettingsOpen(false);
-            setSettingsPromptedByCreate(false);
             setSlugError(null);
-            toast('文章已创建并保存为 r1', 'ok');
             queryClient.setQueryData(queryKeys.posts.detail(created.id), created);
             void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
-            void navigate({ to: '/posts/$postId/edit', params: { postId: created.id } });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.taxonomy.categories });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.taxonomy.tags });
         },
         onError: (error) => {
             const msg = formatErrorWithRequestId(error);
@@ -293,17 +475,21 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 setSlugError(
                     error.code === 'slug_in_use' ? '该 Slug 已被其他文章占用，请更换后再试。' : msg,
                 );
-                setSettingsPromptedByCreate(true);
                 setSettingsOpen(true);
                 window.requestAnimationFrame(() => slugInputRef.current?.focus());
             }
-            toast(msg, 'bad');
+            if (!publishing.current) toast(msg, 'bad');
         },
     });
 
     // 保存新修订（含自动保存）
     const saveRevisionMutation = useMutation({
-        mutationFn: async (payload: { postId: string; expectedId: string; draft: DraftFields }) => {
+        mutationFn: async (payload: {
+            postId: string;
+            expectedId: string;
+            draft: DraftFields;
+            sequence: number;
+        }) => {
             const res = await unwrapResponse(
                 apiClient.POST('/api/v1/admin/posts/{id}/revisions', {
                     params: { path: { id: payload.postId } },
@@ -315,31 +501,26 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             );
             return res.data;
         },
-        onSuccess: (revision) => {
+        onSuccess: (revision, payload) => {
+            const editedDuringSave = editSequence.current !== payload.sequence;
             setExpectedRevisionId(revision.id);
-            setCurrentRevNo(revision.revision_no);
-            setCurrentReview(revision.review);
-            setIsDirty(false);
+
+            setIsDirty(editedDuringSave);
             setHasConflict(false);
             setSaveState({
-                kind: 'saved',
-                text: `已保存为 r${revision.revision_no} · 刚刚`,
+                kind: editedDuringSave ? 'dirty' : 'saved',
+                text: editedDuringSave ? '有未保存的更改' : '已保存 · 刚刚',
             });
             if (postId) {
                 void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
-                void queryClient.invalidateQueries({
-                    queryKey: queryKeys.posts.revisions(postId, 1, 100),
-                });
                 void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
+                void queryClient.invalidateQueries({ queryKey: queryKeys.taxonomy.categories });
+                void queryClient.invalidateQueries({ queryKey: queryKeys.taxonomy.tags });
             }
         },
         onError: (error) => {
             if (isApiError(error) && error.code === 'revision_conflict') {
                 // 收到 409 revision_conflict 时立即停止自动保存，保留本地输入
-                if (autoSaveTimerRef.current !== null) {
-                    window.clearTimeout(autoSaveTimerRef.current);
-                    autoSaveTimerRef.current = null;
-                }
                 setHasConflict(true);
                 setSaveState({
                     kind: 'conflict',
@@ -354,9 +535,29 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         },
     });
 
+    const { mutateAsync: saveRevision, isPending: saving } = saveRevisionMutation;
+    const saveDraftRevision = useCallback(
+        (snapshot: DraftFields, expectedId: string, sequence: number) => {
+            setSaveState({ kind: 'saving', text: '保存中…' });
+            const result = saveRevision({ sequence, postId: postId!, expectedId, draft: snapshot });
+            activeSave.current = { sequence, result };
+            return result.finally(() => {
+                if (activeSave.current?.result === result) activeSave.current = null;
+            });
+        },
+        [postId, saveRevision],
+    );
+
     const triggerSaveRevision = useCallback(
         (snapshot: DraftFields) => {
-            if (!postId || !expectedRevisionId || hasConflict) return;
+            if (
+                !postId ||
+                !expectedRevisionId ||
+                hasConflict ||
+                activeSave.current ||
+                publishing.current
+            )
+                return;
             if (!snapshot.title.trim()) {
                 setSaveState({ kind: 'failed', text: '请先填写文章标题后再保存。' });
                 return;
@@ -365,47 +566,34 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 setSaveState({ kind: 'failed', text: 'Markdown 正文超出 512 KiB 限制。' });
                 return;
             }
-            setSaveState({ kind: 'saving', text: '保存中…' });
-            saveRevisionMutation.mutate({
-                postId,
-                expectedId: expectedRevisionId,
-                draft: snapshot,
-            });
+            // 保存状态和错误由 mutation 统一反馈。
+            void saveDraftRevision(snapshot, expectedRevisionId, editSequence.current).catch(
+                () => {},
+            );
         },
-        [postId, expectedRevisionId, hasConflict, saveRevisionMutation],
+        [postId, expectedRevisionId, hasConflict, saveDraftRevision],
     );
 
-    const scheduleAutoSave = useCallback(
-        (nextDraft: DraftFields) => {
-            setIsDirty(true);
-            if (isCreateMode) {
-                setSaveState({ kind: 'dirty', text: '草稿未创建' });
-                return;
-            }
-            if (hasConflict) {
-                setSaveState({ kind: 'conflict', text: '有新版本，已停止自动保存' });
-                return;
-            }
-            setSaveState({ kind: 'dirty', text: '有未保存的更改' });
-            if (autoSaveTimerRef.current !== null) {
-                window.clearTimeout(autoSaveTimerRef.current);
-            }
-            autoSaveTimerRef.current = window.setTimeout(() => {
-                triggerSaveRevision(nextDraft);
-            }, 1500);
-        },
-        [isCreateMode, hasConflict, triggerSaveRevision],
-    );
+    useEffect(() => {
+        if (isCreateMode || !isDirty || isPublishing || saving || saveState.kind !== 'dirty')
+            return;
+        const timer = window.setTimeout(() => triggerSaveRevision(draft), 1500);
+        return () => window.clearTimeout(timer);
+    }, [draft, isCreateMode, isDirty, isPublishing, saving, saveState.kind, triggerSaveRevision]);
 
     const patchDraft = useCallback(
         (updater: (prev: DraftFields) => DraftFields) => {
-            setDraft((prev) => {
-                const next = updater(prev);
-                scheduleAutoSave(next);
-                return next;
-            });
+            editSequence.current += 1;
+            setDraft(updater);
+            setIsDirty(true);
+            if (!hasConflict) {
+                setSaveState({
+                    kind: 'dirty',
+                    text: isCreateMode ? '草稿未创建' : '有未保存的更改',
+                });
+            }
         },
-        [scheduleAutoSave],
+        [isCreateMode, hasConflict],
     );
 
     // 独立修改 Slug（仅在未锁定时）
@@ -420,7 +608,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             return res.data;
         },
         onSuccess: (updated) => {
-            toast('Slug 已更新', 'ok');
+            if (!publishing.current) toast('Slug 已更新', 'ok');
             queryClient.setQueryData(queryKeys.posts.detail(updated.id), updated);
             setDraft((prev) => ({ ...prev, slug: updated.slug }));
         },
@@ -429,69 +617,23 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         },
     });
 
-    // 提交审核
-    const submitReviewMutation = useMutation({
-        mutationFn: async (revisionId: string) => {
-            const res = await unwrapResponse(
-                apiClient.POST('/api/v1/admin/posts/{id}/reviews', {
-                    params: { path: { id: postId! } },
-                    body: { revision_id: revisionId },
-                }),
-            );
-            return res.data;
-        },
-        onSuccess: (review) => {
-            setCurrentReview({ id: review.id, status: review.status });
-            setSubmitModalOpen(false);
-            toast(`已提交 r${review.revision_no} 审核`, 'ok');
-            if (postId) {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
-                void queryClient.invalidateQueries({
-                    queryKey: queryKeys.posts.revisions(postId, 1, 100),
-                });
-                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
-            }
-        },
-        onError: (error) => {
-            toast(formatErrorWithRequestId(error), 'bad');
-        },
-    });
-
-    // 发布（仅已批准修订）
-    const publishMutation = useMutation({
-        mutationFn: async (params: { revisionId: string; expectedVersion: number }) => {
-            const res = await unwrapResponse(
-                apiClient.PUT('/api/v1/admin/posts/{id}/publication', {
-                    params: { path: { id: postId! } },
-                    body: {
-                        revision_id: params.revisionId,
-                        expected_publication_version: params.expectedVersion,
-                    },
-                }),
-            );
-            return res.data;
-        },
-        onSuccess: (accepted) => {
-            setPublishModalOpen(false);
-            const revNo = revisions.find((r) => r.id === selectedPublishRevId)?.revision_no;
-            setPendingJob({
-                jobId: accepted.publish_job_id,
-                generation: accepted.desired_generation,
-                summary: `发布 ${revNo ? `r${revNo}` : '所选修订'}：站点版本 ${formatGeneration(accepted.desired_generation)} 已排队。上线前访客仍看到当前线上版本。`,
-            });
-            toast('已接受发布，正在排队构建站点', 'ok');
-            if (postId) {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
-                void queryClient.invalidateQueries({ queryKey: queryKeys.publishing.all });
-            }
-        },
-        onError: (error) => {
-            if (isApiError(error) && error.code === 'publication_conflict' && postId) {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
-            }
-            toast(formatErrorWithRequestId(error), 'bad');
-        },
-    });
+    async function refreshPublication(id: string) {
+        // 先取消保存草稿触发的旧查询，避免把发布前的线上状态当成读回结果。
+        await queryClient.cancelQueries({ queryKey: queryKeys.posts.detail(id) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.posts.all, refetchType: 'none' });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.publicSite.current });
+        return queryClient.fetchQuery({
+            queryKey: queryKeys.posts.detail(id),
+            queryFn: async () =>
+                (
+                    await unwrapResponse(
+                        apiClient.GET('/api/v1/admin/posts/{id}', {
+                            params: { path: { id } },
+                        }),
+                    )
+                ).data,
+        });
+    }
 
     // 取消发布
     const unpublishMutation = useMutation({
@@ -506,17 +648,13 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             );
             return res.data;
         },
-        onSuccess: (accepted) => {
+        onSuccess: async () => {
             setUnpublishModalOpen(false);
-            setPendingJob({
-                jobId: accepted.publish_job_id,
-                generation: accepted.desired_generation,
-                summary: `取消发布：站点版本 ${formatGeneration(accepted.desired_generation)} 已排队。新版本激活后文章将在公开站点下线。`,
-            });
-            toast('已提交取消发布，正在排队构建站点', 'ok');
-            if (postId) {
-                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
-                void queryClient.invalidateQueries({ queryKey: queryKeys.publishing.all });
+            try {
+                await refreshPublication(postId!);
+                toast('文章已下线', 'ok');
+            } catch {
+                toast('文章已下线，请刷新编辑页获取最新状态', 'info');
             }
         },
         onError: (error) => {
@@ -528,29 +666,44 @@ export function PostEditorPage({ postId }: { postId?: string }) {
     });
 
     const openSettingsManually = useCallback(() => {
-        setSettingsPromptedByCreate(false);
         setSettingsOpen(true);
     }, []);
 
     const closeSettingsDrawer = useCallback(() => {
         if (pickerMode !== null) return;
         setSettingsOpen(false);
-        setSettingsPromptedByCreate(false);
     }, [pickerMode]);
+
+    const postSeriesId = postQuery.data?.series?.id;
+
+    const navigateBack = useCallback(() => {
+        if (canManageSeries) {
+            if (postSeriesId) {
+                void navigate({
+                    to: '/series/$seriesId',
+                    params: { seriesId: postSeriesId },
+                });
+                return;
+            }
+            void navigate({ to: '/series' });
+            return;
+        }
+        void navigate({ to: '/posts' });
+    }, [canManageSeries, navigate, postSeriesId]);
 
     const handleBackClick = useCallback(() => {
         if (hasContentToConfirmLeave) {
             setLeaveModalOpen(true);
             return;
         }
-        void navigate({ to: '/posts' });
-    }, [hasContentToConfirmLeave, navigate]);
+        navigateBack();
+    }, [hasContentToConfirmLeave, navigateBack]);
 
     const confirmLeave = useCallback(() => {
         confirmedLeaveRef.current = true;
         setLeaveModalOpen(false);
-        void navigate({ to: '/posts' });
-    }, [navigate]);
+        navigateBack();
+    }, [navigateBack]);
 
     const handleUploadEditorImage = useCallback(
         async (file: File) => {
@@ -566,6 +719,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 toast('图片体积超过 10 MiB 限制', 'warn');
                 return null;
             }
+            setUploadingImages((count) => count + 1);
             try {
                 const normalized = normalizePastedImageFile(file);
                 const uploaded = await uploadMediaFile(normalized);
@@ -585,64 +739,147 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             } catch (error) {
                 toast(`图片上传失败：${formatErrorWithRequestId(error)}`, 'bad');
                 return null;
+            } finally {
+                setUploadingImages((count) => count - 1);
             }
         },
         [canUploadMedia, queryClient, toast],
     );
 
-    const handleCreatePost = useCallback(() => {
+    function prepareDraft(): DraftFields | null {
+        if (uploadingImages > 0) {
+            toast('正文图片正在上传，完成后即可继续', 'info');
+            return null;
+        }
         if (!draft.title.trim()) {
             setSettingsOpen(false);
             setMobileTab('source');
             toast('请先输入文章标题', 'warn');
             window.requestAnimationFrame(() => titleInputRef.current?.focus());
-            return;
+            return null;
         }
-        if (!draft.slug.trim()) {
-            setSlugError('请填写 Slug 后再创建文章');
-            setSettingsPromptedByCreate(true);
-            setSettingsOpen(true);
-            window.requestAnimationFrame(() => slugInputRef.current?.focus());
-            return;
+        if (utf8ByteLength(draft.markdown_body) > 524_288) {
+            toast('Markdown 正文超出 512 KiB 限制', 'warn');
+            return null;
+        }
+        if (isCreateMode && !draft.slug.trim()) {
+            const prefix =
+                draft.title
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .slice(0, 70)
+                    .replace(/^-+|-+$/g, '') || 'post';
+            const suffix = Array.from(crypto.getRandomValues(new Uint8Array(6)), (byte) =>
+                byte.toString(16).padStart(2, '0'),
+            ).join('');
+            const slug = `${prefix}-${suffix}`;
+            setDraft((previous) => ({ ...previous, slug }));
+            return { ...draft, slug };
         }
         if (!isValidSlug(draft.slug)) {
             setSlugError(
                 'Slug 仅允许小写字母、数字和单个连字符，不能以连字符开头或结尾（1–100 字符）',
             );
-            setSettingsPromptedByCreate(true);
             setSettingsOpen(true);
             window.requestAnimationFrame(() => slugInputRef.current?.focus());
-            return;
-        }
-        if (utf8ByteLength(draft.markdown_body) > 524_288) {
-            toast('Markdown 正文超出 512 KiB 限制', 'warn');
-            return;
+            return null;
         }
         setSlugError(null);
-        createPostMutation.mutate(draft);
-    }, [draft, createPostMutation, toast]);
+        return draft;
+    }
+
+    function openCreatedPost(id: string) {
+        confirmedLeaveRef.current = true;
+        void navigate({ to: '/posts/$postId/edit', params: { postId: id } });
+    }
+
+    function handleCreatePost() {
+        const snapshot = prepareDraft();
+        if (!snapshot || publishing.current || createPostMutation.isPending) return;
+        createPostMutation.mutate(snapshot, {
+            onSuccess: (created) => {
+                toast('草稿已保存', 'ok');
+                openCreatedPost(created.id);
+            },
+        });
+    }
+
+    async function handlePublish() {
+        if (!canPublish || publishing.current || hasConflict || createPostMutation.isPending)
+            return;
+        const snapshot = prepareDraft();
+        if (!snapshot) return;
+        const sequence = editSequence.current;
+        let created: Schemas['Post'] | undefined;
+        publishing.current = true;
+        setIsPublishing(true);
+        try {
+            if (isCreateMode) created = await createPostMutation.mutateAsync(snapshot);
+            const article = created ?? postQuery.data;
+            if (!article) return;
+            let revisionId = created?.current_revision_id ?? expectedRevisionId;
+            if (!revisionId) return;
+            const pending = activeSave.current;
+            if (pending) revisionId = (await pending.result).id;
+            if (!created && isDirty && pending?.sequence !== sequence) {
+                revisionId = (await saveDraftRevision(snapshot, revisionId, sequence)).id;
+            }
+            if (!article.slug_locked && snapshot.slug.trim() !== article.slug) {
+                await updateSlugMutation.mutateAsync(snapshot.slug.trim());
+            }
+            await unwrapResponse(
+                apiClient.PUT('/api/v1/admin/posts/{id}/publication', {
+                    params: { path: { id: article.id } },
+                    body: {
+                        revision_id: revisionId,
+                        expected_publication_version: article.publication.publication_version,
+                    },
+                }),
+            );
+            try {
+                await refreshPublication(article.id);
+                toast(
+                    editSequence.current === sequence
+                        ? '文章已上线'
+                        : '点击发布时的版本已上线，后续编辑仍在草稿中。',
+                    'ok',
+                );
+            } catch {
+                toast('文章已上线，请刷新编辑页获取最新状态', 'info');
+            }
+        } catch (error) {
+            // 协作者可能在保存成功、开始发布之间替换唯一的当前修订。
+            if (
+                isApiError(error) &&
+                error.code === 'validation_error' &&
+                error.details.some((detail) => detail.field === 'revision_id')
+            ) {
+                setHasConflict(true);
+                setSaveState({ kind: 'conflict', text: '有新版本，已停止自动保存' });
+            }
+            if (postId)
+                void queryClient.invalidateQueries({ queryKey: queryKeys.posts.detail(postId) });
+            toast(formatErrorWithRequestId(error), 'bad');
+        } finally {
+            publishing.current = false;
+            setIsPublishing(false);
+            if (created) openCreatedPost(created.id);
+        }
+    }
 
     const post = postQuery.data;
-    const revisions = revisionsQuery.data?.data ?? [];
-    const approvedRevisions = revisions.filter((rev) => rev.review?.status === 'approved');
-    const revNoById = new Map<string, number>();
-    for (const rev of revisions) {
-        revNoById.set(rev.id, rev.revision_no);
-    }
-    if (post) {
-        revNoById.set(post.current_revision.id, post.current_revision.revision_no);
-    }
-
     const previewHtml = useMemo(
         () => renderSafeMarkdown(draft.markdown_body),
         [draft.markdown_body],
     );
 
+    const creating = isCreateMode && (isPublishing || createPostMutation.isPending);
+
     if (!isCreateMode && postQuery.isLoading) {
         return <LoadingCard text="正在加载文章内容…" />;
     }
 
-    if (!isCreateMode && postQuery.isError) {
+    if (!isCreateMode && postQuery.isError && !post) {
         return (
             <ErrorBanner
                 title="无法读取文章"
@@ -652,25 +889,11 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         );
     }
 
-    const desiredRevId = post?.publication.desired_published_revision_id ?? null;
-    const liveRevId = post?.publication.live_revision_id ?? null;
-    const desiredRevNo = desiredRevId ? revNoById.get(desiredRevId) : undefined;
-    const liveRevNo = liveRevId ? revNoById.get(liveRevId) : undefined;
+    const publishedRevId = post?.publication.published_revision_id ?? null;
 
-    const editChip = currentRevNo
-        ? reviewStatusChip(currentRevNo, currentReview)
-        : { label: '未保存', tone: 'mute' as const };
-
-    const canSubmitNow =
-        !isCreateMode &&
-        Boolean(expectedRevisionId) &&
-        !isDirty &&
-        !hasConflict &&
-        currentReview === null &&
-        saveState.kind !== 'saving';
-
-    const canUnpublishNow =
-        !isCreateMode && Boolean(post?.publication.desired_published_revision_id);
+    const alreadyLive =
+        !isDirty && Boolean(publishedRevId) && publishedRevId === expectedRevisionId;
+    const canUnpublishNow = !isCreateMode && Boolean(post?.publication.published_revision_id);
 
     const reloadLatestAfterConflict = async () => {
         if (!postId) return;
@@ -678,8 +901,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
         if (result.data) {
             setDraft(postToDraft(result.data));
             setExpectedRevisionId(result.data.current_revision_id);
-            setCurrentRevNo(result.data.current_revision.revision_no);
-            setCurrentReview(result.data.current_revision.review);
+
             setIsDirty(false);
             setHasConflict(false);
             setSaveState({
@@ -692,30 +914,38 @@ export function PostEditorPage({ postId }: { postId?: string }) {
 
     const categories = categoriesQuery.data?.data ?? [];
     const tags = tagsQuery.data?.data ?? [];
-    const pendingJobData = pendingJobQuery.data;
-    const pendingStatusMeta = pendingJobData ? publishJobStatusMeta(pendingJobData.status) : null;
-    const needsRequiredSettings = isCreateMode && !isValidSlug(draft.slug);
+    const backLabel = canManageSeries
+        ? postSeriesId
+            ? '返回专栏工作台'
+            : '返回专栏列表'
+        : '返回文章列表';
+
+    const publication = postPublicationStatus({
+        current_revision_id: isDirty ? null : expectedRevisionId,
+        published_revision_id: publishedRevId,
+    });
 
     return (
-        <div className="space-y-3">
-            {/* 顶栏操作区：与文章标题分离，仅承载返回导航、状态与全局操作 */}
+        <div className="space-y-3" inert={creating} aria-busy={isPublishing || creating}>
+            {/* 独立返回导航 */}
+            <div>
+                <button
+                    type="button"
+                    onClick={handleBackClick}
+                    aria-label="返回文章列表"
+                    className="-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] font-medium text-ui-sub transition-colors hover:bg-white hover:text-ui-text"
+                >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>{backLabel}</span>
+                </button>
+            </div>
+
+            {/* 顶栏操作区：整合保存状态、发布状态与全局操作 */}
             <header
                 aria-label="文章操作栏"
                 className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ui-line bg-white px-3.5 py-2.5 shadow-[var(--shadow-card)] sm:px-4"
             >
-                <div className="flex min-w-0 items-center gap-2.5">
-                    <button
-                        type="button"
-                        onClick={handleBackClick}
-                        aria-label="返回文章列表"
-                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-ui-line bg-ui-subtle px-2.5 text-[13px] font-medium text-ui-sub transition-colors hover:border-ui-line-strong hover:bg-white hover:text-ui-text"
-                    >
-                        <ArrowLeft className="h-3.5 w-3.5" />
-                        <span>返回</span>
-                    </button>
-
-                    <span className="h-4 w-px shrink-0 bg-ui-line" aria-hidden="true" />
-
+                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
                     <div
                         className="flex min-w-0 items-center gap-2 text-[12.5px]"
                         aria-live="polite"
@@ -755,6 +985,31 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                             </button>
                         ) : null}
                     </div>
+
+                    {!isCreateMode ? (
+                        <>
+                            <span
+                                className="hidden h-4 w-px shrink-0 bg-ui-line sm:inline-block"
+                                aria-hidden="true"
+                            />
+                            <div
+                                aria-label="发布状态"
+                                className="flex flex-wrap items-center gap-1.5"
+                            >
+                                <StatusChip tone={publication.tone}>{publication.label}</StatusChip>
+                                {publishedRevId && post && (
+                                    <a
+                                        className="text-sm text-accent hover:underline"
+                                        href={new URL(`/blog/${post.slug}/`, websiteUrl).href}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        查看线上文章
+                                    </a>
+                                )}
+                            </div>
+                        </>
+                    ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -804,153 +1059,63 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                     >
                         <SlidersHorizontal className="h-3.5 w-3.5 text-ui-sub" />
                         <span>文章设置</span>
-                        {needsRequiredSettings ? (
-                            <span
-                                aria-hidden="true"
-                                title="尚未填写 Slug"
-                                className="h-1.5 w-1.5 rounded-full bg-warn"
-                            />
-                        ) : null}
                     </Button>
 
                     {isCreateMode ? (
                         <Button
-                            variant="primary"
+                            variant={canPublish ? 'secondary' : 'primary'}
                             size="sm"
-                            disabled={createPostMutation.isPending}
+                            disabled={createPostMutation.isPending || isPublishing}
                             onClick={handleCreatePost}
                         >
-                            {createPostMutation.isPending ? '创建中…' : '创建文章'}
+                            {createPostMutation.isPending && !isPublishing ? '保存中…' : '保存草稿'}
                         </Button>
                     ) : (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={!isDirty || hasConflict || saving || isPublishing}
+                            onClick={() => triggerSaveRevision(draft)}
+                        >
+                            保存文章
+                        </Button>
+                    )}
+                    {canPublish && (
                         <>
-                            <Button
-                                variant="secondary"
-                                size="sm"
-                                disabled={!isDirty || hasConflict || saveRevisionMutation.isPending}
-                                onClick={() => triggerSaveRevision(draft)}
-                            >
-                                保存修订
-                            </Button>
-                            <Link
-                                to="/posts/$postId/revisions"
-                                params={{ postId: postId! }}
-                                className="inline-flex h-8 items-center rounded-[8px] border border-ui-line bg-white px-3 text-[13px] font-medium text-ui-text shadow-2xs transition-colors hover:border-ui-line-strong hover:bg-ui-subtle"
-                            >
-                                修订历史
-                            </Link>
-                            {canSubmitReview ? (
+                            {canUnpublishNow && (
                                 <Button
-                                    variant="secondary"
+                                    variant="danger-outline"
                                     size="sm"
-                                    className="border-accent/40 text-accent hover:bg-accent-tint"
-                                    disabled={!canSubmitNow}
-                                    title={
-                                        isDirty
-                                            ? '请等待保存完成后再提交审核'
-                                            : hasConflict
-                                              ? '请先解决修订冲突'
-                                              : currentReview
-                                                ? `r${currentRevNo} 已提交审核`
-                                                : undefined
-                                    }
-                                    onClick={() => setSubmitModalOpen(true)}
+                                    disabled={isPublishing || unpublishMutation.isPending}
+                                    onClick={() => setUnpublishModalOpen(true)}
                                 >
-                                    提交审核
+                                    取消发布
                                 </Button>
-                            ) : null}
-                            {canPublish ? (
-                                <>
-                                    <Button
-                                        variant="danger-outline"
-                                        size="sm"
-                                        disabled={!canUnpublishNow}
-                                        onClick={() => setUnpublishModalOpen(true)}
-                                    >
-                                        取消发布
-                                    </Button>
-                                    <Button
-                                        variant="primary"
-                                        size="sm"
-                                        onClick={() => {
-                                            setSelectedPublishRevId(approvedRevisions[0]?.id ?? '');
-                                            setPublishModalOpen(true);
-                                        }}
-                                    >
-                                        发布…
-                                    </Button>
-                                </>
-                            ) : null}
+                            )}
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={
+                                    isPublishing ||
+                                    unpublishMutation.isPending ||
+                                    createPostMutation.isPending ||
+                                    updateSlugMutation.isPending ||
+                                    hasConflict ||
+                                    alreadyLive ||
+                                    (!isCreateMode && !expectedRevisionId)
+                                }
+                                onClick={() => void handlePublish()}
+                            >
+                                {isPublishing
+                                    ? '发布中…'
+                                    : publishedRevId
+                                      ? '发布更新'
+                                      : '发布文章'}
+                            </Button>
                         </>
                     )}
                 </div>
             </header>
-
-            {/* 编辑既有文章时展示三种修订状态；新建文章页面不显示 */}
-            {!isCreateMode ? (
-                <section aria-label="修订状态" className="studio-card overflow-hidden">
-                    <dl className="grid grid-cols-1 divide-y divide-ui-line text-[13px] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-                        <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:block">
-                            <dt className="text-ui-sub">当前编辑修订</dt>
-                            <dd className="flex flex-wrap items-center gap-1.5 sm:mt-1">
-                                <StatusChip tone={editChip.tone}>{editChip.label}</StatusChip>
-                                {isDirty ? (
-                                    <span className="text-[12px] text-warn">＋未保存更改</span>
-                                ) : null}
-                            </dd>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:block">
-                            <dt className="text-ui-sub">期望公开修订</dt>
-                            <dd className="sm:mt-1">
-                                {desiredRevId ? (
-                                    desiredRevId === liveRevId ? (
-                                        <StatusChip tone="ok">
-                                            {desiredRevNo ? `r${desiredRevNo} ` : ''}同线上
-                                        </StatusChip>
-                                    ) : (
-                                        <StatusChip tone="info">
-                                            {desiredRevNo ? `r${desiredRevNo} ` : ''}待上线
-                                        </StatusChip>
-                                    )
-                                ) : liveRevId ? (
-                                    <StatusChip tone="warn">无（取消发布 · 待上线）</StatusChip>
-                                ) : (
-                                    <span className="text-ui-sub">无</span>
-                                )}
-                            </dd>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 px-4 py-2.5 sm:block">
-                            <dt className="text-ui-sub">当前线上修订</dt>
-                            <dd className="sm:mt-1">
-                                {liveRevId ? (
-                                    <StatusChip tone="ok">
-                                        {liveRevNo ? `r${liveRevNo} ` : ''}已上线
-                                    </StatusChip>
-                                ) : (
-                                    <span className="text-ui-sub">无（未上线）</span>
-                                )}
-                            </dd>
-                        </div>
-                    </dl>
-                </section>
-            ) : null}
-
-            {/* 待上线任务横幅 */}
-            {pendingJob ? (
-                <output className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-[#CBD5E6] bg-accent-tint px-4 py-3 text-[14px] text-accent">
-                    <StatusChip tone={pendingStatusMeta?.tone ?? 'info'} className="bg-white">
-                        {pendingStatusMeta?.label ?? '待上线'}
-                    </StatusChip>
-                    <span>{pendingJob.summary}</span>
-                    <Link
-                        to="/publishing/$jobId"
-                        params={{ jobId: pendingJob.jobId }}
-                        className="font-medium underline underline-offset-2"
-                    >
-                        查看任务详情
-                    </Link>
-                </output>
-            ) : null}
 
             {/* 409 修订冲突横幅：停止自动保存并保留用户输入 */}
             {hasConflict ? (
@@ -1012,20 +1177,12 @@ export function PostEditorPage({ postId }: { postId?: string }) {
             </div>
 
             {/* 主体写作区：默认专注单栏，切换预览后双栏对照 */}
-            <div
-                className={cn(
-                    'grid gap-3',
-                    previewOpen ? 'lg:grid-cols-2' : 'lg:mx-auto lg:w-full lg:max-w-[980px]',
-                )}
-            >
+            <div className={cn('grid gap-3', previewOpen ? 'lg:grid-cols-2' : 'w-full')}>
                 {/* 文章标题 + Tiptap Markdown 编辑器 */}
                 <section
                     aria-label="正文编辑器"
                     className={cn(
-                        'studio-card flex min-h-[500px] flex-col overflow-hidden',
-                        isCreateMode
-                            ? 'lg:h-[calc(100vh-10rem)] lg:min-h-[560px]'
-                            : 'lg:h-[calc(100vh-14.5rem)] lg:min-h-[520px]',
+                        'studio-card flex min-h-[500px] flex-col overflow-hidden lg:h-[calc(100vh-11.5rem)] lg:min-h-[560px]',
                         mobileTab !== 'source' && 'max-lg:hidden',
                     )}
                 >
@@ -1051,6 +1208,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                     <TiptapMarkdownEditor
                         ref={editorRef}
                         value={draft.markdown_body}
+                        readOnly={creating}
                         onChange={(nextValue) =>
                             patchDraft((prev) => ({ ...prev, markdown_body: nextValue }))
                         }
@@ -1071,10 +1229,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 <section
                     aria-label="预览"
                     className={cn(
-                        'studio-card flex min-h-[500px] flex-col overflow-hidden',
-                        isCreateMode
-                            ? 'lg:h-[calc(100vh-10rem)] lg:min-h-[560px]'
-                            : 'lg:h-[calc(100vh-14.5rem)] lg:min-h-[520px]',
+                        'studio-card flex min-h-[500px] flex-col overflow-hidden lg:h-[calc(100vh-11.5rem)] lg:min-h-[560px]',
                         mobileTab !== 'preview' && 'max-lg:hidden',
                         !previewOpen && 'lg:hidden',
                     )}
@@ -1107,7 +1262,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 open={settingsOpen}
                 onClose={closeSettingsDrawer}
                 title="文章设置"
-                subtitle="随修订冻结发布"
+                subtitle="文章发布设置"
                 widthClassName="sm:w-[440px]"
                 footer={
                     isCreateMode ? (
@@ -1117,15 +1272,15 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                             </Button>
                             <Button
                                 variant="primary"
-                                disabled={createPostMutation.isPending}
+                                disabled={createPostMutation.isPending || isPublishing}
                                 onClick={handleCreatePost}
                             >
-                                {createPostMutation.isPending ? '创建中…' : '创建文章'}
+                                {createPostMutation.isPending ? '保存中…' : '保存草稿'}
                             </Button>
                         </div>
                     ) : (
                         <div className="flex items-center justify-between gap-2">
-                            <span className="text-[12px] text-ui-sub">修改后将随修订自动保存</span>
+                            <span className="text-[12px] text-ui-sub">修改后自动保存</span>
                             <Button variant="secondary" onClick={closeSettingsDrawer}>
                                 完成
                             </Button>
@@ -1133,23 +1288,11 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                     )
                 }
             >
-                <div id="post-settings-drawer" className="space-y-5 text-[14px]">
-                    {settingsPromptedByCreate && isCreateMode ? (
-                        <output className="block rounded-lg border border-[#EBD7A9] bg-warn-tint px-3.5 py-2.5 text-[13px] leading-5 text-warn">
-                            创建文章前请先完善必填项 <strong className="font-semibold">Slug</strong>
-                            ，也可以在此补充摘要、分类、标签与封面。
-                        </output>
-                    ) : null}
-
+                <div id="post-settings-drawer" inert={creating} className="space-y-5 text-[14px]">
                     {/* Slug */}
                     <div>
                         <label htmlFor="post-slug" className="block font-medium text-ui-text">
                             Slug
-                            {isCreateMode ? (
-                                <span className="ml-1 text-bad" aria-hidden="true">
-                                    *
-                                </span>
-                            ) : null}
                         </label>
                         <div className="mt-1.5 flex gap-1.5">
                             <input
@@ -1198,7 +1341,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                         <p className="mt-1 text-[12px] text-ui-sub">
                             {post?.slug_locked
                                 ? '首次发布后已锁定，一期不支持改名。'
-                                : '仅允许小写字母、数字和连字符，首次被接受发布后锁定。'}
+                                : '新文章留空会自动生成。可使用小写字母、数字和连字符，首次发布后锁定。'}
                         </p>
                     </div>
 
@@ -1341,6 +1484,183 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                             </div>
                         )}
                     </fieldset>
+
+                    {/* 所属专栏（仅对已创建文章且具备 series.manage 权限时显示） */}
+                    {!isCreateMode && canManageSeries ? (
+                        <section
+                            aria-labelledby="post-series-card-h"
+                            className="rounded-xl border border-ui-line bg-ui-subtle/50 p-3.5"
+                        >
+                            <div className="flex items-center gap-1.5">
+                                <BookOpen className="h-4 w-4 text-accent" aria-hidden="true" />
+                                <h3 id="post-series-card-h" className="font-medium text-ui-text">
+                                    所属专栏
+                                </h3>
+                            </div>
+                            {post?.series ? (
+                                <div className="mt-2.5 space-y-3 text-[13px]">
+                                    <div className="rounded-lg border border-ui-line bg-white px-3 py-2">
+                                        <div className="font-medium text-ui-text">
+                                            {post.series.title}
+                                        </div>
+                                        <div className="mt-0.5 text-[12px] text-ui-sub">
+                                            {post.series.section_title
+                                                ? `篇章：${post.series.section_title} · 组内第 ${post.series.position + 1} 项`
+                                                : `根目录 · 第 ${post.series.position + 1} 项`}
+                                        </div>
+                                    </div>
+
+                                    {currentSeriesQuery.data ? (
+                                        <div className="space-y-2.5">
+                                            <div>
+                                                <label
+                                                    htmlFor="post-series-display-title"
+                                                    className="block text-[12.5px] font-medium text-ui-text"
+                                                >
+                                                    目录短标题
+                                                </label>
+                                                <input
+                                                    id="post-series-display-title"
+                                                    type="text"
+                                                    maxLength={200}
+                                                    value={activeSeriesDisplayTitle}
+                                                    onChange={(event) =>
+                                                        setSeriesItemDraft({
+                                                            key: seriesItemVersionKey,
+                                                            displayTitle: event.target.value,
+                                                            sectionId: activeSeriesSectionId,
+                                                        })
+                                                    }
+                                                    placeholder={`留空则显示「${draft.title || post.current_revision.title}」`}
+                                                    className="studio-input mt-1 h-8 text-[12.5px]"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label
+                                                    htmlFor="post-series-section"
+                                                    className="block text-[12.5px] font-medium text-ui-text"
+                                                >
+                                                    所属篇章
+                                                </label>
+                                                <div className="mt-1">
+                                                    <Select
+                                                        id="post-series-section"
+                                                        ariaLabel="所属篇章"
+                                                        className="w-full"
+                                                        value={activeSeriesSectionId}
+                                                        onChange={(nextSectionId) =>
+                                                            setSeriesItemDraft({
+                                                                key: seriesItemVersionKey,
+                                                                displayTitle:
+                                                                    activeSeriesDisplayTitle,
+                                                                sectionId: nextSectionId,
+                                                            })
+                                                        }
+                                                        options={[
+                                                            {
+                                                                value: '',
+                                                                label: '根目录（专栏顶部）',
+                                                            },
+                                                            ...currentSeriesQuery.data.sections.map(
+                                                                (sec, idx) => ({
+                                                                    value: sec.id,
+                                                                    label: `篇章 ${idx + 1}：${sec.title}`,
+                                                                }),
+                                                            ),
+                                                        ]}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {seriesItemDirty ? (
+                                            <Button
+                                                variant="primary"
+                                                size="sm"
+                                                disabled={updateSeriesItemMutation.isPending}
+                                                onClick={() => {
+                                                    if (!post.series) return;
+                                                    updateSeriesItemMutation.mutate({
+                                                        seriesId: post.series.id,
+                                                        displayTitle: activeSeriesDisplayTitle,
+                                                        targetSectionId: activeSeriesSectionId,
+                                                    });
+                                                }}
+                                            >
+                                                {updateSeriesItemMutation.isPending
+                                                    ? '保存中…'
+                                                    : '保存专栏设置'}
+                                            </Button>
+                                        ) : null}
+                                        <Link
+                                            to="/series/$seriesId"
+                                            params={{ seriesId: post.series.id }}
+                                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-ui-line bg-white px-2.5 text-[12.5px] font-medium text-accent transition-colors hover:border-accent/40 hover:bg-accent-tint"
+                                        >
+                                            前往专栏目录
+                                            <ExternalLink className="h-3 w-3" />
+                                        </Link>
+                                        <Button
+                                            variant="danger-outline"
+                                            size="sm"
+                                            disabled={removeFromSeriesMutation.isPending}
+                                            onClick={() => {
+                                                if (post.series) {
+                                                    removeFromSeriesMutation.mutate(post.series.id);
+                                                }
+                                            }}
+                                        >
+                                            {removeFromSeriesMutation.isPending
+                                                ? '移出中…'
+                                                : '移出专栏'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-2.5 space-y-2 text-[13px]">
+                                    <p className="text-[12px] text-ui-sub">
+                                        当前未归属任何专栏，可选择一个专栏并一键追加到目录末尾。
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <div className="min-w-0 flex-1">
+                                            <Select
+                                                id="post-assign-series"
+                                                ariaLabel="选择专栏"
+                                                className="w-full"
+                                                value={selectedSeriesId}
+                                                onChange={setSelectedSeriesId}
+                                                options={[
+                                                    { value: '', label: '选择目标专栏…' },
+                                                    ...(seriesOptionsQuery.data?.data ?? []).map(
+                                                        (item) => ({
+                                                            value: item.id,
+                                                            label: item.title,
+                                                        }),
+                                                    ),
+                                                ]}
+                                            />
+                                        </div>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            disabled={
+                                                !selectedSeriesId || addToSeriesMutation.isPending
+                                            }
+                                            onClick={() => {
+                                                if (selectedSeriesId) {
+                                                    addToSeriesMutation.mutate(selectedSeriesId);
+                                                }
+                                            }}
+                                        >
+                                            {addToSeriesMutation.isPending ? '加入中…' : '加入专栏'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+                    ) : null}
 
                     {/* 封面 */}
                     <div>
@@ -1521,122 +1841,6 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 }}
             />
 
-            {/* 提交审核弹窗 */}
-            <Modal
-                open={submitModalOpen}
-                onClose={() => setSubmitModalOpen(false)}
-                title={`提交 r${currentRevNo} 审核？`}
-                description="审核只作用于这一修订。之后的编辑会产生新修订，不继承这次的审核结果。提交后当前线上内容不受影响。"
-                footer={
-                    <>
-                        <Button variant="secondary" onClick={() => setSubmitModalOpen(false)}>
-                            取消
-                        </Button>
-                        <Button
-                            variant="primary"
-                            disabled={submitReviewMutation.isPending || !expectedRevisionId}
-                            onClick={() => {
-                                if (expectedRevisionId) {
-                                    submitReviewMutation.mutate(expectedRevisionId);
-                                }
-                            }}
-                        >
-                            {submitReviewMutation.isPending
-                                ? '提交中…'
-                                : `提交 r${currentRevNo} 审核`}
-                        </Button>
-                    </>
-                }
-            >
-                <p className="rounded-md bg-ui-bg px-3 py-2 text-[13px] text-ui-sub">
-                    修订标题：<span className="text-ui-text">{draft.title}</span>
-                </p>
-            </Modal>
-
-            {/* 发布选择弹窗（仅列出已批准修订） */}
-            <Modal
-                open={publishModalOpen}
-                onClose={() => setPublishModalOpen(false)}
-                title="选择要发布的修订"
-                description={`只列出已批准的修订。${
-                    currentReview?.status !== 'approved'
-                        ? `当前编辑的 r${currentRevNo} 尚未批准，不能发布。`
-                        : ''
-                }发布后进入站点构建，新版本激活后才算上线。`}
-                maxWidthClassName="max-w-[500px]"
-                footer={
-                    <>
-                        <Button variant="secondary" onClick={() => setPublishModalOpen(false)}>
-                            取消
-                        </Button>
-                        <Button
-                            variant="primary"
-                            disabled={
-                                !selectedPublishRevId ||
-                                approvedRevisions.length === 0 ||
-                                publishMutation.isPending ||
-                                !post
-                            }
-                            onClick={() => {
-                                if (!post || !selectedPublishRevId) return;
-                                publishMutation.mutate({
-                                    revisionId: selectedPublishRevId,
-                                    expectedVersion: post.publication.publication_version,
-                                });
-                            }}
-                        >
-                            {publishMutation.isPending ? '提交中…' : '发布所选修订'}
-                        </Button>
-                    </>
-                }
-            >
-                {approvedRevisions.length === 0 ? (
-                    <p className="rounded-md bg-ui-bg px-3 py-4 text-[14px] text-ui-sub">
-                        还没有已批准的修订。请先提交审核并批准后再发布。
-                    </p>
-                ) : (
-                    <fieldset className="max-h-72 space-y-2 overflow-y-auto">
-                        <legend className="sr-only">已批准的修订</legend>
-                        {approvedRevisions.map((rev) => (
-                            <label
-                                key={rev.id}
-                                className={cn(
-                                    'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5',
-                                    selectedPublishRevId === rev.id
-                                        ? 'border-accent bg-accent-tint/50'
-                                        : 'border-ui-line',
-                                )}
-                            >
-                                <input
-                                    type="radio"
-                                    name="publish-revision"
-                                    checked={selectedPublishRevId === rev.id}
-                                    onChange={() => setSelectedPublishRevId(rev.id)}
-                                    className="accent-[#137A4D]"
-                                />
-                                <span className="min-w-0 flex-1 text-[14px]">
-                                    <span className="tnum font-medium">r{rev.revision_no}</span>{' '}
-                                    <span className="truncate text-ui-sub">
-                                        · {formatRelativeTime(rev.created_at)}
-                                    </span>
-                                    <span className="block truncate text-[12px] text-ui-sub">
-                                        {rev.title}
-                                    </span>
-                                </span>
-                                <span className="flex shrink-0 gap-1">
-                                    {desiredRevId === rev.id ? (
-                                        <StatusChip tone="info">期望公开</StatusChip>
-                                    ) : null}
-                                    {liveRevId === rev.id ? (
-                                        <StatusChip tone="ok">线上</StatusChip>
-                                    ) : null}
-                                </span>
-                            </label>
-                        ))}
-                    </fieldset>
-                )}
-            </Modal>
-
             {/* 取消发布确认弹窗 */}
             <Modal
                 open={unpublishModalOpen}
@@ -1662,17 +1866,7 @@ export function PostEditorPage({ postId }: { postId?: string }) {
                 }
             >
                 <div className="space-y-2 text-[14px] leading-6 text-ui-sub">
-                    <p>
-                        线上的{' '}
-                        <span className="tnum text-ui-text">
-                            {liveRevNo ? `r${liveRevNo}` : '当前版本'}
-                        </span>{' '}
-                        会在包含此变更的新站点版本激活后下线：详情页返回 404，列表、sitemap 与 RSS
-                        移除该文章。
-                    </p>
-                    <p>
-                        在那之前访客仍能看到它。草稿与修订历史都会保留，之后可以重新发布已批准的修订。
-                    </p>
+                    <p>下线后访客将无法访问这篇文章。草稿会保留，可随时重新发布。</p>
                 </div>
             </Modal>
         </div>

@@ -1,0 +1,697 @@
+---
+import Icon from '../../components/Icon.astro';
+import SeriesRowList from '../../components/SeriesRowList.astro';
+import SeriesStartCard from '../../components/SeriesStartCard.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { buildSeriesDomainGuides, type SeriesDomainGuide } from '../../lib/data';
+import { categoryUrl, postUrl, seriesUrl } from '../../lib/site';
+
+const [seriesList, posts, postSeriesMap, categories] = await Promise.all([
+    Astro.locals.content.listSeries(),
+    Astro.locals.content.listPosts(),
+    Astro.locals.content.getPostSeriesMap(),
+    Astro.locals.content.listCategories(),
+]);
+
+const domainGuides = buildSeriesDomainGuides(seriesList, categories);
+const standaloneCount = posts.filter((post) => !postSeriesMap.has(post.slug)).length;
+const validDomains = new Set(domainGuides.map((g) => g.key));
+
+const queryString = Astro.request.url.includes('?')
+    ? Astro.request.url.slice(Astro.request.url.indexOf('?'))
+    : '';
+const urlParams = queryString ? new URLSearchParams(queryString) : undefined;
+const rawInitialDomain = urlParams?.get('domain') || urlParams?.get('category') || '';
+const defaultDomain = domainGuides.length === 1 ? domainGuides[0]!.key : 'all';
+const initialDomain =
+    rawInitialDomain && validDomains.has(rawInitialDomain) ? rawInitialDomain : defaultDomain;
+
+const domainAdvice = (guide: SeriesDomainGuide) => {
+    if (guide.description) return guide.description;
+    if (guide.start && guide.shared.length > 0) {
+        return `建议先从《${guide.start.title}》入手建立主线，再按需要并行选读核心模块，进阶时可结合下方跨领域公用专栏延伸。`;
+    }
+    if (guide.start) {
+        return `建议先从《${guide.start.title}》起步，其余核心模块不分先后，可按当前项目需要自由选读。`;
+    }
+    return `「${guide.label}」方向下的体系化专栏，可按当前兴趣或项目需要自由翻阅。`;
+};
+
+const searchIndex = seriesList.map((item) => ({
+    slug: item.slug,
+    href: seriesUrl(item.slug),
+    title: item.title,
+    desc: item.description ?? '',
+    category: item.category?.name ?? '其他专栏',
+    categorySlug: item.category?.slug ?? '__uncategorized__',
+    status: item.completionStatus === 'completed' ? '已完结' : '连载中',
+    done: item.completionStatus === 'completed',
+    count: item.postCount,
+    minutes: item.totalMinutes,
+    chapters: item.entries.map((entry) => ({
+        i: entry.index,
+        t: entry.displayTitle,
+        s: entry.sectionTitle ?? '',
+        h: postUrl(entry.post.slug),
+    })),
+}));
+---
+
+<SiteLayout
+    title="博客"
+    description="按技术领域组织的体系化连载笔记，提供建议起点、并行核心模块与跨领域公用延伸。"
+    active="blog"
+    flush
+>
+    <div class="series-portal" data-series-portal data-default-domain={defaultDomain}>
+        <section class="band-mist series-hero-band" aria-labelledby="series-page-title">
+            <div class="wrap">
+                <span class="eyebrow">博客 · 专栏导学</span>
+                <div class="series-hero-grid">
+                    <div class="series-hero-headline">
+                        <h1 id="series-page-title" class="series-display-title">
+                            按技术领域<span class="soft">浏览专栏</span>
+                        </h1>
+                        <p class="t-lead ink-2 series-hero-lead">
+                            刚接触一个领域，可以从推荐专栏读起。如果已有具体问题，可以直接搜索相关章节。
+                        </p>
+                    </div>
+                    <div class="series-hero-search-col">
+                        {seriesList.length > 0 && (
+                            <label class="series-search-field" for="series-search-input">
+                                <span class="sr-only">搜索专栏或章节</span>
+                                <span class="series-search-icon" aria-hidden="true">
+                                    <Icon name="search" size={17} />
+                                </span>
+                                <input
+                                    id="series-search-input"
+                                    type="search"
+                                    class="input series-search-input"
+                                    placeholder="搜索专栏标题、简介或章节，如 Gin、Zustand、Kafka"
+                                    autocomplete="off"
+                                    data-series-search
+                                />
+                                <button
+                                    type="button"
+                                    class="series-search-clear"
+                                    aria-label="清空搜索"
+                                    data-search-clear
+                                    hidden
+                                >
+                                    <Icon name="close" size={14} />
+                                </button>
+                            </label>
+                        )}
+                        <p class="t-xs muted series-hero-stats num">
+                            <span>共 {domainGuides.length} 个领域</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{seriesList.length} 个专栏</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{posts.length} 篇公开文章</span>
+                        </p>
+                    </div>
+                </div>
+
+                {domainGuides.length > 1 && (
+                    <div class="series-domain-bar">
+                        <div
+                            class="choice"
+                            role="group"
+                            aria-label="按技术领域浏览"
+                            data-domain-switcher
+                        >
+                            <button
+                                type="button"
+                                data-domain="all"
+                                aria-pressed={initialDomain === 'all' ? 'true' : 'false'}
+                            >
+                                全站概览
+                                <span class="choice-cnt num">{seriesList.length}</span>
+                            </button>
+                            {domainGuides.map((guide) => (
+                                <button
+                                    type="button"
+                                    data-domain={guide.key}
+                                    aria-pressed={initialDomain === guide.key ? 'true' : 'false'}
+                                >
+                                    {guide.label}
+                                    <span class="choice-cnt num">{guide.series.length}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </section>
+
+        <div class="wrap series-portal-body">
+            {seriesList.length > 0 ? (
+                <>
+                    <section
+                        class="series-search-stage"
+                        aria-label="检索结果"
+                        data-search-stage
+                        hidden
+                    >
+                        <div class="series-search-bar">
+                            <p
+                                class="t-small ink-2"
+                                role="status"
+                                aria-atomic="true"
+                                data-search-status
+                            />
+                            <button
+                                type="button"
+                                class="series-text-link t-xs hover-accent"
+                                data-search-reset
+                            >
+                                清除搜索
+                            </button>
+                        </div>
+                        <div class="panel series-rows-panel" data-search-results hidden />
+                        <div class="panel empty-state" data-search-empty hidden>
+                            <p class="t-h3">没有找到匹配的专栏或章节</p>
+                            <p class="t-small muted">
+                                可以试试换一个关键词，或清除搜索返回按领域浏览。
+                            </p>
+                            <div class="actions">
+                                <button type="button" class="btn btn-dark btn-sm" data-search-reset>
+                                    清除搜索
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    {domainGuides.length > 1 && (
+                        <section
+                            class="series-overview-stage"
+                            aria-label="全站技术领域概览"
+                            data-domain-panel="all"
+                            hidden={initialDomain !== 'all'}
+                        >
+                            <p class="series-guidance-lead ink-2">
+                                以下是全站按技术领域整理的专栏目录；点击任意领域胶囊或右侧「进入导学」，可查看该方向的建议起点与跨领域公用延伸。
+                            </p>
+                            <div class="series-overview-groups">
+                                {domainGuides.map((guide, gIdx) => (
+                                    <section
+                                        class="series-overview-group"
+                                        aria-labelledby={`overview-cat-${guide.key}`}
+                                        data-category-group={guide.key}
+                                    >
+                                        <header class="series-overview-head">
+                                            <div class="series-overview-head-copy">
+                                                <p class="kicker num">
+                                                    {String(gIdx + 1).padStart(2, '0')} ·{' '}
+                                                    {guide.series.length} 个专栏 ·{' '}
+                                                    {guide.totalPosts} 篇
+                                                    {guide.shared.length > 0
+                                                        ? ` · 另有 ${guide.shared.length} 个跨领域公用`
+                                                        : ''}
+                                                </p>
+                                                <h2
+                                                    id={`overview-cat-${guide.key}`}
+                                                    class="t-h2 series-overview-title"
+                                                >
+                                                    {guide.label}
+                                                </h2>
+                                                {guide.description && (
+                                                    <p class="t-small muted">{guide.description}</p>
+                                                )}
+                                            </div>
+                                            <div class="series-overview-actions">
+                                                <button
+                                                    type="button"
+                                                    class="series-text-link t-small hover-accent"
+                                                    data-jump-domain={guide.key}
+                                                >
+                                                    <span>进入导学</span>
+                                                    <span class="arrow-r" aria-hidden="true">
+                                                        →
+                                                    </span>
+                                                </button>
+                                                {guide.category && (
+                                                    <a
+                                                        class="t-xs muted hover-accent"
+                                                        href={categoryUrl(guide.category.slug)}
+                                                    >
+                                                        分类归档 ↗
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </header>
+                                        <SeriesRowList series={guide.series} expandable />
+                                    </section>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {domainGuides.map((guide) => (
+                        <section
+                            class="series-guided-stage"
+                            aria-labelledby={`domain-heading-${guide.key}`}
+                            data-domain-panel={guide.key}
+                            hidden={initialDomain !== guide.key}
+                        >
+                            <header class="series-guided-intro">
+                                <div class="series-guided-intro-copy">
+                                    <h2 id={`domain-heading-${guide.key}`} class="t-h2">
+                                        {guide.label}
+                                    </h2>
+                                    <p class="series-guidance-lead ink-2">{domainAdvice(guide)}</p>
+                                </div>
+                                {guide.category && (
+                                    <a
+                                        class="series-text-link t-small hover-accent"
+                                        href={categoryUrl(guide.category.slug)}
+                                    >
+                                        <span>查看本分类全部文章</span>
+                                        <span class="arrow" aria-hidden="true">
+                                            ↗
+                                        </span>
+                                    </a>
+                                )}
+                            </header>
+
+                            {guide.start && (
+                                <section
+                                    class="series-step-block"
+                                    aria-labelledby={`step-start-${guide.key}`}
+                                >
+                                    <div class="series-step-head">
+                                        <p id={`step-start-${guide.key}`} class="kicker">
+                                            01 · Recommended Start · 建议起点
+                                        </p>
+                                        <span class="t-xs muted">
+                                            首次进入本方向可从这里建立主线
+                                        </span>
+                                    </div>
+                                    <SeriesStartCard
+                                        series={guide.start}
+                                        tagLabel={`${guide.label} · 起点`}
+                                    />
+                                </section>
+                            )}
+
+                            {guide.parallel.length > 0 && (
+                                <section
+                                    class="series-step-block"
+                                    aria-labelledby={`step-core-${guide.key}`}
+                                >
+                                    <div class="series-step-head">
+                                        <p id={`step-core-${guide.key}`} class="kicker">
+                                            {guide.start ? '02' : '01'} · Core Modules ·
+                                            并行核心模块
+                                        </p>
+                                        <span class="t-xs muted">
+                                            不分先后，按当前项目需要自由选读
+                                        </span>
+                                    </div>
+                                    <SeriesRowList series={guide.parallel} expandable />
+                                </section>
+                            )}
+
+                            {guide.shared.length > 0 && (
+                                <section
+                                    class="series-step-block series-shared-block"
+                                    aria-labelledby={`step-shared-${guide.key}`}
+                                >
+                                    <div class="series-step-head">
+                                        <p id={`step-shared-${guide.key}`} class="kicker">
+                                            {guide.start ? '03' : '02'} · Shared Across Domains ·
+                                            跨领域公用延伸
+                                        </p>
+                                        <span class="t-xs muted">
+                                            主归属在其他分类，但学「{guide.label}」同样常用
+                                        </span>
+                                    </div>
+                                    <ol class="rows series-shared-rows">
+                                        {guide.shared.map(({ series: sharedSeries, reason }) => (
+                                            <li>
+                                                <a
+                                                    class="series-shared-row"
+                                                    href={seriesUrl(sharedSeries.slug)}
+                                                >
+                                                    <span class="series-shared-title hover-accent">
+                                                        {sharedSeries.title}
+                                                    </span>
+                                                    <span class="series-shared-reason t-small muted">
+                                                        {reason}
+                                                    </span>
+                                                    <span class="series-shared-meta t-xs muted">
+                                                        {sharedSeries.category && (
+                                                            <span>
+                                                                {sharedSeries.category.name}
+                                                            </span>
+                                                        )}
+                                                        <span class="mono num ink-2">
+                                                            {sharedSeries.postCount} 篇
+                                                        </span>
+                                                        <span
+                                                            class="arrow series-shared-arrow"
+                                                            aria-hidden="true"
+                                                        >
+                                                            ↗
+                                                        </span>
+                                                    </span>
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                </section>
+                            )}
+                        </section>
+                    ))}
+                </>
+            ) : (
+                <div class="panel empty-state">
+                    <p class="t-h3">暂无公开的技术专栏</p>
+                    <p class="ink-2">技术专栏正在整理中，你可以先按时间浏览已发布的文章。</p>
+                    {posts.length > 0 && (
+                        <div class="actions">
+                            <a class="btn btn-dark btn-sm" href="/blog/">
+                                前往全部文章归档
+                            </a>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {posts.length > 0 && (
+                <footer class="series-archive-foot">
+                    <p class="t-small muted">
+                        想按时间线回看全站 {posts.length} 篇文章
+                        {standaloneCount > 0
+                            ? `（含 ${standaloneCount} 篇未归入专栏的独立随笔）`
+                            : ''}
+                        ？
+                    </p>
+                    <a class="series-text-link t-small hover-accent" href="/blog/">
+                        <span>前往全站时间归档</span>
+                        <span class="arrow-r" aria-hidden="true">
+                            →
+                        </span>
+                    </a>
+                </footer>
+            )}
+        </div>
+
+        <script
+            type="application/json"
+            id="series-search-index"
+            is:inline
+            set:html={JSON.stringify(searchIndex).replace(/</g, '\\u003c')}
+        />
+    </div>
+</SiteLayout>
+
+<script>
+    interface SearchChapter {
+        i: number;
+        t: string;
+        s: string;
+        h: string;
+    }
+    interface SearchSeriesItem {
+        slug: string;
+        href: string;
+        title: string;
+        desc: string;
+        category: string;
+        categorySlug: string;
+        status: string;
+        done: boolean;
+        count: number;
+        minutes: number;
+        chapters: SearchChapter[];
+    }
+
+    const root = document.querySelector<HTMLElement>('[data-series-portal]');
+    if (root) {
+        const defaultDomain = root.dataset.defaultDomain || 'all';
+        const domainButtons = [
+            ...root.querySelectorAll<HTMLButtonElement>(
+                '[data-domain-switcher] button[data-domain]',
+            ),
+        ];
+        const jumpButtons = [...root.querySelectorAll<HTMLButtonElement>('[data-jump-domain]')];
+        const domainPanels = [...root.querySelectorAll<HTMLElement>('[data-domain-panel]')];
+        const searchInput = root.querySelector<HTMLInputElement>('[data-series-search]');
+        const searchClear = root.querySelector<HTMLButtonElement>('[data-search-clear]');
+        const searchStage = root.querySelector<HTMLElement>('[data-search-stage]');
+        const searchStatus = root.querySelector<HTMLElement>('[data-search-status]');
+        const searchResults = root.querySelector<HTMLElement>('[data-search-results]');
+        const searchEmpty = root.querySelector<HTMLElement>('[data-search-empty]');
+        const searchResetBtns = [
+            ...root.querySelectorAll<HTMLButtonElement>('[data-search-reset]'),
+        ];
+
+        let catalog: SearchSeriesItem[] = [];
+        const indexEl = root.querySelector<HTMLScriptElement>('#series-search-index');
+        if (indexEl?.textContent) {
+            try {
+                catalog = JSON.parse(indexEl.textContent) as SearchSeriesItem[];
+            } catch {
+                catalog = [];
+            }
+        }
+
+        const validDomains = new Set(domainPanels.map((panel) => panel.dataset.domainPanel ?? ''));
+        const pad = (n: number) => String(n).padStart(2, '0');
+
+        const state = {
+            domain: defaultDomain,
+            q: '',
+        };
+
+        const syncUrl = () => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('category');
+            url.searchParams.delete('view');
+            if (state.domain !== defaultDomain) url.searchParams.set('domain', state.domain);
+            else url.searchParams.delete('domain');
+
+            const trimmed = state.q.trim();
+            if (trimmed) url.searchParams.set('q', trimmed);
+            else url.searchParams.delete('q');
+
+            window.history.replaceState(null, '', url);
+        };
+
+        const renderSearchList = (query: string) => {
+            if (!searchStage || !searchResults || !searchEmpty || !searchStatus) return;
+            const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+            const hits: { item: SearchSeriesItem; matchedChapters: SearchChapter[] }[] = [];
+            let chapterHitCount = 0;
+
+            for (const item of catalog) {
+                const matchedChapters = item.chapters.filter((ch) => {
+                    const text = `${ch.t} ${ch.s}`.toLowerCase();
+                    return tokens.every((tok) => text.includes(tok));
+                });
+                const fullText = [
+                    item.title,
+                    item.desc,
+                    item.category,
+                    ...item.chapters.map((ch) => `${ch.t} ${ch.s}`),
+                ]
+                    .join(' ')
+                    .toLowerCase();
+
+                if (tokens.every((tok) => fullText.includes(tok))) {
+                    hits.push({ item, matchedChapters });
+                    chapterHitCount += matchedChapters.length;
+                }
+            }
+
+            const chapterNote = chapterHitCount > 0 ? `（命中 ${chapterHitCount} 处章节）` : '';
+            searchStatus.textContent = `全站检索「${query.trim()}」：找到 ${hits.length} 个专栏${chapterNote}`;
+
+            if (hits.length === 0) {
+                searchResults.hidden = true;
+                searchResults.replaceChildren();
+                searchEmpty.hidden = false;
+                return;
+            }
+
+            const ol = document.createElement('ol');
+            ol.className = 'rows series-editorial-rows';
+
+            hits.forEach(({ item, matchedChapters }, idx) => {
+                const li = document.createElement('li');
+                li.className = 'series-row-item';
+
+                const grid = document.createElement('div');
+                grid.className = 'series-row-grid';
+
+                const num = document.createElement('span');
+                num.className = 'series-row-num mono num';
+                num.setAttribute('aria-hidden', 'true');
+                num.textContent = pad(idx + 1);
+
+                const main = document.createElement('div');
+                main.className = 'series-row-main';
+
+                const heading = document.createElement('div');
+                heading.className = 'series-row-heading';
+
+                const h3 = document.createElement('h3');
+                h3.className = 'series-row-title';
+                const titleLink = document.createElement('a');
+                titleLink.className = 'hover-accent';
+                titleLink.href = item.href;
+                titleLink.textContent = item.title;
+                h3.append(titleLink);
+
+                const statusSpan = document.createElement('span');
+                statusSpan.className = item.done
+                    ? 'series-status-text t-xs is-done'
+                    : 'series-status-text t-xs';
+                statusSpan.textContent = item.status;
+
+                const catSpan = document.createElement('span');
+                catSpan.className = 'series-inline-cat t-xs muted';
+                catSpan.textContent = item.category;
+
+                heading.append(h3, statusSpan, catSpan);
+                main.append(heading);
+
+                if (item.desc) {
+                    const desc = document.createElement('p');
+                    desc.className = 'series-row-desc t-small ink-2';
+                    desc.textContent = item.desc;
+                    main.append(desc);
+                }
+
+                if (matchedChapters.length > 0) {
+                    const chList = document.createElement('ol');
+                    chList.className = 'series-row-chapters series-search-chapters';
+                    for (const ch of matchedChapters.slice(0, 6)) {
+                        const chLi = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.className = 'series-row-chapter-link';
+                        a.href = ch.h;
+
+                        const cNum = document.createElement('span');
+                        cNum.className = 'mono num muted';
+                        cNum.textContent = pad(ch.i);
+
+                        const cTitle = document.createElement('span');
+                        cTitle.className = 'series-row-chapter-title';
+                        cTitle.textContent = ch.t;
+
+                        const cArrow = document.createElement('span');
+                        cArrow.className = 'series-row-chapter-arrow muted';
+                        cArrow.setAttribute('aria-hidden', 'true');
+                        cArrow.textContent = '↗';
+
+                        a.append(cNum, cTitle, cArrow);
+                        chLi.append(a);
+                        chList.append(chLi);
+                    }
+                    main.append(chList);
+                }
+
+                const aside = document.createElement('div');
+                aside.className = 'series-row-aside';
+
+                const stat = document.createElement('span');
+                stat.className = 'mono num t-xs muted';
+                stat.textContent = `${item.count} 篇 · ${item.minutes} 分钟`;
+
+                const cta = document.createElement('a');
+                cta.className = 'series-row-cta t-xs hover-accent';
+                cta.href = item.href;
+                const ctaLabel = document.createElement('span');
+                ctaLabel.textContent = '阅读专栏';
+                const ctaArrow = document.createElement('span');
+                ctaArrow.className = 'arrow';
+                ctaArrow.setAttribute('aria-hidden', 'true');
+                ctaArrow.textContent = '↗';
+                cta.append(ctaLabel, ctaArrow);
+
+                aside.append(stat, cta);
+                grid.append(num, main, aside);
+                li.append(grid);
+                ol.append(li);
+            });
+
+            searchResults.replaceChildren(ol);
+            searchResults.hidden = false;
+            searchEmpty.hidden = true;
+        };
+
+        const render = (shouldSyncUrl: boolean) => {
+            const hasQuery = state.q.trim().length > 0;
+            if (searchClear) searchClear.hidden = state.q.length === 0;
+
+            for (const btn of domainButtons) {
+                const active = !hasQuery && (btn.dataset.domain ?? '') === state.domain;
+                btn.setAttribute('aria-pressed', String(active));
+            }
+
+            if (hasQuery) {
+                for (const panel of domainPanels) panel.hidden = true;
+                if (searchStage) searchStage.hidden = false;
+                renderSearchList(state.q);
+            } else {
+                if (searchStage) searchStage.hidden = true;
+                for (const panel of domainPanels) {
+                    panel.hidden = (panel.dataset.domainPanel ?? '') !== state.domain;
+                }
+            }
+
+            if (shouldSyncUrl) syncUrl();
+        };
+
+        const selectDomain = (target: string, scrollTop: boolean) => {
+            if (!validDomains.has(target)) return;
+            state.domain = target;
+            state.q = '';
+            if (searchInput) searchInput.value = '';
+            render(true);
+            if (scrollTop) {
+                root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        };
+
+        for (const btn of domainButtons) {
+            btn.addEventListener('click', () => selectDomain(btn.dataset.domain ?? 'all', false));
+        }
+        for (const btn of jumpButtons) {
+            btn.addEventListener('click', () =>
+                selectDomain(btn.dataset.jumpDomain ?? 'all', true),
+            );
+        }
+
+        searchInput?.addEventListener('input', () => {
+            state.q = searchInput.value;
+            render(true);
+        });
+
+        const clearSearch = () => {
+            state.q = '';
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.focus();
+            }
+            render(true);
+        };
+        searchClear?.addEventListener('click', clearSearch);
+        for (const btn of searchResetBtns) btn.addEventListener('click', clearSearch);
+
+        // Hydrate from URL query params (supports ?domain= and legacy ?category=)
+        const params = new URL(window.location.href).searchParams;
+        const initDomain = params.get('domain') || params.get('category') || '';
+        if (initDomain && validDomains.has(initDomain)) state.domain = initDomain;
+        const initQ = params.get('q') ?? '';
+        if (initQ) {
+            state.q = initQ;
+            if (searchInput) searchInput.value = initQ;
+        }
+
+        render(false);
+    }
+</script>

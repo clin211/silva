@@ -1,9 +1,16 @@
 ---
+export interface BreadcrumbItem {
+    href?: string;
+    label: string;
+}
+
 interface Props {
-    section: { href: string; label: string };
+    section?: { href: string; label: string };
+    items?: BreadcrumbItem[];
     current: string;
 }
-const { section, current } = Astro.props;
+const { section, items, current } = Astro.props;
+const trail: BreadcrumbItem[] = items ?? (section ? [section] : []);
 ---
 
 <nav aria-label="面包屑" class="breadcrumb t-small muted">
@@ -13,11 +20,17 @@ const { section, current } = Astro.props;
                 首页
             </a>
         </li>
-        <li>
-            <a class="hover-accent" href={section.href}>
-                {section.label}
-            </a>
-        </li>
+        {trail.map((item) => (
+            <li>
+                {item.href ? (
+                    <a class="hover-accent" href={item.href}>
+                        {item.label}
+                    </a>
+                ) : (
+                    <span>{item.label}</span>
+                )}
+            </li>
+        ))}
         <li aria-current="page">{current}</li>
     </ol>
 </nav>

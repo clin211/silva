@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { Activity, Gauge, Globe, RefreshCw, Search, Terminal } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -182,30 +181,21 @@ export function SystemHealthPage() {
                     </div>
                     <div className="mt-3 flex items-center justify-between">
                         <span className="tnum font-code text-[22px] font-semibold text-ui-text">
-                            {siteQuery.data
-                                ? formatGeneration(siteQuery.data.generation)
-                                : '未上线'}
+                            {siteQuery.data ? formatGeneration(siteQuery.data.generation) : '—'}
                         </span>
                         {siteQuery.isLoading ? (
                             <StatusChip tone="mute">检查中</StatusChip>
                         ) : siteQuery.data ? (
                             <StatusChip tone="ok">已上线</StatusChip>
                         ) : (
-                            <StatusChip tone="warn">尚未上线</StatusChip>
+                            <StatusChip tone="warn">无法读取</StatusChip>
                         )}
                     </div>
-                    <p className="mt-2 text-[12px] text-ui-sub">
-                        {siteQuery.data ? (
-                            <>生成于 {formatDateTime(siteQuery.data.generated_at)}</>
-                        ) : (
-                            <Link
-                                to="/publishing"
-                                className="font-medium text-accent hover:underline"
-                            >
-                                查看发布任务队列 →
-                            </Link>
-                        )}
-                    </p>
+                    {siteQuery.data && siteQuery.data.generation > 0 ? (
+                        <p className="mt-2 text-[12px] text-ui-sub">
+                            更新于 {formatDateTime(siteQuery.data.generated_at)}
+                        </p>
+                    ) : null}
                 </section>
             </div>
 

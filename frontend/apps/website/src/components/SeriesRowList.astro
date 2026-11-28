@@ -1,0 +1,129 @@
+---
+import type { Series } from '../lib/data';
+import { categoryUrl, postUrl, seriesUrl } from '../lib/site';
+
+interface Props {
+    series: Series[];
+    showCategory?: boolean;
+    showFeatured?: boolean;
+    expandable?: boolean;
+    startIndex?: number;
+}
+
+const {
+    series,
+    showCategory = false,
+    showFeatured = true,
+    expandable = true,
+    startIndex = 1,
+} = Astro.props;
+
+const pad = (value: number) => String(value).padStart(2, '0');
+---
+
+{series.length > 0 && (
+    <div class="panel series-rows-panel">
+        <ol class="rows series-editorial-rows">
+            {series.map((item, idx) => {
+                const isCompleted = item.completionStatus === 'completed';
+                const statusLabel = isCompleted ? '已完结' : '连载中';
+                const firstTitle = item.entries[0]?.displayTitle;
+                return (
+                    <li class="series-row-item">
+                        <div class="series-row-grid">
+                            <span class="series-row-num mono num" aria-hidden="true">
+                                {pad(startIndex + idx)}
+                            </span>
+                            <div class="series-row-main">
+                                <div class="series-row-heading">
+                                    <h3 class="series-row-title">
+                                        <a class="hover-accent" href={seriesUrl(item.slug)}>
+                                            {item.title}
+                                        </a>
+                                    </h3>
+                                    <span
+                                        class:list={[
+                                            'series-status-text',
+                                            't-xs',
+                                            { 'is-done': isCompleted },
+                                        ]}
+                                    >
+                                        {statusLabel}
+                                    </span>
+                                    {showFeatured && item.featured && (
+                                        <span class="series-inline-tag t-xs">精选</span>
+                                    )}
+                                    {showCategory && item.category && (
+                                        <a
+                                            class="series-inline-cat t-xs muted hover-accent"
+                                            href={categoryUrl(item.category.slug)}
+                                        >
+                                            {item.category.name}
+                                        </a>
+                                    )}
+                                </div>
+                                {item.description && (
+                                    <p class="series-row-desc t-small ink-2">{item.description}</p>
+                                )}
+                                {expandable && item.entries.length > 0 && (
+                                    <details class="series-row-details">
+                                        <summary class="series-row-toggle t-xs muted">
+                                            <span class="toggle-closed">
+                                                展开 {item.postCount} 篇章节预览 ↓
+                                            </span>
+                                            <span class="toggle-open">收起章节预览 ↑</span>
+                                            {firstTitle && (
+                                                <span class="series-row-preview-hint">
+                                                    <span aria-hidden="true"> · </span>
+                                                    {firstTitle}
+                                                    {item.postCount > 1 ? ' 等' : ''}
+                                                </span>
+                                            )}
+                                        </summary>
+                                        <ol class="series-row-chapters">
+                                            {item.entries.map((entry) => (
+                                                <li>
+                                                    <a
+                                                        class="series-row-chapter-link"
+                                                        href={postUrl(entry.post.slug)}
+                                                    >
+                                                        <span class="mono num muted">
+                                                            {pad(entry.index)}
+                                                        </span>
+                                                        <span class="series-row-chapter-title">
+                                                            {entry.displayTitle}
+                                                        </span>
+                                                        <span
+                                                            class="series-row-chapter-arrow muted"
+                                                            aria-hidden="true"
+                                                        >
+                                                            ↗
+                                                        </span>
+                                                    </a>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </details>
+                                )}
+                            </div>
+                            <div class="series-row-aside">
+                                <span class="mono num t-xs muted">
+                                    {item.postCount} 篇 · {item.totalMinutes} 分钟
+                                </span>
+                                <a
+                                    class="series-row-cta t-xs hover-accent"
+                                    href={seriesUrl(item.slug)}
+                                >
+                                    <span>阅读专栏</span>
+                                    <span class="arrow" aria-hidden="true">
+                                        ↗
+                                    </span>
+                                </a>
+                            </div>
+                        </div>
+                    </li>
+                );
+            })}
+        </ol>
+    </div>
+)}

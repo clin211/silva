@@ -1,27 +1,24 @@
 ---
-import type { GetStaticPaths } from 'astro';
 import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
-import { listCategories, listPosts } from '../../lib/data';
 
-export const getStaticPaths = (async () => {
-    const [posts, categories] = await Promise.all([listPosts(), listCategories()]);
-    return categories.flatMap((category) => {
-        const entries = posts.filter((post) =>
-            post.categories.some((item) => item.slug === category.slug),
-        );
-        return entries.length
-            ? [{ params: { slug: category.slug }, props: { category, posts, entries } }]
-            : [];
-    });
-}) satisfies GetStaticPaths;
-
-const { category, posts, entries } = Astro.props;
+const content = Astro.locals.content;
+const category = (await content.listCategories()).find((item) => item.slug === Astro.params.slug);
+if (!category) return Astro.rewrite('/404');
+const posts = await content.listPosts();
+const entries = posts.filter((post) => post.categories.some((item) => item.slug === category.slug));
+const series = (await content.listSeries()).filter((item) => item.category?.slug === category.slug);
 ---
 
 <ArchiveLayout
     title={category.name}
-    description={category.description ?? `「${category.name}」分类下的文章。`}
+    description={
+        category.description ??
+        (entries.length > 0
+            ? `「${category.name}」分类下的文章与系列。`
+            : `「${category.name}」分类下的文章系列。`)
+    }
     {posts}
     {entries}
+    {series}
     category={category.slug}
 />

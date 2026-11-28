@@ -208,7 +208,7 @@ export interface paths {
         get?: never;
         /**
          * 整体保存个人资料
-         * @description 首次保存创建资料。三个数组必填，按数组顺序展示；可选字段省略或传 null 时清除。内容相同时复用当前站点目标。资料随构建成功上线。
+         * @description 首次保存创建资料。三个数组必填，按数组顺序展示；可选字段省略或传 null 时清除。内容相同时沿用当前公开内容版本。事务提交后公开资料立即生效。
          */
         put: operations["replaceAdminProfile"];
         post?: never;
@@ -234,7 +234,11 @@ export interface paths {
         get: operations["getUser"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * 删除后台账户
+         * @description 删除指定账户并释放登录邮箱。清除密码、角色及全部会话，保留原有内容署名与审计记录。禁止删除当前登录账户（403），并发变更也须至少保留一个启用的管理员（409）。重复删除返回 404。
+         */
+        delete: operations["deleteUser"];
         options?: never;
         head?: never;
         /**
@@ -338,7 +342,7 @@ export interface paths {
         put?: never;
         /**
          * 上传图片并返回查看链接
-         * @description 发送图片原始字节。鉴权、大小检查、内容识别和完整解码均由服务端完成。成功后可在浏览器打开 data.url，持有此链接的人可在有效期内读取该图片。
+         * @description 发送图片原始字节。鉴权、大小检查、内容识别和完整解码均由服务端完成。成功后可在浏览器打开 data.url，持有此链接的人可在有效期内读取该图片。 服务端按文件字节的 SHA-256 复用存储。同一作者再次上传返回 200 和原媒体 ID，首次创建条目返回 201。
          */
         post: operations["createMedia"];
         delete?: never;
@@ -365,9 +369,9 @@ export interface paths {
         post?: never;
         /**
          * 删除媒体
-         * @description 删除媒体记录及其存储对象。仍被任何文章修订（含历史修订）或个人资料引用时返回 `409 media_in_use`。
+         * @description 有业务引用时返回 409 和 error.media_usage。未使用的媒体条目可删除，后台在最后一个条目删除后回收共享对象。
          *
-         *     **所需权限**：`media.manage_own`（只能操作本人上传的媒体）或 `media.manage`（全部媒体）。
+         *     **所需权限**：`media.manage_own`（本人媒体）或 `media.manage`（全部媒体）。
          */
         delete: operations["deleteMedia"];
         options?: never;
@@ -432,6 +436,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/posts/category-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 统计各分类文章数
+         * @description 按当前调用者可见范围统计文章总数、未分类文章数及各分类文章数。只有 `posts.read_own` 时固定统计本人文章。
+         *
+         *     **所需权限**：`posts.manage` 可统计全部文章或指定作者文章；只有 `posts.read_own` 时只统计本人文章。
+         */
+        get: operations["listPostCategoryCounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/posts/{id}": {
         parameters: {
             query?: never;
@@ -441,14 +467,18 @@ export interface paths {
         };
         /**
          * 读取文章详情
-         * @description 读取文章详情。`publication` 分别给出期望公开修订、线上修订与站点 generation。
+         * @description 读取文章详情。`publication` 分别给出已发布修订、发布时间与并发版本。
          *
          *     **所需权限**：`posts.manage` 可访问全部文章；只有 `posts.read_own` 等本人权限时只能访问自己的文章，他人文章返回 404。
          */
         get: operations["getPost"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * 删除文章
+         * @description 需要 posts.manage。仅能删除未发布且已从系列目录移出的文章。成功后永久删除草稿并释放关联引用。
+         */
+        delete: operations["deletePost"];
         options?: never;
         head?: never;
         /**
@@ -468,8 +498,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 分页查询修订历史
-         * @description 分页查询文章的修订历史。
+         * 分页查询当前修订（最多一条）
+         * @description 分页查询文章的当前修订（最多一条）。
          *
          *     **所需权限**：`posts.manage` 可访问全部文章；只有 `posts.read_own` 等本人权限时只能访问自己的文章，他人文章返回 404。
          */
@@ -477,7 +507,7 @@ export interface paths {
         put?: never;
         /**
          * 保存修订（含自动保存）
-         * @description 提交完整修订内容并追加为新的不可变修订。请求正文上限 1 MiB。
+         * @description 提交完整的文章内容并替换当前修订，每篇只保留一份可编辑内容。请求正文上限 1 MiB。
          *
          *     - 锁定文章并比较 `expected_revision_id`，不一致返回 `409 revision_conflict`，不创建修订。
          *     - 内容与当前编辑版本相同时返回 200 和当前版本，适合自动保存。
@@ -501,7 +531,7 @@ export interface paths {
         };
         /**
          * 读取修订
-         * @description 读取任一历史修订，供预览与对比。
+         * @description 读取当前修订，已替换的修订返回 404。
          *
          *     **所需权限**：`posts.manage` 可访问全部文章；只有 `posts.read_own` 等本人权限时只能访问自己的文章，他人文章返回 404。
          */
@@ -514,62 +544,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/posts/{id}/reviews": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 分页查询审核记录
-         * @description 分页查询文章的审核记录。
-         *
-         *     **所需权限**：`posts.manage` 可访问全部文章；只有 `posts.read_own` 等本人权限时只能访问自己的文章，他人文章返回 404。
-         */
-        get: operations["listReviews"];
-        put?: never;
-        /**
-         * 提交修订审核
-         * @description 为指定修订创建待审核记录。每个修订只能提交一次；被拒绝后需保存新修订再提交。
-         *
-         *     **所需权限**：`posts.submit_own`（本人文章）或 `posts.manage`。
-         */
-        post: operations["createReview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/posts/{id}/reviews/{review_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 读取审核记录
-         * @description 读取单个审核记录。
-         *
-         *     **所需权限**：`posts.manage` 可访问全部文章；只有 `posts.read_own` 等本人权限时只能访问自己的文章，他人文章返回 404。
-         */
-        get: operations["getReview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * 批准或拒绝审核
-         * @description 批准或拒绝待审核记录。Editor/Admin 可以审核自己写的修订，但必须显式作出决定。
-         *
-         *     **所需权限**：`posts.review`
-         */
-        patch: operations["decideReview"];
-        trace?: never;
-    };
     "/api/v1/admin/posts/{id}/publication": {
         parameters: {
             query?: never;
@@ -579,22 +553,132 @@ export interface paths {
         };
         get?: never;
         /**
-         * 设置上线目标
-         * @description 接受一个已批准的修订作为期望公开版本：递增 `publication_version`，首次发布时锁定 slug，并登记新的站点 generation。
-         *
-         *     返回 202 不代表已上线；用 `publish_job_id` 查询任务，或读取文章的 `publication.live_revision_id`。
+         * 发布文章
+         * @description 接口成功时已提交公开版本。首次发布锁定 slug。
          *
          *     **所需权限**：`posts.publish`
          */
         put: operations["publishPost"];
         post?: never;
         /**
-         * 撤下上线目标
-         * @description 清空期望公开版本并登记站点目标。撤下在包含该变更的站点版本上线后生效，slug 保持锁定。
+         * 撤回文章
+         * @description 撤回成功后，公开入口立即移除该内容。
          *
          *     **所需权限**：`posts.publish`
          */
         delete: operations["unpublishPost"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询系列 */
+        get: operations["listSeries"];
+        put?: never;
+        /** 创建系列草稿 */
+        post: operations["createSeries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/series/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取系列与完整目录 */
+        get: operations["getSeries"];
+        put?: never;
+        post?: never;
+        /** 删除已下线的系列 */
+        delete: operations["deleteSeries"];
+        options?: never;
+        head?: never;
+        /** 修改系列元数据 */
+        patch: operations["updateSeries"];
+        trace?: never;
+    };
+    "/api/v1/admin/series/{id}/publication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 发布系列
+         * @description 状态提交后立即生效，需要 series.manage 和 posts.publish。
+         */
+        put: operations["publishSeries"];
+        post?: never;
+        /**
+         * 撤回系列
+         * @description 状态提交后立即生效，需要 series.manage 和 posts.publish。
+         */
+        delete: operations["unpublishSeries"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/series/{id}/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 替换完整系列目录 */
+        put: operations["replaceSeriesOutline"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/series/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 追加目录成员 */
+        post: operations["appendSeriesItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/series/{id}/items/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 移出目录成员 */
+        delete: operations["removeSeriesItem"];
         options?: never;
         head?: never;
         patch?: never;
@@ -646,7 +730,7 @@ export interface paths {
         post?: never;
         /**
          * 删除分类
-         * @description 删除未被任何修订引用的分类。
+         * @description 删除未被文章修订或系列引用的分类。
          *
          *     **所需权限**：`taxonomy.manage`
          */
@@ -655,7 +739,7 @@ export interface paths {
         head?: never;
         /**
          * 修改分类
-         * @description 部分更新分类。名称有变化且分类出现在期望公开的文章中时，同时登记站点目标，`publication` 返回任务。
+         * @description 部分更新分类。名称或简介有变化且分类出现在已公开的文章或可导出系列中时，同时更新公开内容版本，`publication` 返回版本号。
          *
          *     **所需权限**：`taxonomy.manage`
          */
@@ -717,83 +801,11 @@ export interface paths {
         head?: never;
         /**
          * 修改标签
-         * @description 部分更新标签。名称有变化且标签出现在期望公开的文章中时，同时登记站点目标，`publication` 返回任务。
+         * @description 部分更新标签。名称有变化且标签出现在已公开的文章中时，同时更新公开内容版本，`publication` 返回版本号。
          *
          *     **所需权限**：`taxonomy.manage`
          */
         patch: operations["updateTag"];
-        trace?: never;
-    };
-    "/api/v1/admin/publishing/jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 分页查询发布任务
-         * @description 分页查询发布任务，可按状态或 generation 定位。
-         *
-         *     **所需权限**：`jobs.read` 可查看全部；只有 `jobs.read_own` 时只返回本人触发的任务。
-         */
-        get: operations["listPublishJobs"];
-        put?: never;
-        /**
-         * 登记全站重建
-         * @description 以当前期望公开的内容登记一次全站重建，用于首次部署或手动刷新。仍在排队的旧任务被合并为 `superseded`。
-         *
-         *     **所需权限**：`publishing.retry`
-         */
-        post: operations["requestSiteBuild"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/publishing/jobs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 读取发布任务
-         * @description 读取单个发布任务及失败原因。
-         *
-         *     **所需权限**：`jobs.read` 或 `jobs.read_own`（本人触发的任务）。
-         */
-        get: operations["getPublishJob"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/admin/publishing/jobs/{id}/attempts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 重试失败的发布任务
-         * @description 把仍为最新目标的失败任务重新排队，再构建一次；`attempts` 继续累加，再次失败即标记为 `failed`。不能用于激活旧版本。
-         *
-         *     **所需权限**：`publishing.retry`
-         */
-        post: operations["retryPublishJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/public/site": {
@@ -999,9 +1011,29 @@ export interface paths {
         };
         /**
          * 读取公开媒体
-         * @description 读取当前线上快照引用的媒体（封面、正文图片、头像），其他 ID 返回 404。
+         * @description 读取当前线上快照引用的媒体（文章和系列封面、正文图片、头像），其他 ID 返回 404。
          */
         get: operations["getPublicMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/site-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取公开站点快照
+         * @description 同一版本的全部公开内容，供 Astro 生成页面与订阅。相同版本可使用 ETag 条件读取。
+         */
+        get: operations["getPublicSiteSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1025,7 +1057,7 @@ export interface components {
         RoleKey: "author" | "editor" | "admin";
         /** @description 内置角色键组成的集合，至少一个且不能重复。 */
         RoleAssignments: components["schemas"]["RoleKey"][];
-        /** @description 权限键。`editor` 包含 `author` 的全部权限，`admin` 包含 `editor` 的全部权限。 */
+        /** @description 权限键。`editor` 包含 `author` 的全部权限，`admin` 包含 `editor` 的全部权限。 series.manage 授予 editor 和 admin，公开转换另需 posts.publish。 */
         Permission: string;
         /** @enum {string} */
         AccountStatus: "active" | "disabled";
@@ -1159,9 +1191,7 @@ export interface components {
          *         "posts.create",
          *         "posts.read_own",
          *         "posts.edit_own",
-         *         "posts.submit_own",
-         *         "media.manage_own",
-         *         "jobs.read_own"
+         *         "media.manage_own"
          *       ],
          *       "user_count": 1
          *     }
@@ -1387,6 +1417,7 @@ export interface components {
                 message: string;
                 /** @description 字段级错误；没有时为空数组，始终存在。 */
                 details: components["schemas"]["FieldError"][];
+                media_usage?: components["schemas"]["MediaUsage"];
             };
         };
         /**
@@ -1413,13 +1444,10 @@ export interface components {
          *     | `slug_in_use` | 409 | slug 已被同类资源使用。 |
          *     | `slug_locked` | 409 | 文章已被接受发布，slug 不能修改。 |
          *     | `revision_conflict` | 409 | `expected_revision_id` 不是当前编辑版本，重新读取后再保存。 |
-         *     | `review_already_submitted` | 409 | 该修订已经提交过审核。 |
-         *     | `review_not_pending` | 409 | 审核记录已有决定。 |
          *     | `publication_conflict` | 409 | `expected_publication_version` 不是当前发布版本号。 |
-         *     | `revision_not_approved` | 409 | 修订未获批准，不能上线。 |
-         *     | `already_unpublished` | 409 | 文章没有发布目标。 |
+         *     | `post_in_use` | 409 | 文章仍已发布或属于系列。 |
+         *     | `already_unpublished` | 409 | 文章未公开。 |
          *     | `taxonomy_in_use` | 409 | 分类或标签仍被文章修订引用。 |
-         *     | `publish_job_not_retryable` | 409 | 只能重试仍为最新目标的失败任务。 |
          *     | `site_generation_changed` | 409 | 线上版本已不同于 `X-Expected-Generation`。 |
          *     | `payload_too_large` | 413 | 请求体超过 64 KiB。 |
          *     | `unsupported_media_type` | 415 | `Content-Type` 不是 `application/json`。 |
@@ -1428,11 +1456,10 @@ export interface components {
          *     | `rate_limited` | 429 | 超过请求限额，按 `Retry-After` 等待。 |
          *     | `internal_error` | 500 | 服务端内部错误，细节只记录在日志中。 |
          *     | `storage_unavailable` | 503 | 服务端未配置对象存储，媒体操作暂不可用。 |
-         *     | `site_not_ready` | 503 | 站点尚未有任何线上版本。 |
          * @example validation_error
          * @enum {string}
          */
-        ErrorCode: "malformed_json" | "unauthorized" | "token_expired" | "invalid_credentials" | "forbidden" | "not_found" | "method_not_allowed" | "email_in_use" | "last_admin_required" | "upload_incomplete" | "upload_expired" | "media_not_ready" | "media_in_use" | "slug_in_use" | "slug_locked" | "revision_conflict" | "review_already_submitted" | "review_not_pending" | "publication_conflict" | "revision_not_approved" | "already_unpublished" | "taxonomy_in_use" | "publish_job_not_retryable" | "site_generation_changed" | "payload_too_large" | "unsupported_media_type" | "validation_error" | "media_invalid" | "rate_limited" | "internal_error" | "storage_unavailable" | "site_not_ready";
+        ErrorCode: "malformed_json" | "unauthorized" | "token_expired" | "invalid_credentials" | "forbidden" | "not_found" | "method_not_allowed" | "email_in_use" | "last_admin_required" | "upload_incomplete" | "upload_expired" | "media_not_ready" | "media_in_use" | "slug_in_use" | "slug_locked" | "revision_conflict" | "publication_conflict" | "already_unpublished" | "series_edit_conflict" | "series_in_use" | "post_in_use" | "post_already_in_series" | "already_published" | "taxonomy_in_use" | "site_generation_changed" | "payload_too_large" | "unsupported_media_type" | "validation_error" | "media_invalid" | "rate_limited" | "internal_error" | "storage_unavailable";
         /**
          * @description 字段级错误码。
          *
@@ -1512,9 +1539,7 @@ export interface components {
          *             "posts.create",
          *             "posts.read_own",
          *             "posts.edit_own",
-         *             "posts.submit_own",
-         *             "media.manage_own",
-         *             "jobs.read_own"
+         *             "media.manage_own"
          *           ],
          *           "user_count": 1
          *         }
@@ -1589,9 +1614,7 @@ export interface components {
          *         "posts.create",
          *         "posts.read_own",
          *         "posts.edit_own",
-         *         "posts.submit_own",
-         *         "media.manage_own",
-         *         "jobs.read_own"
+         *         "media.manage_own"
          *       ]
          *     }
          */
@@ -1639,9 +1662,7 @@ export interface components {
          *           "posts.create",
          *           "posts.read_own",
          *           "posts.edit_own",
-         *           "posts.submit_own",
-         *           "media.manage_own",
-         *           "jobs.read_own"
+         *           "media.manage_own"
          *         ]
          *       }
          *     }
@@ -1826,7 +1847,7 @@ export interface components {
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T15:00:00+08:00"
          *         },
-         *         "url": "https://storage.example.com/media/019535d9-3df7-79fb-b466-fa907fa17f9e?signature=example"
+         *         "url": "https://storage.example.com/blobs/019535d9-3df7-79fb-b466-fa907fa17f9e?signature=example"
          *       }
          *     }
          */
@@ -1835,16 +1856,6 @@ export interface components {
         };
         /** @description 小写字母、数字与单个连字符，1–100 字节；创建后用于公开路由。 */
         Slug: string;
-        /**
-         * @description `pending` 待审核；`approved` 已批准；`rejected` 已拒绝。
-         * @enum {string}
-         */
-        ReviewStatus: "pending" | "approved" | "rejected";
-        /**
-         * @description `queued` 排队中；`building` 构建中；`active` 当前线上；`failed` 构建失败且已用尽自动重试；`superseded` 上线前被更新的目标取代；`retired` 曾上线、已被替换。
-         * @enum {string}
-         */
-        PublishJobStatus: "queued" | "building" | "active" | "failed" | "superseded" | "retired";
         /** @description 用户摘要。 */
         UserRef: {
             id: components["schemas"]["UuidV7"];
@@ -1862,13 +1873,8 @@ export interface components {
             slug: string;
             text: string;
         };
-        /** @description 修订的审核状态摘要。 */
-        ReviewSummary: {
-            id: components["schemas"]["UuidV7"];
-            status: components["schemas"]["ReviewStatus"];
-        };
         /**
-         * @description 不可变修订的完整内容。
+         * @description 当前修订的完整内容。
          * @example {
          *       "id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
          *       "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
@@ -1909,10 +1915,6 @@ export interface components {
          *         "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *         "display_name": "示例作者"
          *       },
-         *       "review": {
-         *         "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *         "status": "approved"
-         *       },
          *       "created_at": "2026-11-24T15:00:00+08:00"
          *     }
          */
@@ -1935,8 +1937,6 @@ export interface components {
             seo_title: string | null;
             seo_description: string | null;
             created_by: components["schemas"]["UserRef"] | null;
-            /** @description 从未提交审核时为 `null`。 */
-            review: components["schemas"]["ReviewSummary"] | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -1946,23 +1946,18 @@ export interface components {
             revision_no: number;
             title: string;
             created_by: components["schemas"]["UserRef"] | null;
-            review: components["schemas"]["ReviewSummary"] | null;
             /** Format: date-time */
             created_at: string;
         };
-        /** @description 发布状态：编辑版本、期望公开版本与线上版本相互独立。 */
+        /** @description 发布状态：已发布修订独立于当前编辑修订。 */
         Publication: {
-            /** @description 期望公开的修订；`null` 表示没有发布目标。 */
-            desired_published_revision_id: components["schemas"]["NullableUuidV7"];
-            desired_published_at: string | null;
-            /** @description 当前线上站点中公开的修订；未上线时为 `null`。 */
-            live_revision_id: components["schemas"]["NullableUuidV7"];
+            /** @description 已公开的修订；`null` 表示未公开。 */
+            published_revision_id: components["schemas"]["NullableUuidV7"];
+            published_at: string | null;
             /** @description 上线、撤下共用的乐观锁版本号。 */
             publication_version: number;
             /** @description 首次被接受发布的时间，即公开发布时间。 */
             first_published_at: string | null;
-            desired_generation: number | null;
-            active_generation: number | null;
         };
         /**
          * @description 文章详情，含当前编辑版本的完整内容。
@@ -2015,20 +2010,13 @@ export interface components {
          *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *           "display_name": "示例作者"
          *         },
-         *         "review": {
-         *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *           "status": "approved"
-         *         },
          *         "created_at": "2026-11-24T15:00:00+08:00"
          *       },
          *       "publication": {
-         *         "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-         *         "desired_published_at": "2026-11-24T16:30:00+08:00",
-         *         "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+         *         "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+         *         "published_at": "2026-11-24T16:30:00+08:00",
          *         "publication_version": 1,
-         *         "first_published_at": "2026-11-24T16:30:00+08:00",
-         *         "desired_generation": 12,
-         *         "active_generation": 12
+         *         "first_published_at": "2026-11-24T16:30:00+08:00"
          *       },
          *       "created_at": "2026-11-24T15:00:00+08:00",
          *       "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2047,6 +2035,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description 组内位置从 0 起。未归属或无 series.manage 权限时返回 null。 */
+            readonly series?: components["schemas"]["PostSeries"] | null;
         };
         /** @description 文章列表项。 */
         PostSummary: {
@@ -2054,42 +2044,47 @@ export interface components {
             slug: components["schemas"]["Slug"];
             slug_locked: boolean;
             title: string;
+            /** @description 当前编辑版本的分类列表。 */
+            categories: components["schemas"]["TaxonomyRef"][];
             author: components["schemas"]["UserRef"] | null;
             current_revision_id: components["schemas"]["UuidV7"];
             current_revision_no: number;
-            current_review: components["schemas"]["ReviewSummary"] | null;
-            desired_published_revision_id: components["schemas"]["NullableUuidV7"];
-            live_revision_id: components["schemas"]["NullableUuidV7"];
+            published_revision_id: components["schemas"]["NullableUuidV7"];
             publication_version: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description 组内位置从 0 起。未归属或无 series.manage 权限时返回 null。 */
+            readonly series?: components["schemas"]["PostSeries"] | null;
         };
-        /** @description 审核记录。 */
-        Review: {
+        /**
+         * @description 文章列表排序方式。
+         * @enum {string}
+         */
+        PostSort: "updated_desc" | "created_desc" | "title_asc" | "title_desc";
+        /** @description 单个分类在当前可见范围内的文章数。 */
+        PostCategoryCount: {
             id: components["schemas"]["UuidV7"];
-            post_id: components["schemas"]["UuidV7"];
-            revision_id: components["schemas"]["UuidV7"];
-            revision_no: number;
-            status: components["schemas"]["ReviewStatus"];
-            comment: string | null;
-            submitted_by: components["schemas"]["UserRef"] | null;
-            reviewer: components["schemas"]["UserRef"] | null;
-            reviewed_at: string | null;
-            /** Format: date-time */
-            created_at: string;
+            slug: components["schemas"]["Slug"];
+            name: string;
+            description: string | null;
+            post_count: number;
         };
-        /** @description 上线或撤下已受理：已登记新的站点目标，不代表已经上线。 */
-        PublicationAccepted: {
-            publish_job_id: components["schemas"]["UuidV7"];
-            desired_generation: number;
+        /** @description 当前可见范围内的文章分类统计。 */
+        PostCategoryCounts: {
+            total: number;
+            uncategorized: number;
+            categories: components["schemas"]["PostCategoryCount"][];
+        };
+        /** @description 公开变更已提交，返回公开内容版本号和该资源的并发版本。 */
+        PublicationResult: {
+            generation: number;
             publication_version: number;
         };
-        /** @description 新登记的站点目标。 */
-        SiteTarget: {
-            publish_job_id: components["schemas"]["UuidV7"];
-            desired_generation: number;
+        /** @description 公开内容版本。 */
+        SiteVersion: {
+            generation: number;
         };
         /** @description 文章分类。 */
         Category: {
@@ -2097,7 +2092,9 @@ export interface components {
             slug: components["schemas"]["Slug"];
             name: string;
             description: string | null;
-            /** @description 引用该分类的修订数（含历史修订）；大于 0 时不能删除。 */
+            /** @description 当前编辑版本引用该分类的文章数。 */
+            post_count: number;
+            /** @description 引用该分类的修订数（含公开副本）；大于 0 时不能删除。 */
             revision_count: number;
             /** Format: date-time */
             created_at: string;
@@ -2109,7 +2106,9 @@ export interface components {
             id: components["schemas"]["UuidV7"];
             slug: components["schemas"]["Slug"];
             name: string;
-            /** @description 引用该标签的修订数（含历史修订）；大于 0 时不能删除。 */
+            /** @description 当前编辑版本引用该标签的文章数。 */
+            post_count: number;
+            /** @description 引用该标签的修订数（含公开副本）；大于 0 时不能删除。 */
             revision_count: number;
             /** Format: date-time */
             created_at: string;
@@ -2118,29 +2117,13 @@ export interface components {
         };
         CategoryUpdate: {
             item: components["schemas"]["Category"];
-            /** @description 分类出现在期望公开的文章中且有变化时登记的站点目标，否则为 `null`。 */
-            publication: components["schemas"]["SiteTarget"] | null;
+            /** @description 分类出现在已公开的文章中且有变化时返回的公开内容版本，否则为 `null`。 */
+            publication: components["schemas"]["SiteVersion"] | null;
         };
         TagUpdate: {
             item: components["schemas"]["Tag"];
-            /** @description 标签出现在期望公开的文章中且有变化时登记的站点目标，否则为 `null`。 */
-            publication: components["schemas"]["SiteTarget"] | null;
-        };
-        /** @description 站点发布任务，每个 generation 一个。 */
-        PublishJob: {
-            id: components["schemas"]["UuidV7"];
-            generation: number;
-            status: components["schemas"]["PublishJobStatus"];
-            /** @description 触发来源，如 `post.publish`、`post.unpublish`、`category.update`、`manual`、`bootstrap`。 */
-            trigger_type: string;
-            requested_by: components["schemas"]["UserRef"] | null;
-            attempts: number;
-            /** @description 最近一次构建失败的原因。 */
-            error_message: string | null;
-            started_at: string | null;
-            finished_at: string | null;
-            /** Format: date-time */
-            created_at: string;
+            /** @description 标签出现在已公开的文章中且有变化时返回的公开内容版本，否则为 `null`。 */
+            publication: components["schemas"]["SiteVersion"] | null;
         };
         /** @description 公开图片；地址为 `/api/v1/public/media/{media_id}`。 */
         PublicImage: {
@@ -2321,17 +2304,8 @@ export interface components {
         UpdatePostInput: {
             slug: components["schemas"]["Slug"];
         };
-        CreateReviewInput: {
-            revision_id: components["schemas"]["UuidV7"];
-        };
-        DecideReviewInput: {
-            /** @enum {string} */
-            decision: "approved" | "rejected";
-            /** @description 审核意见，最多 2000 个字符。 */
-            comment?: string | null;
-        };
         PublicationInput: {
-            /** @description 要上线的已批准修订。 */
+            /** @description 要发布的当前修订 ID。 */
             revision_id: components["schemas"]["UuidV7"];
             expected_publication_version: number;
         };
@@ -2409,20 +2383,13 @@ export interface components {
          *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *             "display_name": "示例作者"
          *           },
-         *           "review": {
-         *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *             "status": "approved"
-         *           },
          *           "created_at": "2026-11-24T15:00:00+08:00"
          *         },
          *         "publication": {
-         *           "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-         *           "desired_published_at": "2026-11-24T16:30:00+08:00",
-         *           "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+         *           "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+         *           "published_at": "2026-11-24T16:30:00+08:00",
          *           "publication_version": 1,
-         *           "first_published_at": "2026-11-24T16:30:00+08:00",
-         *           "desired_generation": 12,
-         *           "active_generation": 12
+         *           "first_published_at": "2026-11-24T16:30:00+08:00"
          *         },
          *         "created_at": "2026-11-24T15:00:00+08:00",
          *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2440,18 +2407,20 @@ export interface components {
          *           "slug": "building-with-axum",
          *           "slug_locked": true,
          *           "title": "用 Axum 构建服务",
+         *           "categories": [
+         *             {
+         *               "id": "019535d8-7e21-7f00-a111-2233445566aa",
+         *               "slug": "backend",
+         *               "name": "后端"
+         *             }
+         *           ],
          *           "author": {
          *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *             "display_name": "示例作者"
          *           },
          *           "current_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
          *           "current_revision_no": 3,
-         *           "current_review": {
-         *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *             "status": "approved"
-         *           },
-         *           "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-         *           "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+         *           "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
          *           "publication_version": 1,
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2471,6 +2440,27 @@ export interface components {
             /** @description 当前页的数据。 */
             data: components["schemas"]["PostSummary"][];
             meta: components["schemas"]["ListMeta"];
+        };
+        /**
+         * @description 当前可见范围内的文章分类统计响应。
+         * @example {
+         *       "data": {
+         *         "total": 12,
+         *         "uncategorized": 2,
+         *         "categories": [
+         *           {
+         *             "id": "019535d8-7e21-7f00-a111-2233445566aa",
+         *             "slug": "backend",
+         *             "name": "后端",
+         *             "description": "服务端架构与工程实践。",
+         *             "post_count": 6
+         *           }
+         *         ]
+         *       }
+         *     }
+         */
+        PostCategoryCountsResponse: {
+            data: components["schemas"]["PostCategoryCounts"];
         };
         /**
          * @description 单个修订。
@@ -2515,10 +2505,6 @@ export interface components {
          *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *           "display_name": "示例作者"
          *         },
-         *         "review": {
-         *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *           "status": "approved"
-         *         },
          *         "created_at": "2026-11-24T15:00:00+08:00"
          *       }
          *     }
@@ -2536,10 +2522,6 @@ export interface components {
          *           "created_by": {
          *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
          *             "display_name": "示例作者"
-         *           },
-         *           "review": {
-         *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *             "status": "approved"
          *           },
          *           "created_at": "2026-11-24T15:00:00+08:00"
          *         }
@@ -2560,92 +2542,27 @@ export interface components {
             meta: components["schemas"]["ListMeta"];
         };
         /**
-         * @description 单个审核记录。
+         * @description 公开变更已生效。
          * @example {
          *       "data": {
-         *         "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *         "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-         *         "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-         *         "revision_no": 3,
-         *         "status": "approved",
-         *         "comment": null,
-         *         "submitted_by": {
-         *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *           "display_name": "示例作者"
-         *         },
-         *         "reviewer": {
-         *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *           "display_name": "示例编辑"
-         *         },
-         *         "reviewed_at": "2026-11-24T16:30:00+08:00",
-         *         "created_at": "2026-11-24T15:00:00+08:00"
-         *       }
-         *     }
-         */
-        ReviewResponse: {
-            data: components["schemas"]["Review"];
-        };
-        /**
-         * @example {
-         *       "data": [
-         *         {
-         *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-         *           "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-         *           "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-         *           "revision_no": 3,
-         *           "status": "approved",
-         *           "comment": null,
-         *           "submitted_by": {
-         *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *             "display_name": "示例作者"
-         *           },
-         *           "reviewer": {
-         *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *             "display_name": "示例编辑"
-         *           },
-         *           "reviewed_at": "2026-11-24T16:30:00+08:00",
-         *           "created_at": "2026-11-24T15:00:00+08:00"
-         *         }
-         *       ],
-         *       "meta": {
-         *         "pagination": {
-         *           "page": 1,
-         *           "per_page": 20,
-         *           "total": 1,
-         *           "total_pages": 1
-         *         }
-         *       }
-         *     }
-         */
-        ReviewPage: {
-            /** @description 当前页的数据。 */
-            data: components["schemas"]["Review"][];
-            meta: components["schemas"]["ListMeta"];
-        };
-        /**
-         * @description 上线或撤下已受理。
-         * @example {
-         *       "data": {
-         *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-         *         "desired_generation": 12,
+         *         "generation": 12,
          *         "publication_version": 1
          *       }
          *     }
          */
-        PublicationAcceptedResponse: {
-            data: components["schemas"]["PublicationAccepted"];
+        PublicationResultResponse: {
+            data: components["schemas"]["PublicationResult"];
         };
         /**
-         * @description 已登记站点目标。
+         * @description 当前公开内容版本。
          * @example {
          *       "data": {
-         *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-         *         "desired_generation": 12
+         *         "generation": 12
          *       }
          *     }
          */
-        SiteTargetResponse: {
-            data: components["schemas"]["SiteTarget"];
+        SiteVersionResponse: {
+            data: components["schemas"]["SiteVersion"];
         };
         /**
          * @description 单个分类。
@@ -2655,6 +2572,7 @@ export interface components {
          *         "slug": "backend",
          *         "name": "后端",
          *         "description": "服务端架构与工程实践。",
+         *         "post_count": 1,
          *         "revision_count": 3,
          *         "created_at": "2026-11-24T15:00:00+08:00",
          *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2673,6 +2591,7 @@ export interface components {
          *           "slug": "backend",
          *           "name": "后端",
          *           "description": "服务端架构与工程实践。",
+         *           "post_count": 1,
          *           "revision_count": 3,
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2684,7 +2603,7 @@ export interface components {
             data: components["schemas"]["Category"][];
         };
         /**
-         * @description 更新后的分类及站点目标。
+         * @description 更新后的分类及公开内容版本。
          * @example {
          *       "data": {
          *         "item": {
@@ -2692,13 +2611,13 @@ export interface components {
          *           "slug": "backend",
          *           "name": "后端",
          *           "description": "服务端架构与工程实践。",
+         *           "post_count": 1,
          *           "revision_count": 3,
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T16:30:00+08:00"
          *         },
          *         "publication": {
-         *           "publish_job_id": "019535db-2222-7333-9444-555566667777",
-         *           "desired_generation": 12
+         *           "generation": 12
          *         }
          *       }
          *     }
@@ -2713,6 +2632,7 @@ export interface components {
          *         "id": "019535d8-7e21-7f00-a111-2233445566bb",
          *         "slug": "rust",
          *         "name": "Rust",
+         *         "post_count": 1,
          *         "revision_count": 3,
          *         "created_at": "2026-11-24T15:00:00+08:00",
          *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2730,6 +2650,7 @@ export interface components {
          *           "id": "019535d8-7e21-7f00-a111-2233445566bb",
          *           "slug": "rust",
          *           "name": "Rust",
+         *           "post_count": 1,
          *           "revision_count": 3,
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2741,13 +2662,14 @@ export interface components {
             data: components["schemas"]["Tag"][];
         };
         /**
-         * @description 更新后的标签及站点目标。
+         * @description 更新后的标签及公开内容版本。
          * @example {
          *       "data": {
          *         "item": {
          *           "id": "019535d8-7e21-7f00-a111-2233445566bb",
          *           "slug": "rust",
          *           "name": "Rust",
+         *           "post_count": 1,
          *           "revision_count": 3,
          *           "created_at": "2026-11-24T15:00:00+08:00",
          *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -2758,63 +2680,6 @@ export interface components {
          */
         TagUpdateResponse: {
             data: components["schemas"]["TagUpdate"];
-        };
-        /**
-         * @description 单个发布任务。
-         * @example {
-         *       "data": {
-         *         "id": "019535db-2222-7333-9444-555566667777",
-         *         "generation": 12,
-         *         "status": "active",
-         *         "trigger_type": "post.publish",
-         *         "requested_by": {
-         *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *           "display_name": "示例编辑"
-         *         },
-         *         "attempts": 1,
-         *         "error_message": null,
-         *         "started_at": "2026-11-24T15:00:00+08:00",
-         *         "finished_at": "2026-11-24T16:30:00+08:00",
-         *         "created_at": "2026-11-24T15:00:00+08:00"
-         *       }
-         *     }
-         */
-        PublishJobResponse: {
-            data: components["schemas"]["PublishJob"];
-        };
-        /**
-         * @example {
-         *       "data": [
-         *         {
-         *           "id": "019535db-2222-7333-9444-555566667777",
-         *           "generation": 12,
-         *           "status": "active",
-         *           "trigger_type": "post.publish",
-         *           "requested_by": {
-         *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-         *             "display_name": "示例编辑"
-         *           },
-         *           "attempts": 1,
-         *           "error_message": null,
-         *           "started_at": "2026-11-24T15:00:00+08:00",
-         *           "finished_at": "2026-11-24T16:30:00+08:00",
-         *           "created_at": "2026-11-24T15:00:00+08:00"
-         *         }
-         *       ],
-         *       "meta": {
-         *         "pagination": {
-         *           "page": 1,
-         *           "per_page": 20,
-         *           "total": 1,
-         *           "total_pages": 1
-         *         }
-         *       }
-         *     }
-         */
-        PublishJobPage: {
-            /** @description 当前页的数据。 */
-            data: components["schemas"]["PublishJob"][];
-            meta: components["schemas"]["ListMeta"];
         };
         /**
          * @description 首页数据。
@@ -3086,6 +2951,246 @@ export interface components {
                 url: string;
             }[];
         };
+        MediaLocation: {
+            /** @enum {string} */
+            kind: "post_cover" | "post_body" | "profile_avatar" | "series_cover";
+            post_id: components["schemas"]["NullableUuidV7"];
+            revision_id: components["schemas"]["NullableUuidV7"];
+            revision_no: number | null;
+            profile_id: components["schemas"]["NullableUuidV7"];
+            series_id?: components["schemas"]["NullableUuidV7"];
+        };
+        MediaUsage: {
+            /** @description 该媒体条目的全部业务引用位置数，含公开副本。 */
+            reference_count: number;
+            /** @description 调用者可查看的文章修订及头像位置。每个修订的正文中同一媒体仅计一次。 系列及当前线上封面位置仅对有 series.manage 的用户可见。 */
+            references: components["schemas"]["MediaLocation"][];
+        };
+        MediaDetailResponse: {
+            data: components["schemas"]["Media"];
+            meta: components["schemas"]["MediaUsage"];
+        };
+        CreateSeriesInput: {
+            slug: components["schemas"]["Slug"];
+            title: string;
+            description?: string | null;
+            cover_media_id?: components["schemas"]["NullableUuidV7"];
+            category_id?: components["schemas"]["NullableUuidV7"];
+            /** @enum {string} */
+            completion_status?: "ongoing" | "completed";
+            is_featured?: boolean;
+            sort_order?: number;
+            seo_title?: string | null;
+            seo_description?: string | null;
+        };
+        UpdateSeriesInput: {
+            expected_edit_version: number;
+            slug?: components["schemas"]["Slug"];
+            title?: string;
+            description?: string | null;
+            cover_media_id?: components["schemas"]["NullableUuidV7"];
+            category_id?: components["schemas"]["NullableUuidV7"];
+            /** @enum {string} */
+            completion_status?: "ongoing" | "completed";
+            is_featured?: boolean;
+            sort_order?: number;
+            seo_title?: string | null;
+            seo_description?: string | null;
+        };
+        SeriesItemInput: {
+            post_id: components["schemas"]["UuidV7"];
+            display_title?: string | null;
+        };
+        SeriesSectionInput: {
+            id?: components["schemas"]["NullableUuidV7"];
+            title: string;
+            description?: string | null;
+            items: components["schemas"]["SeriesItemInput"][];
+        };
+        SeriesOutlineInput: {
+            expected_edit_version: number;
+            sections: components["schemas"]["SeriesSectionInput"][];
+            items: components["schemas"]["SeriesItemInput"][];
+        };
+        AppendSeriesItemInput: {
+            expected_edit_version: number;
+            section_id?: components["schemas"]["NullableUuidV7"];
+            post_id: components["schemas"]["UuidV7"];
+            display_title?: string | null;
+        };
+        SeriesPublicationInput: {
+            expected_publication_version: number;
+        };
+        SeriesItem: {
+            id: components["schemas"]["UuidV7"];
+            post_id: components["schemas"]["UuidV7"];
+            display_title: string | null;
+            section_id: components["schemas"]["NullableUuidV7"];
+            position: number;
+            title: string;
+            slug: components["schemas"]["Slug"];
+            current_revision_id: components["schemas"]["UuidV7"];
+            published_revision_id: components["schemas"]["NullableUuidV7"];
+        };
+        SeriesSection: {
+            id: components["schemas"]["UuidV7"];
+            title: string;
+            description: string | null;
+            items: components["schemas"]["SeriesItem"][];
+            position: number;
+        };
+        SeriesSummary: {
+            id: components["schemas"]["UuidV7"];
+            slug: components["schemas"]["Slug"];
+            title: string;
+            description: string | null;
+            cover_media_id: components["schemas"]["NullableUuidV7"];
+            category_id: components["schemas"]["NullableUuidV7"];
+            /** @enum {string} */
+            completion_status: "ongoing" | "completed";
+            is_featured: boolean;
+            sort_order: number;
+            seo_title: string | null;
+            seo_description: string | null;
+            slug_locked: boolean;
+            edit_version: number;
+            publication_version: number;
+            item_count: number;
+            published_post_count: number;
+            is_live: boolean;
+            published_at: string | null;
+            first_published_at: string | null;
+            created_by: components["schemas"]["NullableUuidV7"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        Series: {
+            id: components["schemas"]["UuidV7"];
+            slug: components["schemas"]["Slug"];
+            title: string;
+            description: string | null;
+            cover_media_id: components["schemas"]["NullableUuidV7"];
+            category_id: components["schemas"]["NullableUuidV7"];
+            /** @enum {string} */
+            completion_status: "ongoing" | "completed";
+            is_featured: boolean;
+            sort_order: number;
+            seo_title: string | null;
+            seo_description: string | null;
+            slug_locked: boolean;
+            edit_version: number;
+            publication_version: number;
+            item_count: number;
+            published_post_count: number;
+            is_live: boolean;
+            published_at: string | null;
+            first_published_at: string | null;
+            created_by: components["schemas"]["NullableUuidV7"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            sections: components["schemas"]["SeriesSection"][];
+            items: components["schemas"]["SeriesItem"][];
+        };
+        PostSeries: {
+            id: components["schemas"]["UuidV7"];
+            slug: components["schemas"]["Slug"];
+            title: string;
+            section_title: string | null;
+            position: number;
+        };
+        EditedSeries: {
+            series: components["schemas"]["Series"];
+            publication: components["schemas"]["SiteVersion"] | null;
+        };
+        AddedSeriesItem: {
+            item: components["schemas"]["SeriesItem"];
+            edit_version: number;
+            publication: components["schemas"]["SiteVersion"] | null;
+        };
+        SnapshotCategory: {
+            slug: components["schemas"]["Slug"];
+            name: string;
+            description: string | null;
+        };
+        SnapshotPost: {
+            slug: components["schemas"]["Slug"];
+            title: string;
+            excerpt: string | null;
+            categories: components["schemas"]["Slug"][];
+            tags: components["schemas"]["Slug"][];
+            featured: boolean;
+            cover: components["schemas"]["PublicImage"] | null;
+            /** Format: date-time */
+            published_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description 消毒后的正文 HTML。 */
+            html: string;
+            headings: components["schemas"]["Heading"][];
+            seo_title: string | null;
+            seo_description: string | null;
+            id: components["schemas"]["UuidV7"];
+            revision_id: components["schemas"]["UuidV7"];
+        };
+        SnapshotSeriesItem: {
+            post_slug: components["schemas"]["Slug"];
+            display_title: string | null;
+        };
+        SnapshotSeriesSection: {
+            title: string;
+            description: string | null;
+            items: components["schemas"]["SnapshotSeriesItem"][];
+        };
+        SnapshotSeries: {
+            id: components["schemas"]["UuidV7"];
+            slug: components["schemas"]["Slug"];
+            title: string;
+            description: string | null;
+            category: components["schemas"]["SnapshotCategory"] | null;
+            /** @enum {string} */
+            completion_status: "ongoing" | "completed";
+            featured: boolean;
+            cover: components["schemas"]["PublicImage"] | null;
+            seo_title: string | null;
+            seo_description: string | null;
+            /** Format: date-time */
+            published_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            items: components["schemas"]["SnapshotSeriesItem"][];
+            sections: components["schemas"]["SnapshotSeriesSection"][];
+        };
+        SnapshotMedia: {
+            id: components["schemas"]["UuidV7"];
+            mime_type: components["schemas"]["ImageMimeType"];
+            width: number;
+            height: number;
+        };
+        SiteSnapshot: {
+            /** @constant */
+            schema_version: 1;
+            generation: number;
+            /** Format: date-time */
+            generated_at: string;
+            posts: components["schemas"]["SnapshotPost"][];
+            categories: components["schemas"]["SnapshotCategory"][];
+            tags: components["schemas"]["PublicLabel"][];
+            series: components["schemas"]["SnapshotSeries"][];
+            profile: components["schemas"]["PublicProfile"] | null;
+            ai_trending: {
+                /** @description 成功批次的 UTC 日期；尚无成功批次时为 `null`。 */
+                data_date: string | null;
+                repositories: Record<string, never>[];
+            };
+            media: components["schemas"]["SnapshotMedia"][];
+        };
+        SiteSnapshotResponse: {
+            data: components["schemas"]["SiteSnapshot"];
+        };
     };
     responses: {
         /** @description 统一错误结构，见 `ErrorResponse` 与 `ErrorCode`。 */
@@ -3199,6 +3304,52 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
+        /** @description 目标系列或关联资源不存在。 */
+        SeriesNotFound: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                "X-Trace-Id": components["headers"]["TraceId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": {
+                 *         "code": "not_found",
+                 *         "message": "Resource not found",
+                 *         "details": []
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description 路径、查询参数或字段未通过校验。 */
+        SeriesInvalid: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                "X-Trace-Id": components["headers"]["TraceId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": {
+                 *         "code": "validation_error",
+                 *         "message": "Request validation failed",
+                 *         "details": [
+                 *           {
+                 *             "field": "id",
+                 *             "code": "invalid_format",
+                 *             "message": "expected a UUIDv7"
+                 *           }
+                 *         ]
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
     };
     parameters: {
         /**
@@ -3286,11 +3437,6 @@ export interface components {
          */
         RevisionId: components["schemas"]["UuidV7"];
         /**
-         * @description 审核记录 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `review_id/invalid_format`。
-         * @example 019535da-4f11-7b22-8c33-d4e5f6071829
-         */
-        ReviewId: components["schemas"]["UuidV7"];
-        /**
          * @description 分类 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
          * @example 019535d8-7e21-7f00-a111-2233445566aa
          */
@@ -3301,17 +3447,12 @@ export interface components {
          */
         TagId: components["schemas"]["UuidV7"];
         /**
-         * @description 发布任务 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-         * @example 019535db-2222-7333-9444-555566667777
-         */
-        PublishJobId: components["schemas"]["UuidV7"];
-        /**
          * @description 媒体 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
          * @example 019535d7-1111-7222-8333-444455556666
          */
         PublicMediaId: components["schemas"]["UuidV7"];
         /**
-         * @description 按当前编辑版本标题的子串筛选，不区分大小写。
+         * @description 标题或 slug 关键字，不区分大小写子串匹配，最多 100 字节。
          * @example axum
          */
         PostQuery: string;
@@ -3331,30 +3472,25 @@ export interface components {
          */
         PostTagFilter: components["schemas"]["UuidV7"];
         /**
-         * @description 当前编辑版本的审核状态。
-         * @example pending
-         */
-        PostReviewStatusFilter: components["schemas"]["ReviewStatus"];
-        /**
-         * @description `true` 只返回有发布目标的文章，`false` 只返回没有的。
+         * @description `true` 只返回已发布文章，`false` 只返回没有的。
          * @example true
          */
         PostPublishedFilter: boolean;
+        /**
+         * @description `true` 只返回未分配分类的文章，`false` 只返回已分配分类的文章；`true` 时不可与 `category_id` 同时使用。
+         * @example true
+         */
+        PostUncategorizedFilter: boolean;
+        /**
+         * @description 文章排序方式，默认为 `updated_desc`。
+         * @example updated_desc
+         */
+        PostSortParam: components["schemas"]["PostSort"];
         /**
          * @description 客户端读取的 `publication_version`，不一致返回 `409 publication_conflict`。
          * @example 1
          */
         ExpectedPublicationVersion: number;
-        /**
-         * @description 只返回该状态的任务。
-         * @example failed
-         */
-        PublishJobStatusFilter: components["schemas"]["PublishJobStatus"];
-        /**
-         * @description 定位某个 generation 的任务。
-         * @example 12
-         */
-        PublishJobGenerationFilter: number;
         /**
          * @description 按分类 slug 筛选。
          * @example backend
@@ -3380,6 +3516,13 @@ export interface components {
          * @example 12
          */
         ExpectedGeneration: number;
+        SeriesId: components["schemas"]["UuidV7"];
+        SeriesPostId: components["schemas"]["UuidV7"];
+        /** @description 按所属系列筛选，需要 series.manage。 */
+        SeriesFilter: components["schemas"]["UuidV7"];
+        /** @description 按有无系列筛选，需要 series.manage。false 与 series_id 互斥。 */
+        InSeries: boolean;
+        ExpectedEditVersion: number;
     };
     requestBodies: never;
     headers: {
@@ -4074,9 +4217,7 @@ export interface operations {
                      *           "posts.create",
                      *           "posts.read_own",
                      *           "posts.edit_own",
-                     *           "posts.submit_own",
-                     *           "media.manage_own",
-                     *           "jobs.read_own"
+                     *           "media.manage_own"
                      *         ]
                      *       }
                      *     }
@@ -4222,7 +4363,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 资料已保存，返回对应的发布目标。 */
+            /** @description 资料已保存，返回公开内容版本。 */
             200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -4233,12 +4374,11 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
-                     *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *         "desired_generation": 12
+                     *         "generation": 12
                      *       }
                      *     }
                      */
-                    "application/json": components["schemas"]["SiteTargetResponse"];
+                    "application/json": components["schemas"]["SiteVersionResponse"];
                 };
             };
             400: components["responses"]["MalformedJson"];
@@ -4391,6 +4531,102 @@ export interface operations {
                      *       "error": {
                      *         "code": "not_found",
                      *         "message": "Resource not found",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 路径 `id` 不是 UUIDv7。 */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "validation_error",
+                     *         "message": "Request validation failed",
+                     *         "details": [
+                     *           {
+                     *             "field": "id",
+                     *             "code": "invalid_format",
+                     *             "message": "id must be a hyphenated UUIDv7"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description 账户 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
+                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
+                 */
+                id: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 账户已删除，所有会话已撤销。 */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 账户不存在。 */
+            404: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "not_found",
+                     *         "message": "Resource not found",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 操作会使系统没有启用的管理员（停用最后一个管理员或移除其 `admin` 角色）。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "last_admin_required",
+                     *         "message": "At least one active administrator is required",
                      *         "details": []
                      *       }
                      *     }
@@ -4624,9 +4860,7 @@ export interface operations {
                      *             "posts.create",
                      *             "posts.read_own",
                      *             "posts.edit_own",
-                     *             "posts.submit_own",
-                     *             "media.manage_own",
-                     *             "jobs.read_own"
+                     *             "media.manage_own"
                      *           ],
                      *           "user_count": 1
                      *         }
@@ -4977,6 +5211,41 @@ export interface operations {
             };
         };
         responses: {
+            /** @description 同一上传者已拥有该文件，返回已有条目和新签发的查看地址。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "media": {
+                     *           "id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *           "status": "ready",
+                     *           "original_filename": "cover.png",
+                     *           "declared_mime_type": "image/png",
+                     *           "declared_size_bytes": 245760,
+                     *           "mime_type": "image/png",
+                     *           "size_bytes": 245760,
+                     *           "width": 320,
+                     *           "height": 255,
+                     *           "alt_text": null,
+                     *           "rejection_reason": null,
+                     *           "uploaded_by": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+                     *           "upload_expires_at": "2026-11-24T15:15:00+08:00",
+                     *           "created_at": "2026-11-24T15:00:00+08:00",
+                     *           "updated_at": "2026-11-24T15:00:00+08:00"
+                     *         },
+                     *         "url": "https://storage.example.com/blobs/019535d9-3df7-79fb-b466-fa907fa17f9e?signature=example"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MediaUploadResponse"];
+                };
+            };
             /** @description 图片已就绪。 */
             201: {
                 headers: {
@@ -5010,7 +5279,7 @@ export interface operations {
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T15:00:00+08:00"
                      *         },
-                     *         "url": "https://storage.example.com/media/019535d9-3df7-79fb-b466-fa907fa17f9e?signature=example"
+                     *         "url": "https://storage.example.com/blobs/019535d9-3df7-79fb-b466-fa907fa17f9e?signature=example"
                      *       }
                      *     }
                      */
@@ -5150,10 +5419,14 @@ export interface operations {
                      *         "upload_expires_at": "2026-11-24T15:15:00+08:00",
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T15:01:12+08:00"
+                     *       },
+                     *       "meta": {
+                     *         "reference_count": 0,
+                     *         "references": []
                      *       }
                      *     }
                      */
-                    "application/json": components["schemas"]["MediaResponse"];
+                    "application/json": components["schemas"]["MediaDetailResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -5267,7 +5540,19 @@ export interface operations {
                      *       "error": {
                      *         "code": "media_in_use",
                      *         "message": "Media is still referenced",
-                     *         "details": []
+                     *         "details": [],
+                     *         "media_usage": {
+                     *           "reference_count": 1,
+                     *           "references": [
+                     *             {
+                     *               "kind": "profile_avatar",
+                     *               "post_id": null,
+                     *               "revision_id": null,
+                     *               "revision_no": null,
+                     *               "profile_id": null
+                     *             }
+                     *           ]
+                     *         }
                      *       }
                      *     }
                      */
@@ -5643,7 +5928,7 @@ export interface operations {
                 /** @description 每页条数，默认 20，最多 100。 */
                 per_page?: components["parameters"]["PerPage"];
                 /**
-                 * @description 按当前编辑版本标题的子串筛选，不区分大小写。
+                 * @description 标题或 slug 关键字，不区分大小写子串匹配，最多 100 字节。
                  * @example axum
                  */
                 q?: components["parameters"]["PostQuery"];
@@ -5663,15 +5948,24 @@ export interface operations {
                  */
                 tag_id?: components["parameters"]["PostTagFilter"];
                 /**
-                 * @description 当前编辑版本的审核状态。
-                 * @example pending
-                 */
-                review_status?: components["parameters"]["PostReviewStatusFilter"];
-                /**
-                 * @description `true` 只返回有发布目标的文章，`false` 只返回没有的。
+                 * @description `true` 只返回已发布文章，`false` 只返回没有的。
                  * @example true
                  */
                 published?: components["parameters"]["PostPublishedFilter"];
+                /**
+                 * @description `true` 只返回未分配分类的文章，`false` 只返回已分配分类的文章；`true` 时不可与 `category_id` 同时使用。
+                 * @example true
+                 */
+                uncategorized?: components["parameters"]["PostUncategorizedFilter"];
+                /**
+                 * @description 文章排序方式，默认为 `updated_desc`。
+                 * @example updated_desc
+                 */
+                sort?: components["parameters"]["PostSortParam"];
+                /** @description 按所属系列筛选，需要 series.manage。 */
+                series_id?: components["parameters"]["SeriesFilter"];
+                /** @description 按有无系列筛选，需要 series.manage。false 与 series_id 互斥。 */
+                in_series?: components["parameters"]["InSeries"];
             };
             header?: never;
             path?: never;
@@ -5679,7 +5973,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 文章列表，按 `updated_at DESC, id DESC` 排序。 */
+            /** @description 文章列表，默认按 `updated_at DESC, id DESC` 排序。 */
             200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -5695,18 +5989,20 @@ export interface operations {
                      *           "slug": "building-with-axum",
                      *           "slug_locked": true,
                      *           "title": "用 Axum 构建服务",
+                     *           "categories": [
+                     *             {
+                     *               "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *               "slug": "backend",
+                     *               "name": "后端"
+                     *             }
+                     *           ],
                      *           "author": {
                      *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *             "display_name": "示例作者"
                      *           },
                      *           "current_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
                      *           "current_revision_no": 3,
-                     *           "current_review": {
-                     *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *             "status": "approved"
-                     *           },
-                     *           "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *           "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+                     *           "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
                      *           "publication_version": 1,
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -5742,9 +6038,9 @@ export interface operations {
                      *         "message": "Request validation failed",
                      *         "details": [
                      *           {
-                     *             "field": "review_status",
+                     *             "field": "published",
                      *             "code": "invalid_value",
-                     *             "message": "review_status must be one of: pending, approved, rejected"
+                     *             "message": "published must be true or false"
                      *           }
                      *         ]
                      *       }
@@ -5852,20 +6148,13 @@ export interface operations {
                      *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *             "display_name": "示例作者"
                      *           },
-                     *           "review": {
-                     *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *             "status": "approved"
-                     *           },
                      *           "created_at": "2026-11-24T15:00:00+08:00"
                      *         },
                      *         "publication": {
-                     *           "desired_published_revision_id": null,
-                     *           "desired_published_at": null,
-                     *           "live_revision_id": null,
+                     *           "published_revision_id": null,
+                     *           "published_at": null,
                      *           "publication_version": 0,
-                     *           "first_published_at": null,
-                     *           "desired_generation": 12,
-                     *           "active_generation": 12
+                     *           "first_published_at": null
                      *         },
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -5968,6 +6257,85 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    listPostCategoryCounts: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 只返回该作者的文章；只有 `posts.read_own` 时固定为本人。
+                 * @example 019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f
+                 */
+                author_id?: components["parameters"]["PostAuthorFilter"];
+                /** @description 按所属系列筛选，需要 series.manage。 */
+                series_id?: components["parameters"]["SeriesFilter"];
+                /** @description 按有无系列筛选，需要 series.manage。false 与 series_id 互斥。 */
+                in_series?: components["parameters"]["InSeries"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前可见范围内的总文章数、未分类文章数与各分类文章数。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "total": 12,
+                     *         "uncategorized": 2,
+                     *         "categories": [
+                     *           {
+                     *             "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *             "slug": "backend",
+                     *             "name": "后端",
+                     *             "description": "服务端架构与工程实践。",
+                     *             "post_count": 6
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PostCategoryCountsResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 筛选参数无效。 */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "validation_error",
+                     *         "message": "Request validation failed",
+                     *         "details": [
+                     *           {
+                     *             "field": "author_id",
+                     *             "code": "invalid_format",
+                     *             "message": "author_id must be a valid UUIDv7"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
     getPost: {
         parameters: {
             query?: never;
@@ -6042,20 +6410,13 @@ export interface operations {
                      *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *             "display_name": "示例作者"
                      *           },
-                     *           "review": {
-                     *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *             "status": "approved"
-                     *           },
                      *           "created_at": "2026-11-24T15:00:00+08:00"
                      *         },
                      *         "publication": {
-                     *           "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *           "desired_published_at": "2026-11-24T16:30:00+08:00",
-                     *           "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+                     *           "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+                     *           "published_at": "2026-11-24T16:30:00+08:00",
                      *           "publication_version": 1,
-                     *           "first_published_at": "2026-11-24T16:30:00+08:00",
-                     *           "desired_generation": 12,
-                     *           "active_generation": 12
+                     *           "first_published_at": "2026-11-24T16:30:00+08:00"
                      *         },
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -6105,6 +6466,113 @@ export interface operations {
                      *             "field": "id",
                      *             "code": "invalid_format",
                      *             "message": "id must be a hyphenated UUIDv7"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deletePost: {
+        parameters: {
+            query: {
+                /**
+                 * @description 确认删除时看到的当前修订 ID。
+                 * @example 019535da-0c4e-7a10-9b2d-3c4e5f607182
+                 */
+                expected_revision_id: components["schemas"]["UuidV7"];
+                /**
+                 * @description 客户端读取的 `publication_version`，不一致返回 `409 publication_conflict`。
+                 * @example 1
+                 */
+                expected_publication_version: components["parameters"]["ExpectedPublicationVersion"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description 文章 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
+                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
+                 */
+                id: components["parameters"]["PostId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 文章已删除。 */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description 文章不存在。 */
+            404: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "not_found",
+                     *         "message": "Resource not found",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 草稿或发布版本已变更，文章仍已发布或属于系列。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "post_in_use",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 文章 ID 或版本参数无效。 */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "validation_error",
+                     *         "message": "Request validation failed",
+                     *         "details": [
+                     *           {
+                     *             "field": "expected_revision_id",
+                     *             "code": "required",
+                     *             "message": "parameter is required"
                      *           }
                      *         ]
                      *       }
@@ -6200,20 +6668,13 @@ export interface operations {
                      *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *             "display_name": "示例作者"
                      *           },
-                     *           "review": {
-                     *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *             "status": "approved"
-                     *           },
                      *           "created_at": "2026-11-24T15:00:00+08:00"
                      *         },
                      *         "publication": {
-                     *           "desired_published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *           "desired_published_at": "2026-11-24T16:30:00+08:00",
-                     *           "live_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+                     *           "published_revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
+                     *           "published_at": "2026-11-24T16:30:00+08:00",
                      *           "publication_version": 1,
-                     *           "first_published_at": "2026-11-24T16:30:00+08:00",
-                     *           "desired_generation": 12,
-                     *           "active_generation": 12
+                     *           "first_published_at": "2026-11-24T16:30:00+08:00"
                      *         },
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -6375,10 +6836,6 @@ export interface operations {
                      *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *             "display_name": "示例作者"
                      *           },
-                     *           "review": {
-                     *             "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *             "status": "approved"
-                     *           },
                      *           "created_at": "2026-11-24T15:00:00+08:00"
                      *         }
                      *       ],
@@ -6534,10 +6991,6 @@ export interface operations {
                      *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *           "display_name": "示例作者"
                      *         },
-                     *         "review": {
-                     *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *           "status": "approved"
-                     *         },
                      *         "created_at": "2026-11-24T15:00:00+08:00"
                      *       }
                      *     }
@@ -6600,7 +7053,6 @@ export interface operations {
                      *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *           "display_name": "示例作者"
                      *         },
-                     *         "review": null,
                      *         "created_at": "2026-11-24T15:00:00+08:00"
                      *       }
                      *     }
@@ -6791,10 +7243,6 @@ export interface operations {
                      *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
                      *           "display_name": "示例作者"
                      *         },
-                     *         "review": {
-                     *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *           "status": "approved"
-                     *         },
                      *         "created_at": "2026-11-24T15:00:00+08:00"
                      *       }
                      *     }
@@ -6854,574 +7302,6 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    listReviews: {
-        parameters: {
-            query?: {
-                /** @description 页码，从 1 开始，默认 1。 */
-                page?: components["parameters"]["Page"];
-                /** @description 每页条数，默认 20，最多 100。 */
-                per_page?: components["parameters"]["PerPage"];
-            };
-            header?: never;
-            path: {
-                /**
-                 * @description 文章 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
-                 */
-                id: components["parameters"]["PostId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 审核记录，按提交时间倒序。 */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": [
-                     *         {
-                     *           "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *           "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                     *           "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *           "revision_no": 3,
-                     *           "status": "approved",
-                     *           "comment": null,
-                     *           "submitted_by": {
-                     *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *             "display_name": "示例作者"
-                     *           },
-                     *           "reviewer": {
-                     *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *             "display_name": "示例编辑"
-                     *           },
-                     *           "reviewed_at": "2026-11-24T16:30:00+08:00",
-                     *           "created_at": "2026-11-24T15:00:00+08:00"
-                     *         }
-                     *       ],
-                     *       "meta": {
-                     *         "pagination": {
-                     *           "page": 1,
-                     *           "per_page": 20,
-                     *           "total": 1,
-                     *           "total_pages": 1
-                     *         }
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ReviewPage"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 资源不存在；只有 `*_own` 权限时，他人的文章同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 路径参数不是 UUIDv7。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "id",
-                     *             "code": "invalid_format",
-                     *             "message": "id must be a hyphenated UUIDv7"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    createReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description 文章 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
-                 */
-                id: components["parameters"]["PostId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182"
-                 *     }
-                 */
-                "application/json": components["schemas"]["CreateReviewInput"];
-            };
-        };
-        responses: {
-            /** @description 已创建待审核记录。 */
-            201: {
-                headers: {
-                    /**
-                     * @description 审核记录的 URI。
-                     * @example /api/v1/admin/posts/019535d9-3df7-79fb-b466-fa907fa17f9e/reviews/019535da-4f11-7b22-8c33-d4e5f6071829
-                     */
-                    Location?: string;
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *         "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                     *         "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *         "revision_no": 3,
-                     *         "status": "pending",
-                     *         "comment": null,
-                     *         "submitted_by": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例作者"
-                     *         },
-                     *         "reviewer": null,
-                     *         "reviewed_at": null,
-                     *         "created_at": "2026-11-24T15:00:00+08:00"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ReviewResponse"];
-                };
-            };
-            400: components["responses"]["MalformedJson"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 资源不存在；只有 `*_own` 权限时，他人的文章同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 该修订已经提交过审核。 */
-            409: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "review_already_submitted",
-                     *         "message": "This revision has already been submitted for review",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description JSON 请求正文超过 64 KiB。 */
-            413: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "payload_too_large",
-                     *         "message": "Request body is too large",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description `Content-Type` 必须为 `application/json`。 */
-            415: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "unsupported_media_type",
-                     *         "message": "Expected application/json",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 修订不属于该文章，或字段无效。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "revision_id",
-                     *             "code": "invalid_value",
-                     *             "message": "the revision does not belong to this post"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    getReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description 文章 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
-                 */
-                id: components["parameters"]["PostId"];
-                /**
-                 * @description 审核记录 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `review_id/invalid_format`。
-                 * @example 019535da-4f11-7b22-8c33-d4e5f6071829
-                 */
-                review_id: components["parameters"]["ReviewId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 审核记录。 */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *         "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                     *         "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *         "revision_no": 3,
-                     *         "status": "approved",
-                     *         "comment": null,
-                     *         "submitted_by": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例作者"
-                     *         },
-                     *         "reviewer": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例编辑"
-                     *         },
-                     *         "reviewed_at": "2026-11-24T16:30:00+08:00",
-                     *         "created_at": "2026-11-24T15:00:00+08:00"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ReviewResponse"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 资源不存在；只有 `*_own` 权限时，他人的文章同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 路径参数不是 UUIDv7。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "id",
-                     *             "code": "invalid_format",
-                     *             "message": "id must be a hyphenated UUIDv7"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    decideReview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description 文章 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535d9-3df7-79fb-b466-fa907fa17f9e
-                 */
-                id: components["parameters"]["PostId"];
-                /**
-                 * @description 审核记录 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `review_id/invalid_format`。
-                 * @example 019535da-4f11-7b22-8c33-d4e5f6071829
-                 */
-                review_id: components["parameters"]["ReviewId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "decision": "approved",
-                 *       "comment": "可以上线"
-                 *     }
-                 */
-                "application/json": components["schemas"]["DecideReviewInput"];
-            };
-        };
-        responses: {
-            /** @description 返回作出决定后的审核记录。 */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "id": "019535da-4f11-7b22-8c33-d4e5f6071829",
-                     *         "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
-                     *         "revision_id": "019535da-0c4e-7a10-9b2d-3c4e5f607182",
-                     *         "revision_no": 3,
-                     *         "status": "approved",
-                     *         "comment": null,
-                     *         "submitted_by": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例作者"
-                     *         },
-                     *         "reviewer": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例编辑"
-                     *         },
-                     *         "reviewed_at": "2026-11-24T16:30:00+08:00",
-                     *         "created_at": "2026-11-24T15:00:00+08:00"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ReviewResponse"];
-                };
-            };
-            400: components["responses"]["MalformedJson"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 资源不存在；只有 `*_own` 权限时，他人的文章同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 审核记录已有决定。 */
-            409: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "review_not_pending",
-                     *         "message": "The review has already been decided",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description JSON 请求正文超过 64 KiB。 */
-            413: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "payload_too_large",
-                     *         "message": "Request body is too large",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description `Content-Type` 必须为 `application/json`。 */
-            415: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "unsupported_media_type",
-                     *         "message": "Expected application/json",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description `decision` 无效或意见超长。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "decision",
-                     *             "code": "invalid_value",
-                     *             "message": "decision must be approved or rejected"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
     publishPost: {
         parameters: {
             query?: never;
@@ -7447,8 +7327,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 已接受该修订为期望公开版本并登记站点目标；上线由 Worker 完成。 */
-            202: {
+            /** @description 已提交公开状态并返回本次发布记录。 */
+            200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
                     "X-Trace-Id": components["headers"]["TraceId"];
@@ -7458,13 +7338,12 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
-                     *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *         "desired_generation": 12,
+                     *         "generation": 12,
                      *         "publication_version": 1
                      *       }
                      *     }
                      */
-                    "application/json": components["schemas"]["PublicationAcceptedResponse"];
+                    "application/json": components["schemas"]["PublicationResultResponse"];
                 };
             };
             400: components["responses"]["MalformedJson"];
@@ -7490,7 +7369,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `publication_conflict`：发布版本号已变化；`revision_not_approved`：修订未获批准。 */
+            /** @description `publication_conflict`：发布版本号已变化。 */
             409: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -7601,8 +7480,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 已清空期望公开版本并登记站点目标；新版本上线后文章在公开站点返回 404。 */
-            202: {
+            /** @description 已提交公开状态并返回本次发布记录。 */
+            200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
                     "X-Trace-Id": components["headers"]["TraceId"];
@@ -7612,13 +7491,12 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
-                     *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *         "desired_generation": 12,
+                     *         "generation": 12,
                      *         "publication_version": 2
                      *       }
                      *     }
                      */
-                    "application/json": components["schemas"]["PublicationAcceptedResponse"];
+                    "application/json": components["schemas"]["PublicationResultResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -7643,7 +7521,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `publication_conflict`：发布版本号已变化；`already_unpublished`：没有发布目标。 */
+            /** @description `publication_conflict`：发布版本号已变化；`already_unpublished`：未公开。 */
             409: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -7693,6 +7571,964 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    listSeries: {
+        parameters: {
+            query?: {
+                /** @description 页码，从 1 开始，默认 1。 */
+                page?: components["parameters"]["Page"];
+                /** @description 每页条数，默认 20，最多 100。 */
+                per_page?: components["parameters"]["PerPage"];
+                q?: string;
+                category_id?: components["schemas"]["UuidV7"];
+                published?: boolean;
+                completion_status?: "ongoing" | "completed";
+                sort?: "sort_order_asc" | "updated_desc" | "created_desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分页查询系列 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *           "slug": "rust-basic",
+                     *           "title": "Rust 基础",
+                     *           "description": null,
+                     *           "cover_media_id": null,
+                     *           "category_id": null,
+                     *           "completion_status": "ongoing",
+                     *           "is_featured": false,
+                     *           "sort_order": 0,
+                     *           "seo_title": null,
+                     *           "seo_description": null,
+                     *           "slug_locked": false,
+                     *           "edit_version": 0,
+                     *           "publication_version": 0,
+                     *           "item_count": 0,
+                     *           "published_post_count": 0,
+                     *           "is_live": false,
+                     *           "published_at": null,
+                     *           "first_published_at": null,
+                     *           "created_by": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *           "created_at": "2026-11-26T12:00:00+08:00",
+                     *           "updated_at": "2026-11-26T12:00:00+08:00"
+                     *         }
+                     *       ],
+                     *       "meta": {
+                     *         "pagination": {
+                     *           "page": 1,
+                     *           "per_page": 20,
+                     *           "total": 1,
+                     *           "total_pages": 1
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["SeriesSummary"][];
+                        meta: components["schemas"]["ListMeta"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createSeries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "title": "Rust 基础",
+                 *       "slug": "rust-basic"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateSeriesInput"];
+            };
+        };
+        responses: {
+            /** @description 创建系列草稿 */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /**
+                     * @description 新资源的 URI。
+                     * @example /api/v1/admin/series/019535d8-7e21-7f00-a111-2233445566aa
+                     */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *         "slug": "rust-basic",
+                     *         "title": "Rust 基础",
+                     *         "description": null,
+                     *         "cover_media_id": null,
+                     *         "category_id": null,
+                     *         "completion_status": "ongoing",
+                     *         "is_featured": false,
+                     *         "sort_order": 0,
+                     *         "seo_title": null,
+                     *         "seo_description": null,
+                     *         "slug_locked": false,
+                     *         "edit_version": 0,
+                     *         "publication_version": 0,
+                     *         "item_count": 0,
+                     *         "published_post_count": 0,
+                     *         "is_live": false,
+                     *         "published_at": null,
+                     *         "first_published_at": null,
+                     *         "created_by": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *         "created_at": "2026-11-26T12:00:00+08:00",
+                     *         "updated_at": "2026-11-26T12:00:00+08:00",
+                     *         "sections": [],
+                     *         "items": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["Series"];
+                    };
+                };
+            };
+            400: components["responses"]["MalformedJson"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "slug_in_use",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description JSON 请求正文超过 64 KiB。 */
+            413: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "payload_too_large",
+                     *         "message": "Request body is too large",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `Content-Type` 必须为 `application/json`。 */
+            415: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "unsupported_media_type",
+                     *         "message": "Expected application/json",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSeries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 读取系列与完整目录 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *         "slug": "rust-basic",
+                     *         "title": "Rust 基础",
+                     *         "description": null,
+                     *         "cover_media_id": null,
+                     *         "category_id": null,
+                     *         "completion_status": "ongoing",
+                     *         "is_featured": false,
+                     *         "sort_order": 0,
+                     *         "seo_title": null,
+                     *         "seo_description": null,
+                     *         "slug_locked": false,
+                     *         "edit_version": 0,
+                     *         "publication_version": 0,
+                     *         "item_count": 0,
+                     *         "published_post_count": 0,
+                     *         "is_live": false,
+                     *         "published_at": null,
+                     *         "first_published_at": null,
+                     *         "created_by": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *         "created_at": "2026-11-26T12:00:00+08:00",
+                     *         "updated_at": "2026-11-26T12:00:00+08:00",
+                     *         "sections": [],
+                     *         "items": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["Series"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteSeries: {
+        parameters: {
+            query: {
+                expected_edit_version: components["parameters"]["ExpectedEditVersion"];
+                /**
+                 * @description 客户端读取的 `publication_version`，不一致返回 `409 publication_conflict`。
+                 * @example 1
+                 */
+                expected_publication_version: components["parameters"]["ExpectedPublicationVersion"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除已下线的系列 */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "series_edit_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateSeries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "description": null,
+                 *       "expected_edit_version": 0
+                 *     }
+                 */
+                "application/json": components["schemas"]["UpdateSeriesInput"];
+            };
+        };
+        responses: {
+            /** @description 修改系列元数据 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "series": {
+                     *           "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *           "slug": "rust-basic",
+                     *           "title": "Rust 基础",
+                     *           "description": null,
+                     *           "cover_media_id": null,
+                     *           "category_id": null,
+                     *           "completion_status": "ongoing",
+                     *           "is_featured": false,
+                     *           "sort_order": 0,
+                     *           "seo_title": null,
+                     *           "seo_description": null,
+                     *           "slug_locked": false,
+                     *           "edit_version": 0,
+                     *           "publication_version": 0,
+                     *           "item_count": 0,
+                     *           "published_post_count": 0,
+                     *           "is_live": false,
+                     *           "published_at": null,
+                     *           "first_published_at": null,
+                     *           "created_by": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *           "created_at": "2026-11-26T12:00:00+08:00",
+                     *           "updated_at": "2026-11-26T12:00:00+08:00",
+                     *           "sections": [],
+                     *           "items": []
+                     *         },
+                     *         "publication": null
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["EditedSeries"];
+                    };
+                };
+            };
+            400: components["responses"]["MalformedJson"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "series_edit_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description JSON 请求正文超过 64 KiB。 */
+            413: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "payload_too_large",
+                     *         "message": "Request body is too large",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `Content-Type` 必须为 `application/json`。 */
+            415: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "unsupported_media_type",
+                     *         "message": "Expected application/json",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    publishSeries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_publication_version": 0
+                 *     }
+                 */
+                "application/json": components["schemas"]["SeriesPublicationInput"];
+            };
+        };
+        responses: {
+            /** @description 已提交公开状态并返回本次发布记录。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "generation": 12,
+                     *         "publication_version": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["PublicationResult"];
+                    };
+                };
+            };
+            400: components["responses"]["MalformedJson"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "publication_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description JSON 请求正文超过 64 KiB。 */
+            413: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "payload_too_large",
+                     *         "message": "Request body is too large",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `Content-Type` 必须为 `application/json`。 */
+            415: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "unsupported_media_type",
+                     *         "message": "Expected application/json",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    unpublishSeries: {
+        parameters: {
+            query: {
+                /**
+                 * @description 客户端读取的 `publication_version`，不一致返回 `409 publication_conflict`。
+                 * @example 1
+                 */
+                expected_publication_version: components["parameters"]["ExpectedPublicationVersion"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已提交公开状态并返回本次发布记录。 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "generation": 12,
+                     *         "publication_version": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["PublicationResult"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "publication_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    replaceSeriesOutline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_edit_version": 0,
+                 *       "items": [],
+                 *       "sections": []
+                 *     }
+                 */
+                "application/json": components["schemas"]["SeriesOutlineInput"];
+            };
+        };
+        responses: {
+            /** @description 替换完整系列目录 */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "series": {
+                     *           "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *           "slug": "rust-basic",
+                     *           "title": "Rust 基础",
+                     *           "description": null,
+                     *           "cover_media_id": null,
+                     *           "category_id": null,
+                     *           "completion_status": "ongoing",
+                     *           "is_featured": false,
+                     *           "sort_order": 0,
+                     *           "seo_title": null,
+                     *           "seo_description": null,
+                     *           "slug_locked": false,
+                     *           "edit_version": 0,
+                     *           "publication_version": 0,
+                     *           "item_count": 0,
+                     *           "published_post_count": 0,
+                     *           "is_live": false,
+                     *           "published_at": null,
+                     *           "first_published_at": null,
+                     *           "created_by": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *           "created_at": "2026-11-26T12:00:00+08:00",
+                     *           "updated_at": "2026-11-26T12:00:00+08:00",
+                     *           "sections": [],
+                     *           "items": []
+                     *         },
+                     *         "publication": null
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["EditedSeries"];
+                    };
+                };
+            };
+            400: components["responses"]["MalformedJson"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "series_edit_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description 目录请求正文超过 1 MiB。 */
+            413: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "payload_too_large",
+                     *         "message": "Request body is too large",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `Content-Type` 必须为 `application/json`。 */
+            415: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "unsupported_media_type",
+                     *         "message": "Expected application/json",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    appendSeriesItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_edit_version": 0,
+                 *       "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AppendSeriesItemInput"];
+            };
+        };
+        responses: {
+            /** @description 追加目录成员 */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /**
+                     * @description 新资源的 URI。
+                     * @example /api/v1/admin/series/019535d8-7e21-7f00-a111-2233445566aa/items/019535d9-3df7-79fb-b466-fa907fa17f9e
+                     */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "item": {
+                     *           "id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *           "post_id": "019535d9-3df7-79fb-b466-fa907fa17f9e",
+                     *           "display_title": null,
+                     *           "section_id": null,
+                     *           "position": 0,
+                     *           "title": "环境准备",
+                     *           "slug": "setup",
+                     *           "current_revision_id": "019535d8-7e21-7f00-a111-2233445566aa",
+                     *           "published_revision_id": null
+                     *         },
+                     *         "edit_version": 1,
+                     *         "publication": null
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: components["schemas"]["AddedSeriesItem"];
+                    };
+                };
+            };
+            400: components["responses"]["MalformedJson"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "series_edit_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description JSON 请求正文超过 64 KiB。 */
+            413: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "payload_too_large",
+                     *         "message": "Request body is too large",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `Content-Type` 必须为 `application/json`。 */
+            415: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "unsupported_media_type",
+                     *         "message": "Expected application/json",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
+    removeSeriesItem: {
+        parameters: {
+            query: {
+                expected_edit_version: components["parameters"]["ExpectedEditVersion"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["SeriesId"];
+                post_id: components["parameters"]["SeriesPostId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 移出目录成员 */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["SeriesNotFound"];
+            /** @description 发生版本、归属或资源状态冲突。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "series_edit_conflict",
+                     *         "message": "Resource conflict",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            422: components["responses"]["SeriesInvalid"];
+            429: components["responses"]["RateLimited"];
+            default: components["responses"]["Error"];
+        };
+    };
     listCategories: {
         parameters: {
             query?: never;
@@ -7718,6 +8554,7 @@ export interface operations {
                      *           "slug": "backend",
                      *           "name": "后端",
                      *           "description": "服务端架构与工程实践。",
+                     *           "post_count": 1,
                      *           "revision_count": 3,
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -7774,6 +8611,7 @@ export interface operations {
                      *         "slug": "backend",
                      *         "name": "后端",
                      *         "description": "服务端架构与工程实践。",
+                     *         "post_count": 0,
                      *         "revision_count": 0,
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -7906,6 +8744,7 @@ export interface operations {
                      *         "slug": "backend",
                      *         "name": "后端",
                      *         "description": "服务端架构与工程实践。",
+                     *         "post_count": 1,
                      *         "revision_count": 3,
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -8013,7 +8852,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description 分类仍被文章修订（含历史修订）引用。 */
+            /** @description 分类仍被文章修订（含公开副本）引用。 */
             409: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -8087,7 +8926,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 返回更新后的分类；出现在期望公开的文章中时同时登记站点目标。 */
+            /** @description 返回更新后的分类；出现在已公开的文章中时同时更新公开内容版本。 */
             200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -8103,13 +8942,13 @@ export interface operations {
                      *           "slug": "backend",
                      *           "name": "后端",
                      *           "description": "服务端架构与工程实践。",
+                     *           "post_count": 1,
                      *           "revision_count": 3,
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T16:30:00+08:00"
                      *         },
                      *         "publication": {
-                     *           "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *           "desired_generation": 12
+                     *           "generation": 12
                      *         }
                      *       }
                      *     }
@@ -8234,6 +9073,7 @@ export interface operations {
                      *           "id": "019535d8-7e21-7f00-a111-2233445566bb",
                      *           "slug": "rust",
                      *           "name": "Rust",
+                     *           "post_count": 1,
                      *           "revision_count": 3,
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T16:30:00+08:00"
@@ -8288,6 +9128,7 @@ export interface operations {
                      *         "id": "019535d8-7e21-7f00-a111-2233445566bb",
                      *         "slug": "rust",
                      *         "name": "Rust",
+                     *         "post_count": 0,
                      *         "revision_count": 0,
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -8419,6 +9260,7 @@ export interface operations {
                      *         "id": "019535d8-7e21-7f00-a111-2233445566bb",
                      *         "slug": "rust",
                      *         "name": "Rust",
+                     *         "post_count": 1,
                      *         "revision_count": 3,
                      *         "created_at": "2026-11-24T15:00:00+08:00",
                      *         "updated_at": "2026-11-24T16:30:00+08:00"
@@ -8526,7 +9368,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description 标签仍被文章修订（含历史修订）引用。 */
+            /** @description 标签仍被文章修订（含公开副本）引用。 */
             409: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -8600,7 +9442,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 返回更新后的标签；出现在期望公开的文章中时同时登记站点目标。 */
+            /** @description 返回更新后的标签；出现在已公开的文章中时同时更新公开内容版本。 */
             200: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -8615,13 +9457,13 @@ export interface operations {
                      *           "id": "019535d8-7e21-7f00-a111-2233445566bb",
                      *           "slug": "rust",
                      *           "name": "Rust",
+                     *           "post_count": 1,
                      *           "revision_count": 3,
                      *           "created_at": "2026-11-24T15:00:00+08:00",
                      *           "updated_at": "2026-11-24T16:30:00+08:00"
                      *         },
                      *         "publication": {
-                     *           "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *           "desired_generation": 12
+                     *           "generation": 12
                      *         }
                      *       }
                      *     }
@@ -8710,355 +9552,6 @@ export interface operations {
                      *             "field": "name",
                      *             "code": "out_of_range",
                      *             "message": "name must contain 1 to 50 characters"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    listPublishJobs: {
-        parameters: {
-            query?: {
-                /** @description 页码，从 1 开始，默认 1。 */
-                page?: components["parameters"]["Page"];
-                /** @description 每页条数，默认 20，最多 100。 */
-                per_page?: components["parameters"]["PerPage"];
-                /**
-                 * @description 只返回该状态的任务。
-                 * @example failed
-                 */
-                status?: components["parameters"]["PublishJobStatusFilter"];
-                /**
-                 * @description 定位某个 generation 的任务。
-                 * @example 12
-                 */
-                generation?: components["parameters"]["PublishJobGenerationFilter"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 发布任务，按 generation 倒序。 */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": [
-                     *         {
-                     *           "id": "019535db-2222-7333-9444-555566667777",
-                     *           "generation": 12,
-                     *           "status": "active",
-                     *           "trigger_type": "post.publish",
-                     *           "requested_by": {
-                     *             "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *             "display_name": "示例编辑"
-                     *           },
-                     *           "attempts": 1,
-                     *           "error_message": null,
-                     *           "started_at": "2026-11-24T15:00:00+08:00",
-                     *           "finished_at": "2026-11-24T16:30:00+08:00",
-                     *           "created_at": "2026-11-24T15:00:00+08:00"
-                     *         }
-                     *       ],
-                     *       "meta": {
-                     *         "pagination": {
-                     *           "page": 1,
-                     *           "per_page": 20,
-                     *           "total": 1,
-                     *           "total_pages": 1
-                     *         }
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["PublishJobPage"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 分页或筛选参数无效。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "status",
-                     *             "code": "invalid_value",
-                     *             "message": "status must be one of: queued, building, active, failed, superseded, retired"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    requestSiteBuild: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 已登记新的站点目标。 */
-            202: {
-                headers: {
-                    /**
-                     * @description 新任务的 URI。
-                     * @example /api/v1/admin/publishing/jobs/019535db-2222-7333-9444-555566667777
-                     */
-                    Location?: string;
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "publish_job_id": "019535db-2222-7333-9444-555566667777",
-                     *         "desired_generation": 12
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["SiteTargetResponse"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    getPublishJob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description 发布任务 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535db-2222-7333-9444-555566667777
-                 */
-                id: components["parameters"]["PublishJobId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 发布任务。 */
-            200: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "id": "019535db-2222-7333-9444-555566667777",
-                     *         "generation": 12,
-                     *         "status": "active",
-                     *         "trigger_type": "post.publish",
-                     *         "requested_by": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例编辑"
-                     *         },
-                     *         "attempts": 1,
-                     *         "error_message": null,
-                     *         "started_at": "2026-11-24T15:00:00+08:00",
-                     *         "finished_at": "2026-11-24T16:30:00+08:00",
-                     *         "created_at": "2026-11-24T15:00:00+08:00"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["PublishJobResponse"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 任务不存在；只有 `jobs.read_own` 时，他人触发的任务同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 路径参数不是 UUIDv7。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "id",
-                     *             "code": "invalid_format",
-                     *             "message": "id must be a hyphenated UUIDv7"
-                     *           }
-                     *         ]
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            429: components["responses"]["RateLimited"];
-            default: components["responses"]["Error"];
-        };
-    };
-    retryPublishJob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /**
-                 * @description 发布任务 ID。须为带连字符的 UUIDv7，否则返回 `422`，字段错误为 `id/invalid_format`。
-                 * @example 019535db-2222-7333-9444-555566667777
-                 */
-                id: components["parameters"]["PublishJobId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 任务已重新排队。 */
-            202: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "data": {
-                     *         "id": "019535db-2222-7333-9444-555566667777",
-                     *         "generation": 12,
-                     *         "status": "queued",
-                     *         "trigger_type": "post.publish",
-                     *         "requested_by": {
-                     *           "id": "019535d9-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
-                     *           "display_name": "示例编辑"
-                     *         },
-                     *         "attempts": 3,
-                     *         "error_message": "site build exited with exit status: 1",
-                     *         "started_at": "2026-11-24T15:00:00+08:00",
-                     *         "finished_at": null,
-                     *         "created_at": "2026-11-24T15:00:00+08:00"
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["PublishJobResponse"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-            /** @description 资源不存在；只有 `*_own` 权限时，他人的文章同样返回 404。 */
-            404: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "not_found",
-                     *         "message": "Resource not found",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 只能重试仍为最新目标的失败任务。 */
-            409: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "publish_job_not_retryable",
-                     *         "message": "Only the latest failed publish job can be retried",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description 路径参数不是 UUIDv7。 */
-            422: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "validation_error",
-                     *         "message": "Request validation failed",
-                     *         "details": [
-                     *           {
-                     *             "field": "id",
-                     *             "code": "invalid_format",
-                     *             "message": "id must be a hyphenated UUIDv7"
                      *           }
                      *         ]
                      *       }
@@ -9214,26 +9707,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -9368,26 +9841,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -9533,26 +9986,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -9643,26 +10076,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -9752,26 +10165,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -9904,26 +10297,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -10011,26 +10384,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -10123,26 +10476,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -10235,26 +10568,6 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
-            503: {
-                headers: {
-                    "X-Request-Id": components["headers"]["RequestId"];
-                    "X-Trace-Id": components["headers"]["TraceId"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
-                     *         "details": []
-                     *       }
-                     *     }
-                     */
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
             default: components["responses"]["Error"];
         };
     };
@@ -10366,7 +10679,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
-            /** @description 站点尚未有任何线上版本。 */
+            /** @description 服务端未配置对象存储（仅开发环境可能出现）。 */
             503: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -10377,8 +10690,8 @@ export interface operations {
                     /**
                      * @example {
                      *       "error": {
-                     *         "code": "site_not_ready",
-                     *         "message": "The site has not been published yet",
+                     *         "code": "storage_unavailable",
+                     *         "message": "Object storage is not configured",
                      *         "details": []
                      *       }
                      *     }
@@ -10386,6 +10699,118 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPublicSiteSnapshot: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description 页面所属的 generation。与线上版本不一致时返回 `409 site_generation_changed`，客户端应清空旧数据并提示刷新。
+                 * @example 12
+                 */
+                "X-Expected-Generation"?: components["parameters"]["ExpectedGeneration"];
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前线上版本的公开快照。 */
+            200: {
+                headers: {
+                    "X-Site-Generation": components["headers"]["SiteGeneration"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description 当前快照版本的实体标签。 */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "schema_version": 1,
+                     *         "generation": 0,
+                     *         "generated_at": "1970-01-01T08:00:00+08:00",
+                     *         "posts": [],
+                     *         "categories": [],
+                     *         "tags": [],
+                     *         "series": [],
+                     *         "profile": null,
+                     *         "ai_trending": {
+                     *           "data_date": null,
+                     *           "repositories": []
+                     *         },
+                     *         "media": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SiteSnapshotResponse"];
+                };
+            };
+            /** @description 请求的快照仍是当前版本。 */
+            304: {
+                headers: {
+                    "X-Site-Generation": components["headers"]["SiteGeneration"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description 当前快照版本的实体标签。 */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 线上版本与 `X-Expected-Generation` 不同；响应头 `X-Site-Generation` 给出当前版本。 */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    "X-Site-Generation": components["headers"]["SiteGeneration"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "site_generation_changed",
+                     *         "message": "The live site generation has changed",
+                     *         "details": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `X-Expected-Generation` 不是正整数，或查询参数无效。 */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "error": {
+                     *         "code": "validation_error",
+                     *         "message": "Request validation failed",
+                     *         "details": [
+                     *           {
+                     *             "field": "X-Expected-Generation",
+                     *             "code": "invalid_type",
+                     *             "message": "header must be a positive integer"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
             default: components["responses"]["Error"];
         };
     };

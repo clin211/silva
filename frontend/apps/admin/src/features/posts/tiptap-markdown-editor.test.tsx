@@ -202,4 +202,53 @@ describe('TiptapMarkdownEditor', () => {
         expect(screen.queryByTestId('auth-media-img')).not.toBeInTheDocument();
         expect(handleChange).not.toHaveBeenCalled();
     });
+
+    it('renders code block language selector, highlights code with Shiki, and serializes markdown fence language', async () => {
+        const handleChange = vi.fn();
+        const user = userEvent.setup();
+
+        render(
+            <TiptapMarkdownEditor
+                value={'```ts\nconst answer = 42;\n```'}
+                onChange={handleChange}
+            />,
+        );
+
+        const select = (await screen.findByLabelText('代码块语言')) as HTMLSelectElement;
+        expect(select.value).toBe('typescript');
+
+        // 等待 Shiki 按需加载 TypeScript 语法并注入 ProseMirror 行内高亮装饰
+        await waitFor(() => {
+            const styledToken = document.querySelector(
+                '.silva-code-block-pre code span[style*="color"]',
+            );
+            expect(styledToken).not.toBeNull();
+        });
+
+        // 切换语言为 Rust 后应同步序列化为 ```rust
+        await user.selectOptions(select, 'rust');
+        await waitFor(() => {
+            const lastMarkdown = handleChange.mock.calls.at(-1)?.[0] as string;
+            expect(lastMarkdown).toContain('```rust\nconst answer = 42;\n```');
+        });
+
+        // 切换回纯文本后应移除语言标识
+        await user.selectOptions(select, '');
+        await waitFor(() => {
+            const lastMarkdown = handleChange.mock.calls.at(-1)?.[0] as string;
+            expect(lastMarkdown).toContain('```\nconst answer = 42;\n```');
+        });
+    });
+
+    it('preserves custom unknown code block languages in the language selector', async () => {
+        render(
+            <TiptapMarkdownEditor
+                value={'```zig\nconst std = @import("std");\n```'}
+                onChange={vi.fn()}
+            />,
+        );
+
+        const select = (await screen.findByLabelText('代码块语言')) as HTMLSelectElement;
+        expect(select.value).toBe('zig');
+    });
 });

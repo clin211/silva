@@ -2,37 +2,94 @@
 import SiteLayout from './SiteLayout.astro';
 import Archive from '../components/Archive.astro';
 import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
 import PageIntro from '../components/PageIntro.astro';
+import SeriesRowList from '../components/SeriesRowList.astro';
 import TaxonomyLinks from '../components/TaxonomyLinks.astro';
-import type { Post } from '../lib/data';
+import type { Post, Series } from '../lib/data';
+import { seriesDomainUrl } from '../lib/site';
 
 interface Props {
     title: string;
     description: string;
     posts: Post[];
     entries?: Post[];
+    series?: Series[];
     category?: string;
     tag?: string;
 }
-const { title, description, posts, entries = posts, category, tag } = Astro.props;
+const { title, description, posts, entries = posts, series = [], category, tag } = Astro.props;
 const subsection = category || tag;
+const archiveHeading = subsection
+    ? series.length > 0
+        ? entries.length > 0
+            ? `${series.length} 个专栏 · ${entries.length} 篇文章`
+            : `${series.length} 个专栏`
+        : `${entries.length} 篇文章`
+    : '按时间归档';
 ---
 
 <SiteLayout {title} {description} active="blog">
     <div class="wrap page-content">
-        {subsection && <Breadcrumb section={{ label: '文章', href: '/blog/' }} current={title} />}
+        {subsection && (
+            <Breadcrumb
+                items={[
+                    { label: '博客', href: '/series/' },
+                    { label: '全部文章', href: '/blog/' },
+                ]}
+                current={title}
+            />
+        )}
         <PageIntro
-            label={category ? '分类归档' : tag ? '标签归档' : undefined}
+            label={category ? '分类归档' : tag ? '标签归档' : '时间归档'}
             {title}
             {description}
-        />
+        >
+            <div class="actions intro-actions">
+                {category && series.length > 0 ? (
+                    <a class="btn btn-ghost btn-sm" href={seriesDomainUrl(category)}>
+                        进入此领域专栏导学
+                        <Icon name="arrowRight" size={14} />
+                    </a>
+                ) : !subsection ? (
+                    <a class="btn btn-ghost btn-sm" href="/series/">
+                        切换至专栏导学
+                        <Icon name="arrowRight" size={14} />
+                    </a>
+                ) : null}
+            </div>
+        </PageIntro>
         <section class="archive-layout" aria-labelledby="archive-title">
             <h2 class="t-h2" id="archive-title">
-                {subsection ? `${entries.length} 篇文章` : '文章归档'}
+                {archiveHeading}
             </h2>
             <TaxonomyLinks {posts} {category} {tag} />
             <div class="archive-body">
-                <Archive posts={entries} empty={subsection ? '此归档暂无文章。' : undefined} />
+                {series.length > 0 && (
+                    <section class="category-series" aria-labelledby="category-series-title">
+                        <header class="section-heading">
+                            <h3 id="category-series-title" class="t-h3">
+                                本分类专栏（{series.length}）
+                            </h3>
+                            <a class="t-small link muted" href="/series/">
+                                查看全部专栏
+                            </a>
+                        </header>
+                        <div class="category-series-list">
+                            <SeriesRowList series={series} expandable />
+                        </div>
+                    </section>
+                )}
+                {series.length > 0 && entries.length > 0 && (
+                    <h3 class="t-h3 category-articles-heading">本分类文章（{entries.length}）</h3>
+                )}
+                {entries.length > 0 || series.length === 0 ? (
+                    <Archive posts={entries} empty={subsection ? '此归档暂无文章。' : undefined} />
+                ) : (
+                    <p class="panel empty-state ink-2">
+                        该分类下暂无独立归档文章，可从上方专栏目录开始阅读。
+                    </p>
+                )}
             </div>
         </section>
     </div>

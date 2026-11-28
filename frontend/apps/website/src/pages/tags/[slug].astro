@@ -1,19 +1,11 @@
 ---
-import type { GetStaticPaths } from 'astro';
 import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
-import { listPosts, listTags } from '../../lib/data';
 
-export const getStaticPaths = (async () => {
-    const [posts, tags] = await Promise.all([listPosts(), listTags()]);
-    return tags.flatMap((tag) => {
-        const entries = posts.filter((post) => post.tags.some((item) => item.slug === tag.slug));
-        return entries.length
-            ? [{ params: { slug: tag.slug }, props: { tag, posts, entries } }]
-            : [];
-    });
-}) satisfies GetStaticPaths;
-
-const { tag, posts, entries } = Astro.props;
+const content = Astro.locals.content;
+const tag = (await content.listTags()).find((item) => item.slug === Astro.params.slug);
+if (!tag) return Astro.rewrite('/404');
+const posts = await content.listPosts();
+const entries = posts.filter((post) => post.tags.some((item) => item.slug === tag.slug));
 ---
 
 <ArchiveLayout

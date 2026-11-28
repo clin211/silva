@@ -1,0 +1,211 @@
+---
+import { siteOrigin } from '../../lib/origin';
+import Breadcrumb, { type BreadcrumbItem } from '../../components/Breadcrumb.astro';
+import Cover from '../../components/Cover.astro';
+import Icon from '../../components/Icon.astro';
+import SeriesRowList from '../../components/SeriesRowList.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { day } from '../../lib/format';
+import { categoryUrl, postUrl, seriesUrl } from '../../lib/site';
+
+const allSeries = await Astro.locals.content.listSeries();
+const series = allSeries.find((item) => item.slug === Astro.params.slug);
+if (!series) return Astro.rewrite('/404');
+const related = series.category
+    ? allSeries.filter(
+          (item) => item.slug !== series.slug && item.category?.slug === series.category?.slug,
+      )
+    : [];
+const firstEntry = series.entries[0]!;
+const statusLabel = series.completionStatus === 'completed' ? '已完结' : '连载中';
+const statusClass = series.completionStatus === 'completed' ? 'chip chip-done' : 'chip chip-teal';
+const pad = (value: number) => String(value).padStart(2, '0');
+
+const breadcrumbItems: BreadcrumbItem[] = [{ label: '博客', href: '/series/' }];
+if (series.category) {
+    breadcrumbItems.push({
+        label: series.category.name,
+        href: categoryUrl(series.category.slug),
+    });
+}
+
+const description =
+    series.seoDescription ??
+    series.description ??
+    `《${series.title}》系列共 ${series.postCount} 篇文章，预计阅读 ${series.totalMinutes} 分钟。`;
+
+const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: series.title,
+    description,
+    url: new URL(seriesUrl(series.slug), siteOrigin(Astro)).href,
+    datePublished: series.published,
+    dateModified: series.updated,
+    hasPart: series.entries.map((entry) => ({
+        '@type': 'BlogPosting',
+        position: entry.index,
+        name: entry.displayTitle,
+        url: new URL(postUrl(entry.post.slug), siteOrigin(Astro)).href,
+    })),
+};
+---
+
+<SiteLayout
+    title={series.seoTitle ?? series.title}
+    {description}
+    active="blog"
+    published={series.published}
+    updated={series.updated}
+    {structuredData}
+    image={
+        series.cover.kind === 'image'
+            ? { path: series.cover.src, alt: series.cover.alt }
+            : undefined
+    }
+>
+    <div class="wrap page-content series-detail-page">
+        <Breadcrumb items={breadcrumbItems} current={series.title} />
+
+        <header class="series-hero">
+            <div class="series-hero-copy">
+                <div class="metadata">
+                    <span class={statusClass}>{statusLabel}</span>
+                    {series.featured && <span class="chip chip-sun">精选</span>}
+                    {series.category && (
+                        <a
+                            href={categoryUrl(series.category.slug)}
+                            class:list={['chip', series.category.color]}
+                        >
+                            {series.category.name}
+                        </a>
+                    )}
+                </div>
+                <h1 class="t-h1">{series.title}</h1>
+                {series.description && (
+                    <p class="series-hero-desc t-lead ink-2">{series.description}</p>
+                )}
+                <p class="series-hero-stats metadata num">
+                    <span>共 {series.postCount} 篇</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="article-reading">
+                        <Icon name="clock" size={14} />约 {series.totalMinutes} 分钟
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                        最近更新 <time datetime={series.updated}>{day(series.updated)}</time>
+                    </span>
+                </p>
+                <div class="actions">
+                    <a class="btn btn-dark" href={postUrl(firstEntry.post.slug)}>
+                        从第 1 篇开始阅读
+                    </a>
+                    <a class="btn btn-ghost btn-sm" href="/series/">
+                        全部专栏
+                    </a>
+                </div>
+            </div>
+            <div class="series-hero-media">
+                <Cover
+                    cover={series.cover}
+                    label={series.category?.name}
+                    class="series-hero-cover"
+                />
+            </div>
+        </header>
+
+        <section class="series-outline-section" aria-labelledby="series-outline-heading">
+            <header class="section-heading">
+                <h2 id="series-outline-heading" class="t-h2">
+                    目录大纲
+                </h2>
+                <span class="t-small muted num">共 {series.postCount} 篇公开文章</span>
+            </header>
+
+            {series.rootItems.length > 0 && (
+                <ol class="series-toc-list panel rows">
+                    {series.rootItems.map((entry) => (
+                        <li>
+                            <a class="series-toc-item" href={postUrl(entry.post.slug)}>
+                                <span class="series-toc-index mono num">{pad(entry.index)}</span>
+                                <span class="series-toc-copy">
+                                    <span class="series-toc-title hover-accent">
+                                        {entry.displayTitle}
+                                    </span>
+                                    {entry.post.summary && (
+                                        <span class="series-toc-summary t-small muted">
+                                            {entry.post.summary}
+                                        </span>
+                                    )}
+                                </span>
+                                <span class="series-toc-meta t-small muted num">
+                                    <span>{entry.post.reading.minutes} 分钟</span>
+                                    <time datetime={entry.post.published}>
+                                        {day(entry.post.published)}
+                                    </time>
+                                </span>
+                            </a>
+                        </li>
+                    ))}
+                </ol>
+            )}
+
+            {series.sections.map((section) => (
+                <div class="series-section-group">
+                    <div class="series-section-head">
+                        <div>
+                            <h3 class="t-h3">{section.title}</h3>
+                            {section.description && (
+                                <p class="t-small muted">{section.description}</p>
+                            )}
+                        </div>
+                        <span class="t-xs muted num">{section.items.length} 篇</span>
+                    </div>
+                    <ol class="series-toc-list panel rows">
+                        {section.items.map((entry) => (
+                            <li>
+                                <a class="series-toc-item" href={postUrl(entry.post.slug)}>
+                                    <span class="series-toc-index mono num">
+                                        {pad(entry.index)}
+                                    </span>
+                                    <span class="series-toc-copy">
+                                        <span class="series-toc-title hover-accent">
+                                            {entry.displayTitle}
+                                        </span>
+                                        {entry.post.summary && (
+                                            <span class="series-toc-summary t-small muted">
+                                                {entry.post.summary}
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span class="series-toc-meta t-small muted num">
+                                        <span>{entry.post.reading.minutes} 分钟</span>
+                                        <time datetime={entry.post.published}>
+                                            {day(entry.post.published)}
+                                        </time>
+                                    </span>
+                                </a>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            ))}
+        </section>
+
+        {related.length > 0 && series.category && (
+            <section class="series-related-section" aria-labelledby="series-related-heading">
+                <header class="section-heading">
+                    <h2 id="series-related-heading" class="t-h2">
+                        同分类其他系列
+                    </h2>
+                    <a class="btn btn-ghost btn-sm" href={categoryUrl(series.category.slug)}>
+                        查看「{series.category.name}」归档
+                    </a>
+                </header>
+                <div class="series-related-list">
+                    <SeriesRowList series={related} expandable />
+                </div>
+            </section>
+        )}
+    </div>
+</SiteLayout>

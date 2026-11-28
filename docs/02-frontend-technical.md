@@ -9,7 +9,7 @@
 
 采用独立前台和管理后台：
 
-- `apps/website`：Astro 公共站点，静态优先。
+- `apps/website`：Astro SSR 公共站点。
 - `apps/admin`：React 管理后台 SPA。
 - `packages/api-client`：由 OpenAPI 生成的 TypeScript API Client。
 - `packages/ui`：可复用 UI 组件。
@@ -26,7 +26,6 @@ frontend/
 │   │   │   ├── layouts/
 │   │   │   ├── pages/
 │   │   │   ├── islands/
-│   │   │   ├── content/
 │   │   │   └── styles/
 │   │   └── astro.config.mjs
 │   └── admin/
@@ -50,7 +49,7 @@ frontend/
 
 ### 2.1 Website
 
-- Astro：页面路由、静态生成、布局和内容页面。
+- Astro：页面路由、服务端渲染与布局。
 - React Islands：仅用于确实需要交互的组件。
 - TypeScript：业务类型。
 - Tailwind CSS：样式系统（可替换）。
@@ -59,8 +58,8 @@ frontend/
 
 公开站点采用 Static-first：
 
-- 首页、文章、分类、标签、About 和 AI Trending 初始榜单使用 SSG。筛选、分页和趋势图按需调用 Public API。
-- 一期不实现站内搜索、收藏或访客登录，不因少量动态区块引入 SSR。
+- 首页、文章、分类、标签、About 和 AI Trending 初始榜单使用 Astro SSR。筛选、分页和趋势图按需调用 Public API。
+- 一期不实现站内搜索、收藏或访客登录。
 
 ### 2.2 Admin
 
@@ -105,8 +104,8 @@ src/
 
 ### 3.1 公开页面数据策略
 
-- Worker 向 Astro 提供指定 `generation` 的不可变构建快照。页面、分类/标签、站内链接、404、sitemap 与 RSS 都从这份快照生成；构建不逐页读实时 Public API，不直连数据库。
-- 构建校验快照的 `generation`、schema 版本与完整性；快照读取或校验失败时停止，不回退到其他版本或空数据。没有内容或没有成功 AI 批次是有效快照，两者需与加载失败区分。
+- Astro 在每次请求时直接从服务端读取同一版本的 `/api/v1/public/site-snapshot`，与公开接口共用已发布内容，不使用本地 mock 数据。
+- 通过 ETag 校验进程缓存的快照。接口故障时页面返回服务不可用，撤回文章的详情返回 404。
 - AI Trending 的筛选、分页及图表通过当前 Public API 获取。静态页面记录自身 generation；动态请求携带 `X-Expected-Generation`，遇到 `409 site_generation_changed` 时清空该页面缓存的旧数据并提示刷新，避免拼接两个版本。
 - 显示 AI 榜单数据日期；`null` 增长渲染为「数据不足」，保留负值。将精选与自然排名分开展示；尚无成功批次显示「暂无数据」，不把采集失败渲染为零增长。
 
@@ -124,9 +123,7 @@ src/features/
 ├── dashboard/
 ├── posts/
 │   ├── list/
-│   ├── editor/
-│   ├── revisions/
-│   └── reviews/
+│   └── editor/
 ├── taxonomy/
 ├── media/
 ├── profile/
@@ -134,7 +131,6 @@ src/features/
 │   ├── repositories/
 │   ├── snapshots/
 │   └── ingestion-runs/
-├── publishing/
 ├── users/
 ├── roles/
 └── audit-logs/
@@ -148,12 +144,12 @@ src/features/
 - 自动保存（带 debounce 和并发版本检测）。
 - 分别显示当前编辑 revision、期望公开 revision 和当前线上 revision；后两者可能不同。线上状态来自服务端，不由「发布」请求是否成功推断。
 - 在管理域使用未发布 revision 做安全预览，不生成公开预览 URL。
-- 提交审核、批准、拒绝都绑定明确的 revision；发布仅可选择已批准 revision，另提供取消发布。
+- 发布按钮使用当前已保存的内容，另提供取消发布。
 - 编辑分类标签、封面、SEO 和首页精选标记；这些字段随 revision 发布。
 - 调用一次 `POST /media` 发送图片文件，以返回的 `data.url` 预览，以 `data.media.id` 插入媒体引用；失败保留编辑内容并提示。
 - 保存失败时保留本地编辑状态。
 
-每次保存由后端创建不可变 revision。保存传 `expected_revision_id`；收到 `409 revision_conflict` 时停止自动保存、保留本地草稿并提示读取最新记录，不盲重试。发布和取消发布传 `expected_publication_version`；若冲突，重新读取文章与发布状态后再由用户确认。
+每次保存由后端替换当前 revision。保存传 `expected_revision_id`；收到 `409 revision_conflict` 时停止自动保存、保留本地草稿并提示读取最新记录，不盲重试。发布和取消发布传 `expected_publication_version`；若冲突，重新读取文章与发布状态后再由用户确认。
 
 ### 4.2 AI Trending 管理界面
 
@@ -166,9 +162,9 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - 支持隐藏或恢复仓库、修正分类和标记精选。保存后与其他内容走同一上线流程。
 - Admin 可请求当日未成功批次；已运行或已完成时显示现有批次与状态，不创建重复批次。
 
-### 4.3 站点发布任务
+### 4.3 内容上线与撤回
 
-提交文章发布或取消发布、保存公开分类标签、个人资料或 AI 榜单展示设置后，先显示「待上线」。根据返回的 job 或 generation 查询任务：`queued` / `building` 显示进度，`active` 表示已上线，`failed` 显示失败原因，`superseded` 表示被新的目标取代，`retired` 表示曾上线但已被替换。任务被取代不代表变更被撤销，应重新读取当前目标与线上状态。超过 5 分钟仍待上线时提示延迟；Admin 可重试仍为最新目标的失败 generation。发生构建失败时不要把编辑或保存状态标成失败。
+文章发布与撤回成功后立即回读线上状态。新建与更新可直接点击发布；若保存或发布发生版本冲突，编辑器保留输入供作者核对。内容变更记录通过审计日志查询。
 
 ## 5. API Client 与请求约定
 
@@ -183,7 +179,7 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 - 写操作成功后精确 invalidate 相关 query。
 - 对列表接口统一支持 `page`、`per_page`、`sort`、`order` 和过滤参数。
 
-构建器通过非公开配置读取 Worker 提供的只读快照文件及预期 generation；生产代理和开发代理的上游地址各自由部署配置。不要把内部地址、服务端密钥或数据库凭据打进客户端产物。
+线上 Astro 使用服务端配置的 Rust API 地址；生产代理和开发代理的上游地址各自由部署配置。不要把内部地址、服务端密钥或数据库凭据打进客户端产物。
 
 ## 6. 登录与安全
 
@@ -215,7 +211,7 @@ AI Trending 是自动采集产品，不设计成手动录入榜单。后台主�
 
 1. Workspace、设计系统、API Client。
 2. Admin 登录、布局、权限路由。
-3. Posts 列表、编辑器、媒体确认、Revision、审核与发布任务。
+3. Posts 列表、编辑器、媒体确认、草稿保存与同步发布。
 4. Website 首页、Blog、SEO。
 5. 个人资料管理与 About 页面展示。
 6. AI Trending 仪表盘、趋势页面和交互筛选。

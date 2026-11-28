@@ -1,4 +1,4 @@
-import type { Repository, WindowDays } from '../data/trending';
+import type { Repository, WindowDays } from './trending';
 
 export const sortOptions = [
     ['stars_growth', 'Stars 净增长'],

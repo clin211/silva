@@ -1,6 +1,7 @@
 import type { Schemas } from '@silva/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Trash2, Upload } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Copy, ExternalLink, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AuthenticatedImage } from '@/components/media/authenticated-media';
 import { Button } from '@/components/ui/button';
@@ -18,8 +19,8 @@ import { StatusChip, type ChipTone } from '@/components/ui/status-chip';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/auth/auth-context';
 import { apiClient, unwrapResponse, uploadMediaFile } from '@/lib/api';
-import { formatErrorWithRequestId, getMediaRejectionMessage } from '@/lib/errors';
-import { formatBytes, formatDateTime } from '@/lib/format';
+import { formatErrorWithRequestId, getMediaRejectionMessage, isApiError } from '@/lib/errors';
+import { formatBytes, formatDateTime, shortUuid } from '@/lib/format';
 import { hasPermission, PERMISSIONS } from '@/lib/permissions';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -53,11 +54,26 @@ export function MediaLibraryPage() {
     const [activeMedia, setActiveMedia] = useState<Schemas['Media'] | null>(null);
     const [altTextInput, setAltTextInput] = useState('');
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteConflictUsage, setDeleteConflictUsage] = useState<Schemas['MediaUsage'] | null>(
+        null,
+    );
 
     const openMediaDrawer = (media: Schemas['Media']) => {
         setActiveMedia(media);
         setAltTextInput(media.alt_text ?? '');
+        setDeleteConflictUsage(null);
     };
+
+    const mediaDetailQuery = useQuery({
+        queryKey: queryKeys.media.detail(activeMedia?.id ?? ''),
+        queryFn: async () =>
+            unwrapResponse(
+                apiClient.GET('/api/v1/admin/media/{id}', {
+                    params: { path: { id: activeMedia!.id } },
+                }),
+            ),
+        enabled: activeMedia !== null,
+    });
 
     const queryParams = {
         page,
@@ -105,12 +121,21 @@ export function MediaLibraryPage() {
         },
         onSuccess: () => {
             setDeleteConfirmOpen(false);
+            setDeleteConflictUsage(null);
             setActiveMedia(null);
             toast('媒体已删除', 'ok');
             void queryClient.invalidateQueries({ queryKey: queryKeys.media.all });
         },
         onError: (error) => {
             setDeleteConfirmOpen(false);
+            if (isApiError(error) && error.code === 'media_in_use' && error.mediaUsage) {
+                setDeleteConflictUsage(error.mediaUsage);
+            }
+            if (activeMedia) {
+                void queryClient.invalidateQueries({
+                    queryKey: queryKeys.media.detail(activeMedia.id),
+                });
+            }
             toast(formatErrorWithRequestId(error), 'bad');
         },
     });
@@ -442,7 +467,7 @@ export function MediaLibraryPage() {
                                 </div>
                             </div>
                             <p className="text-[12px] text-ui-sub">
-                                被文章修订或个人资料引用时服务端会拒绝删除。
+                                被文章修订、系列封面、个人资料或当前线上站点引用时服务端会拒绝删除。
                             </p>
                         </div>
                     ) : null
@@ -498,6 +523,135 @@ export function MediaLibraryPage() {
                             <dd className="tnum">{formatDateTime(activeMedia.created_at)}</dd>
                         </dl>
 
+                        {/* 业务引用位置（含文章、头像、系列封面及当前线上系列封面） */}
+                        {(() => {
+                            const usage =
+                                deleteConflictUsage ?? mediaDetailQuery.data?.meta ?? null;
+                            if (mediaDetailQuery.isLoading && !usage) {
+                                return (
+                                    <div className="rounded-lg border border-ui-line bg-ui-subtle/50 px-3.5 py-2.5 text-[12.5px] text-ui-sub">
+                                        正在加载引用位置…
+                                    </div>
+                                );
+                            }
+                            if (!usage) return null;
+                            const hiddenCount = Math.max(
+                                0,
+                                usage.reference_count - usage.references.length,
+                            );
+                            return (
+                                <section
+                                    aria-label="媒体引用位置"
+                                    className="rounded-lg border border-ui-line bg-ui-subtle/50 p-3.5 text-[13px]"
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="font-medium text-ui-text">业务引用</span>
+                                        <StatusChip
+                                            tone={usage.reference_count > 0 ? 'warn' : 'ok'}
+                                        >
+                                            {usage.reference_count > 0
+                                                ? `${usage.reference_count} 处引用`
+                                                : '未被引用'}
+                                        </StatusChip>
+                                    </div>
+                                    {usage.references.length > 0 ? (
+                                        <ul className="mt-2.5 space-y-1.5 text-[12.5px]">
+                                            {usage.references.map((loc, idx) => {
+                                                const key = `${loc.kind}-${loc.post_id ?? ''}-${loc.revision_id ?? ''}-${loc.series_id ?? ''}-${idx}`;
+                                                if (
+                                                    (loc.kind === 'post_cover' ||
+                                                        loc.kind === 'post_body') &&
+                                                    loc.post_id
+                                                ) {
+                                                    return (
+                                                        <li
+                                                            key={key}
+                                                            className="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
+                                                        >
+                                                            <span className="text-ui-text">
+                                                                {loc.kind === 'post_cover'
+                                                                    ? '文章封面'
+                                                                    : '文章正文'}
+                                                                {loc.revision_no
+                                                                    ? ` · r${loc.revision_no}`
+                                                                    : ''}
+                                                            </span>
+                                                            <Link
+                                                                to="/posts/$postId/edit"
+                                                                params={{ postId: loc.post_id }}
+                                                                className="inline-flex items-center gap-1 font-code text-[11.5px] text-accent hover:underline"
+                                                            >
+                                                                {shortUuid(loc.post_id)}
+                                                                <ExternalLink className="h-3 w-3" />
+                                                            </Link>
+                                                        </li>
+                                                    );
+                                                }
+                                                if (loc.kind === 'series_cover' && loc.series_id) {
+                                                    return (
+                                                        <li
+                                                            key={key}
+                                                            className="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
+                                                        >
+                                                            <span className="text-ui-text">
+                                                                系列封面
+                                                            </span>
+                                                            <Link
+                                                                to="/series/$seriesId"
+                                                                params={{
+                                                                    seriesId: loc.series_id,
+                                                                }}
+                                                                className="inline-flex items-center gap-1 font-code text-[11.5px] text-accent hover:underline"
+                                                            >
+                                                                {shortUuid(loc.series_id)}
+                                                                <ExternalLink className="h-3 w-3" />
+                                                            </Link>
+                                                        </li>
+                                                    );
+                                                }
+                                                if (loc.kind === 'profile_avatar') {
+                                                    return (
+                                                        <li
+                                                            key={key}
+                                                            className="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5"
+                                                        >
+                                                            <span className="text-ui-text">
+                                                                个人资料头像
+                                                            </span>
+                                                            <Link
+                                                                to="/profile"
+                                                                className="inline-flex items-center gap-1 text-[11.5px] text-accent hover:underline"
+                                                            >
+                                                                前往个人资料
+                                                                <ExternalLink className="h-3 w-3" />
+                                                            </Link>
+                                                        </li>
+                                                    );
+                                                }
+                                                return (
+                                                    <li
+                                                        key={key}
+                                                        className="rounded-md bg-white px-2.5 py-1.5 text-ui-text"
+                                                    >
+                                                        {loc.kind === 'post_cover'
+                                                            ? '文章封面'
+                                                            : loc.kind === 'post_body'
+                                                              ? '文章正文'
+                                                              : '系列封面'}
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    ) : null}
+                                    {hiddenCount > 0 ? (
+                                        <p className="mt-2 text-[12px] text-ui-sub">
+                                            另有 {hiddenCount} 处引用不在当前角色可见范围内。
+                                        </p>
+                                    ) : null}
+                                </section>
+                            );
+                        })()}
+
                         <div>
                             <label
                                 htmlFor="media-alt-input"
@@ -524,7 +678,7 @@ export function MediaLibraryPage() {
                 onClose={() => setDeleteConfirmOpen(false)}
                 role="alertdialog"
                 title="删除这个媒体文件？"
-                description="删除后无法恢复。如果该媒体正被文章历史修订或个人资料引用，服务端将拒绝删除。"
+                description="删除后无法恢复。如果该媒体正被文章草稿、已发布文章、系列封面或个人资料引用，服务端将拒绝删除。"
                 footer={
                     <>
                         <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>

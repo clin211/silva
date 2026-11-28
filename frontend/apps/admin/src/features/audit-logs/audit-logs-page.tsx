@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { DateRangePicker } from '@/components/ui/date-picker';
 import {
     EmptyState,
     ErrorBanner,
@@ -81,7 +82,7 @@ export function AuditLogsPage() {
             <PageHeader
                 eyebrow="SECURITY AUDIT"
                 title="审计日志"
-                description="记录登录、账户、内容、媒体、分类标签、个人资料与站点发布等关键写操作。日志只读。"
+                description="记录登录、账户、内容、媒体、分类标签、个人资料等关键写操作。日志只读。"
             />
 
             <section className="studio-card overflow-hidden">
@@ -93,31 +94,18 @@ export function AuditLogsPage() {
                     }}
                     className="flex flex-wrap items-center gap-2.5 border-b border-ui-line bg-ui-subtle/60 px-4 py-3 sm:px-5"
                 >
-                    <label className="flex items-center gap-1.5 text-[12.5px] text-ui-sub">
-                        <span>从</span>
-                        <input
-                            type="date"
-                            value={fromDate}
-                            onChange={(event) => {
-                                setFromDate(event.target.value);
-                                setPage(1);
-                            }}
-                            className="studio-input w-auto px-2.5 text-[13px]"
-                        />
-                    </label>
-
-                    <label className="flex items-center gap-1.5 text-[12.5px] text-ui-sub">
-                        <span>至</span>
-                        <input
-                            type="date"
-                            value={toDate}
-                            onChange={(event) => {
-                                setToDate(event.target.value);
-                                setPage(1);
-                            }}
-                            className="studio-input w-auto px-2.5 text-[13px]"
-                        />
-                    </label>
+                    <DateRangePicker
+                        from={fromDate}
+                        to={toDate}
+                        onChange={({ from, to }) => {
+                            setFromDate(from);
+                            setToDate(to);
+                            setPage(1);
+                        }}
+                        placeholder="按日期范围筛选"
+                        ariaLabel="审计日志日期范围"
+                        className="w-full sm:w-auto"
+                    />
 
                     <label className="sr-only" htmlFor="audit-action">
                         事件类型

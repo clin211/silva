@@ -1,22 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
+import { websiteUrl } from '@/lib/website';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import {
     Activity,
+    BookOpen,
     ChevronDown,
     ChevronRight,
     ClipboardList,
     ExternalLink,
     FilePlus2,
     FileText,
+    FolderOpen,
     Image as ImageIcon,
     KeyRound,
+    Layers,
     LayoutDashboard,
     LogOut,
     Menu,
     PanelLeftClose,
     PanelLeftOpen,
     Search,
-    Send,
     Shield,
     Tag,
     User,
@@ -27,155 +29,232 @@ import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 
 import { CommandPalette } from './command-palette';
 import { useAuth } from '@/features/auth/auth-context';
 import { ChangePasswordModal } from '@/features/auth/change-password-modal';
-import { apiClient, unwrapResponse } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatGeneration } from '@/lib/format';
 import {
     getPrimaryRoleLabel,
     hasAnyPermission,
     hasPermission,
     PERMISSIONS,
-    type PermissionKey,
+    type UserInfo,
 } from '@/lib/permissions';
-import { queryKeys } from '@/lib/query-keys';
 
 const SIDEBAR_PREF_KEY = 'silva_admin_sidebar_collapsed';
 
-interface NavItem {
+type TaxonomyTab = 'categories' | 'tags';
+
+type NavLinkTarget =
+    | { to: '/' }
+    | { to: '/series' }
+    | { to: '/posts' }
+    | { to: '/taxonomy'; search: { tab: TaxonomyTab } }
+    | { to: '/media' }
+    | { to: '/users' }
+    | { to: '/roles' }
+    | { to: '/audit-logs' }
+    | { to: '/system/health' };
+
+interface NavLeaf {
     key: string;
     label: string;
-    to: string;
+    target: NavLinkTarget;
     icon: ComponentType<{ className?: string }>;
-    permissions?: readonly PermissionKey[];
 }
+
+interface NavParent {
+    key: string;
+    label: string;
+    icon: ComponentType<{ className?: string }>;
+    children: NavLeaf[];
+}
+
+type NavEntry = NavLeaf | NavParent;
 
 interface NavGroup {
     label: string | null;
-    items: NavItem[];
+    items: NavEntry[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
-    {
-        label: null,
-        items: [{ key: 'dashboard', label: '工作台', to: '/', icon: LayoutDashboard }],
-    },
-    {
-        label: '内容管理',
-        items: [
+function isNavParent(entry: NavEntry): entry is NavParent {
+    return 'children' in entry;
+}
+
+function getTaxonomyTab(searchStr: string | undefined): TaxonomyTab {
+    const params = new URLSearchParams(searchStr ?? '');
+    return params.get('tab') === 'tags' ? 'tags' : 'categories';
+}
+
+function buildVisibleNavGroups(user: UserInfo | null | undefined): NavGroup[] {
+    const canManageSeries = hasPermission(user, PERMISSIONS.SERIES_MANAGE);
+    const canViewPosts = hasAnyPermission(user, [
+        PERMISSIONS.POSTS_READ_OWN,
+        PERMISSIONS.POSTS_MANAGE,
+    ]);
+    const canManageTaxonomy = hasPermission(user, PERMISSIONS.TAXONOMY_MANAGE);
+    const canManageMedia = hasAnyPermission(user, [
+        PERMISSIONS.MEDIA_MANAGE_OWN,
+        PERMISSIONS.MEDIA_MANAGE,
+    ]);
+
+    const blogChildren: NavLeaf[] = [];
+    if (canManageSeries) {
+        blogChildren.push({
+            key: 'series',
+            label: '专栏',
+            target: { to: '/series' },
+            icon: Layers,
+        });
+    } else if (canViewPosts) {
+        blogChildren.push({
+            key: 'posts',
+            label: '文章',
+            target: { to: '/posts' },
+            icon: FileText,
+        });
+    }
+    if (canManageTaxonomy) {
+        blogChildren.push(
             {
-                key: 'posts',
-                label: '文章',
-                to: '/posts',
-                icon: FileText,
-                permissions: [PERMISSIONS.POSTS_READ_OWN, PERMISSIONS.POSTS_MANAGE],
+                key: 'categories',
+                label: '分类',
+                target: { to: '/taxonomy', search: { tab: 'categories' } },
+                icon: FolderOpen,
             },
             {
-                key: 'taxonomy',
-                label: '分类与标签',
-                to: '/taxonomy',
+                key: 'tags',
+                label: '标签',
+                target: { to: '/taxonomy', search: { tab: 'tags' } },
                 icon: Tag,
-                permissions: [PERMISSIONS.TAXONOMY_MANAGE],
             },
-            {
-                key: 'media',
-                label: '媒体库',
-                to: '/media',
-                icon: ImageIcon,
-                permissions: [PERMISSIONS.MEDIA_MANAGE_OWN, PERMISSIONS.MEDIA_MANAGE],
-            },
-            {
-                key: 'profile',
-                label: '个人资料',
-                to: '/profile',
-                icon: User,
-                permissions: [PERMISSIONS.PROFILE_MANAGE],
-            },
-        ],
-    },
-    {
-        label: '站点运行',
-        items: [
-            {
-                key: 'publishing',
-                label: '站点发布',
-                to: '/publishing',
-                icon: Send,
-                permissions: [PERMISSIONS.JOBS_READ_OWN, PERMISSIONS.JOBS_READ],
-            },
-        ],
-    },
-    {
-        label: '系统与安全',
-        items: [
-            {
-                key: 'users',
-                label: '账户管理',
-                to: '/users',
-                icon: Users,
-                permissions: [PERMISSIONS.USERS_MANAGE],
-            },
-            {
-                key: 'roles',
-                label: '角色权限',
-                to: '/roles',
-                icon: Shield,
-                permissions: [PERMISSIONS.ROLES_READ],
-            },
-            {
-                key: 'audit-logs',
-                label: '审计日志',
-                to: '/audit-logs',
-                icon: ClipboardList,
-                permissions: [PERMISSIONS.AUDIT_READ],
-            },
-            {
-                key: 'system-health',
-                label: '系统健康',
-                to: '/system/health',
-                icon: Activity,
-                permissions: [PERMISSIONS.AUDIT_READ, PERMISSIONS.USERS_MANAGE],
-            },
-        ],
-    },
-];
+        );
+    }
+
+    const contentItems: NavEntry[] = [];
+    if (blogChildren.length > 1) {
+        contentItems.push({
+            key: 'blog',
+            label: '博客管理',
+            icon: BookOpen,
+            children: blogChildren,
+        });
+    } else if (blogChildren.length === 1) {
+        contentItems.push({
+            key: 'blog',
+            label: '博客管理',
+            target: blogChildren[0]!.target,
+            icon: BookOpen,
+        });
+    }
+    if (canManageMedia) {
+        contentItems.push({
+            key: 'media',
+            label: '媒体库',
+            target: { to: '/media' },
+            icon: ImageIcon,
+        });
+    }
+
+    const systemItems: NavEntry[] = [];
+    if (hasPermission(user, PERMISSIONS.USERS_MANAGE)) {
+        systemItems.push({
+            key: 'users',
+            label: '账户管理',
+            target: { to: '/users' },
+            icon: Users,
+        });
+    }
+    if (hasPermission(user, PERMISSIONS.ROLES_READ)) {
+        systemItems.push({
+            key: 'roles',
+            label: '角色权限',
+            target: { to: '/roles' },
+            icon: Shield,
+        });
+    }
+    if (hasPermission(user, PERMISSIONS.AUDIT_READ)) {
+        systemItems.push({
+            key: 'audit-logs',
+            label: '审计日志',
+            target: { to: '/audit-logs' },
+            icon: ClipboardList,
+        });
+    }
+    if (hasAnyPermission(user, [PERMISSIONS.AUDIT_READ, PERMISSIONS.USERS_MANAGE])) {
+        systemItems.push({
+            key: 'system-health',
+            label: '系统健康',
+            target: { to: '/system/health' },
+            icon: Activity,
+        });
+    }
+
+    const groups: NavGroup[] = [
+        {
+            label: null,
+            items: [
+                {
+                    key: 'dashboard',
+                    label: '工作台',
+                    target: { to: '/' },
+                    icon: LayoutDashboard,
+                },
+            ],
+        },
+        { label: '内容管理', items: contentItems },
+        { label: '系统与安全', items: systemItems },
+    ];
+
+    return groups.filter((group) => group.items.length > 0);
+}
 
 interface Crumb {
     label: string;
     to?: string;
 }
 
-function buildBreadcrumbs(pathname: string): Crumb[] {
+function buildBreadcrumbs(
+    pathname: string,
+    searchStr: string | undefined,
+    canManageSeries: boolean,
+): Crumb[] {
     if (pathname === '/') return [{ label: '工作台' }];
-    if (pathname === '/posts') return [{ label: '内容管理' }, { label: '文章' }];
-    if (pathname === '/posts/new') {
-        return [{ label: '内容管理' }, { label: '文章', to: '/posts' }, { label: '新建文章' }];
-    }
-    if (/^\/posts\/[^/]+\/edit$/.test(pathname)) {
-        return [{ label: '内容管理' }, { label: '文章', to: '/posts' }, { label: '编辑文章' }];
-    }
-    if (/^\/posts\/[^/]+\/revisions$/.test(pathname)) {
-        return [{ label: '内容管理' }, { label: '文章', to: '/posts' }, { label: '修订历史' }];
-    }
-    if (/^\/posts\/[^/]+\/revisions\/[^/]+$/.test(pathname)) {
-        const postId = pathname.split('/')[2];
+    const blogCrumb: Crumb = { label: '博客管理' };
+    const rootCrumb: Crumb = canManageSeries
+        ? { label: '专栏', to: '/series' }
+        : { label: '文章', to: '/posts' };
+    if (pathname === '/series') return [{ label: '内容管理' }, blogCrumb, { label: '专栏' }];
+    if (/^\/series\/[^/]+$/.test(pathname)) {
         return [
             { label: '内容管理' },
-            { label: '文章', to: '/posts' },
-            { label: '修订历史', to: `/posts/${postId}/revisions` },
-            { label: '修订详情与审核' },
+            blogCrumb,
+            { label: '专栏', to: '/series' },
+            { label: '专栏工作台' },
         ];
     }
-    if (pathname === '/taxonomy') return [{ label: '内容管理' }, { label: '分类与标签' }];
-    if (pathname === '/media') return [{ label: '内容管理' }, { label: '媒体库' }];
-    if (pathname === '/profile') return [{ label: '内容管理' }, { label: '个人资料' }];
-    if (pathname === '/publishing') return [{ label: '站点运行' }, { label: '站点发布' }];
-    if (/^\/publishing\/[^/]+$/.test(pathname)) {
+    if (pathname === '/posts') {
+        return canManageSeries
+            ? [
+                  { label: '内容管理' },
+                  blogCrumb,
+                  { label: '专栏', to: '/series' },
+                  { label: '全部文章' },
+              ]
+            : [{ label: '内容管理' }, blogCrumb, { label: '文章' }];
+    }
+    if (pathname === '/posts/new') {
+        return [{ label: '内容管理' }, blogCrumb, rootCrumb, { label: '新建文章' }];
+    }
+    if (/^\/posts\/[^/]+\/edit$/.test(pathname)) {
+        return [{ label: '内容管理' }, blogCrumb, rootCrumb, { label: '编辑文章' }];
+    }
+    if (pathname === '/taxonomy') {
         return [
-            { label: '站点运行' },
-            { label: '站点发布', to: '/publishing' },
-            { label: '任务详情' },
+            { label: '内容管理' },
+            blogCrumb,
+            { label: getTaxonomyTab(searchStr) === 'tags' ? '标签' : '分类' },
         ];
     }
+    if (pathname === '/media') return [{ label: '内容管理' }, { label: '媒体库' }];
+    if (pathname === '/profile') return [{ label: '个人资料' }];
     if (pathname === '/users') return [{ label: '系统与安全' }, { label: '账户管理' }];
     if (pathname === '/roles') return [{ label: '系统与安全' }, { label: '角色权限' }];
     if (pathname === '/audit-logs') return [{ label: '系统与安全' }, { label: '审计日志' }];
@@ -184,9 +263,69 @@ function buildBreadcrumbs(pathname: string): Crumb[] {
     return [{ label: '页面不存在' }];
 }
 
-function isItemActive(pathname: string, itemTo: string): boolean {
-    if (itemTo === '/') return pathname === '/';
-    return pathname === itemTo || pathname.startsWith(`${itemTo}/`);
+function isTargetActive(
+    pathname: string,
+    searchStr: string | undefined,
+    target: NavLinkTarget,
+): boolean {
+    if (target.to === '/') return pathname === '/';
+    if (target.to === '/series') {
+        return (
+            pathname === '/series' ||
+            pathname.startsWith('/series/') ||
+            pathname === '/posts' ||
+            pathname.startsWith('/posts/')
+        );
+    }
+    if (target.to === '/posts') {
+        return pathname === '/posts' || pathname.startsWith('/posts/');
+    }
+    if (target.to === '/taxonomy') {
+        return pathname === '/taxonomy' && getTaxonomyTab(searchStr) === target.search.tab;
+    }
+    return pathname === target.to || pathname.startsWith(`${target.to}/`);
+}
+
+function NavTargetLink({
+    target,
+    title,
+    onClick,
+    ariaCurrent,
+    className,
+    children,
+}: {
+    target: NavLinkTarget;
+    title?: string;
+    onClick?: () => void;
+    ariaCurrent?: 'page';
+    className: string;
+    children: ReactNode;
+}) {
+    if (target.to === '/taxonomy') {
+        return (
+            <Link
+                to="/taxonomy"
+                search={target.search}
+                title={title}
+                onClick={onClick}
+                aria-current={ariaCurrent}
+                className={className}
+            >
+                {children}
+            </Link>
+        );
+    }
+    return (
+        <Link
+            to={target.to}
+            title={title}
+            onClick={onClick}
+            aria-current={ariaCurrent}
+            className={className}
+        >
+            {children}
+        </Link>
+    );
 }
 
 function readInitialCollapsed(): boolean {
@@ -227,21 +366,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
     const location = useLocation();
     const navigate = useNavigate();
     const [collapsed, setCollapsed] = useState(readInitialCollapsed);
+    const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>({ blog: true });
+    const [compactFlyout, setCompactFlyout] = useState<{
+        key: string;
+        top: number;
+        left: number;
+    } | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [cmdOpen, setCmdOpen] = useState(false);
     const [pwModalOpen, setPwModalOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-
-    const siteQuery = useQuery({
-        queryKey: queryKeys.publicSite.current,
-        queryFn: async () => {
-            const res = await unwrapResponse(apiClient.GET('/api/v1/public/site'));
-            return res.data;
-        },
-        retry: false,
-        staleTime: 30_000,
-    });
+    const flyoutRef = useRef<HTMLDivElement>(null);
+    const flyoutTriggerRef = useRef<HTMLButtonElement | null>(null);
 
     // Global ⌘K / Ctrl+K shortcut for Command Palette
     useEffect(() => {
@@ -273,7 +410,30 @@ export function AdminShell({ children }: { children: ReactNode }) {
         };
     }, [menuOpen]);
 
+    useEffect(() => {
+        if (!compactFlyout) return;
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (
+                !flyoutRef.current?.contains(target) &&
+                !flyoutTriggerRef.current?.contains(target)
+            ) {
+                setCompactFlyout(null);
+            }
+        };
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setCompactFlyout(null);
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [compactFlyout]);
+
     const toggleCollapsed = () => {
+        setCompactFlyout(null);
         setCollapsed((prev) => {
             const next = !prev;
             try {
@@ -285,17 +445,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
         });
     };
 
-    const visibleGroups = NAV_GROUPS.map((group) => ({
-        ...group,
-        items: group.items.filter(
-            (item) => !item.permissions || hasAnyPermission(user, item.permissions),
-        ),
-    })).filter((group) => group.items.length > 0);
+    const canManageSeries = hasPermission(user, PERMISSIONS.SERIES_MANAGE);
+    const visibleGroups = buildVisibleNavGroups(user);
+    const activeFlyoutParent = compactFlyout
+        ? visibleGroups
+              .flatMap((group) => group.items)
+              .find(
+                  (item): item is NavParent => isNavParent(item) && item.key === compactFlyout.key,
+              )
+        : undefined;
 
-    const crumbs = buildBreadcrumbs(location.pathname);
+    const crumbs = buildBreadcrumbs(location.pathname, location.searchStr, canManageSeries);
     const roleLabel = getPrimaryRoleLabel(user?.roles);
     const avatarInitial = user?.display_name?.trim().slice(0, 1).toUpperCase() || 'S';
-    const websiteUrl = import.meta.env.VITE_WEBSITE_URL || 'http://localhost:4321';
     const canCreatePost = hasPermission(user, PERMISSIONS.POSTS_CREATE);
     const isEditorRoute =
         location.pathname === '/posts/new' || /^\/posts\/[^/]+\/edit$/.test(location.pathname);
@@ -316,15 +478,152 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     ) : null}
                     <ul className="space-y-1">
                         {group.items.map((item) => {
-                            const active = isItemActive(location.pathname, item.to);
                             const Icon = item.icon;
+                            if (isNavParent(item)) {
+                                const hasActiveChild = item.children.some((child) =>
+                                    isTargetActive(
+                                        location.pathname,
+                                        location.searchStr,
+                                        child.target,
+                                    ),
+                                );
+                                const isExpanded = openSubmenus[item.key] ?? true;
+                                const isFlyoutOpen = compactFlyout?.key === item.key;
+                                const parentPillActive =
+                                    hasActiveChild && (isCompact || !isExpanded);
+
+                                return (
+                                    <li key={item.key}>
+                                        <button
+                                            type="button"
+                                            title={isCompact ? item.label : undefined}
+                                            aria-label={isCompact ? item.label : undefined}
+                                            aria-expanded={isCompact ? isFlyoutOpen : isExpanded}
+                                            aria-haspopup={isCompact ? 'menu' : undefined}
+                                            onClick={(event) => {
+                                                if (isCompact) {
+                                                    const btn = event.currentTarget;
+                                                    flyoutTriggerRef.current = btn;
+                                                    if (isFlyoutOpen) {
+                                                        setCompactFlyout(null);
+                                                        return;
+                                                    }
+                                                    const rect = btn.getBoundingClientRect();
+                                                    setCompactFlyout({
+                                                        key: item.key,
+                                                        top: rect.top,
+                                                        left: rect.right + 10,
+                                                    });
+                                                    return;
+                                                }
+                                                setOpenSubmenus((prev) => ({
+                                                    ...prev,
+                                                    [item.key]: !(prev[item.key] ?? true),
+                                                }));
+                                            }}
+                                            className={cn(
+                                                'group relative flex w-full items-center rounded-[11px] transition-all duration-150',
+                                                isCompact
+                                                    ? 'justify-center p-2.5'
+                                                    : 'gap-2.5 px-3 py-2.5 text-[13.5px]',
+                                                parentPillActive
+                                                    ? 'nav-active-pill font-medium'
+                                                    : hasActiveChild
+                                                      ? 'font-medium text-[#111917] hover:bg-[#F3F6F5]'
+                                                      : 'text-[#4B5A54] hover:bg-[#F3F6F5] hover:text-[#111917]',
+                                            )}
+                                        >
+                                            <Icon
+                                                className={cn(
+                                                    'h-[17px] w-[17px] shrink-0 transition-colors',
+                                                    parentPillActive
+                                                        ? 'text-white'
+                                                        : hasActiveChild
+                                                          ? 'text-accent'
+                                                          : 'text-[#7A8A84] group-hover:text-[#111917]',
+                                                )}
+                                            />
+                                            {!isCompact ? (
+                                                <>
+                                                    <span className="flex-1 truncate text-left">
+                                                        {item.label}
+                                                    </span>
+                                                    <ChevronDown
+                                                        aria-hidden="true"
+                                                        className={cn(
+                                                            'h-3.5 w-3.5 shrink-0 transition-transform duration-150',
+                                                            parentPillActive
+                                                                ? 'text-white/80'
+                                                                : 'text-[#8E9C96]',
+                                                            !isExpanded && '-rotate-90',
+                                                        )}
+                                                    />
+                                                </>
+                                            ) : null}
+                                        </button>
+                                        {!isCompact && isExpanded ? (
+                                            <ul
+                                                aria-label={`${item.label}子菜单`}
+                                                className="mt-1 ml-5 space-y-0.5 border-l border-[#E6ECE9] pl-2.5"
+                                            >
+                                                {item.children.map((child) => {
+                                                    const childActive = isTargetActive(
+                                                        location.pathname,
+                                                        location.searchStr,
+                                                        child.target,
+                                                    );
+                                                    const ChildIcon = child.icon;
+                                                    return (
+                                                        <li key={child.key}>
+                                                            <NavTargetLink
+                                                                target={child.target}
+                                                                onClick={() => setDrawerOpen(false)}
+                                                                ariaCurrent={
+                                                                    childActive ? 'page' : undefined
+                                                                }
+                                                                className={cn(
+                                                                    'group relative flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-[13px] transition-all duration-150',
+                                                                    childActive
+                                                                        ? 'nav-active-pill font-medium'
+                                                                        : 'text-[#4B5A54] hover:bg-[#F3F6F5] hover:text-[#111917]',
+                                                                )}
+                                                            >
+                                                                <ChildIcon
+                                                                    className={cn(
+                                                                        'h-[15px] w-[15px] shrink-0 transition-colors',
+                                                                        childActive
+                                                                            ? 'text-white'
+                                                                            : 'text-[#8A9993] group-hover:text-[#111917]',
+                                                                    )}
+                                                                />
+                                                                <span className="truncate">
+                                                                    {child.label}
+                                                                </span>
+                                                            </NavTargetLink>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        ) : null}
+                                    </li>
+                                );
+                            }
+
+                            const active = isTargetActive(
+                                location.pathname,
+                                location.searchStr,
+                                item.target,
+                            );
                             return (
                                 <li key={item.key}>
-                                    <Link
-                                        to={item.to}
+                                    <NavTargetLink
+                                        target={item.target}
                                         title={isCompact ? item.label : undefined}
-                                        onClick={() => setDrawerOpen(false)}
-                                        aria-current={active ? 'page' : undefined}
+                                        onClick={() => {
+                                            setDrawerOpen(false);
+                                            setCompactFlyout(null);
+                                        }}
+                                        ariaCurrent={active ? 'page' : undefined}
                                         className={cn(
                                             'group relative flex items-center rounded-[11px] transition-all duration-150',
                                             isCompact
@@ -346,7 +645,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                                         {!isCompact ? (
                                             <span className="truncate">{item.label}</span>
                                         ) : null}
-                                    </Link>
+                                    </NavTargetLink>
                                 </li>
                             );
                         })}
@@ -355,65 +654,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
             ))}
         </nav>
     );
-
-    const renderLiveFooter = (isCompact: boolean) => {
-        const isLive = Boolean(siteQuery.data);
-        return (
-            <div className="p-3">
-                {isCompact ? (
-                    <Link
-                        to="/publishing"
-                        title={
-                            isLive
-                                ? `当前线上版本 ${formatGeneration(siteQuery.data!.generation)}`
-                                : '站点尚未上线'
-                        }
-                        className="flex items-center justify-center rounded-xl border border-ui-line bg-[#F7FAF8] p-2.5 transition-colors hover:border-accent/40 hover:bg-accent-tint/60"
-                    >
-                        <span
-                            className={cn(
-                                'h-2.5 w-2.5 shrink-0 rounded-full',
-                                isLive
-                                    ? 'bg-[#16A34A] shadow-[0_0_8px_rgba(22,163,74,0.5)]'
-                                    : 'bg-[#D97706]',
-                            )}
-                            aria-hidden="true"
-                        />
-                    </Link>
-                ) : (
-                    <div className="rounded-2xl border border-[#E5EFEA] bg-gradient-to-b from-[#F7FBF9] to-[#EFF7F3] p-3.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ui-text">
-                                <span
-                                    className={cn(
-                                        'h-2 w-2 shrink-0 rounded-full',
-                                        isLive ? 'bg-[#16A34A]' : 'bg-[#D97706]',
-                                    )}
-                                    aria-hidden="true"
-                                />
-                                线上快照
-                            </span>
-                            <span className="tnum rounded-full bg-white px-2 py-0.5 font-code text-[11px] font-medium text-accent-2 shadow-2xs">
-                                {isLive ? formatGeneration(siteQuery.data!.generation) : '未上线'}
-                            </span>
-                        </div>
-                        <p className="mt-1.5 text-[11.5px] leading-relaxed text-ui-sub">
-                            {isLive
-                                ? '静态站点已原子切换上线，可随时回溯历史版本。'
-                                : '完成内容审核与发布后，将自动构建并激活公开站点。'}
-                        </p>
-                        <Link
-                            to="/publishing"
-                            className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-[9px] bg-accent px-3 text-[12.5px] font-medium text-white shadow-[0_1px_2px_rgba(19,122,77,0.28)] transition-colors hover:bg-accent-2"
-                        >
-                            <Send className="h-3.5 w-3.5" />
-                            前往站点发布
-                        </Link>
-                    </div>
-                )}
-            </div>
-        );
-    };
 
     return (
         <div
@@ -504,7 +744,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 )}
 
                 {renderNavList(collapsed)}
-                {renderLiveFooter(collapsed)}
             </aside>
 
             {/* Mobile navigation drawer */}
@@ -542,7 +781,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
                             </button>
                         </div>
                         {renderNavList(false)}
-                        {renderLiveFooter(false)}
                     </dialog>
                 </div>
             ) : null}
@@ -723,6 +961,53 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     {children}
                 </main>
             </div>
+
+            {collapsed && compactFlyout && activeFlyoutParent ? (
+                <div
+                    ref={flyoutRef}
+                    role="menu"
+                    aria-label={activeFlyoutParent.label}
+                    style={{ top: compactFlyout.top, left: compactFlyout.left }}
+                    className="animate-modal-in fixed z-50 w-44 rounded-xl border border-ui-line bg-white p-1.5 shadow-[var(--shadow-overlay)]"
+                >
+                    <div className="px-2.5 py-1.5 text-[11px] font-medium tracking-[0.04em] text-[#8E9C96]">
+                        {activeFlyoutParent.label}
+                    </div>
+                    <ul className="space-y-0.5">
+                        {activeFlyoutParent.children.map((child) => {
+                            const childActive = isTargetActive(
+                                location.pathname,
+                                location.searchStr,
+                                child.target,
+                            );
+                            const ChildIcon = child.icon;
+                            return (
+                                <li key={child.key}>
+                                    <NavTargetLink
+                                        target={child.target}
+                                        onClick={() => setCompactFlyout(null)}
+                                        ariaCurrent={childActive ? 'page' : undefined}
+                                        className={cn(
+                                            'flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors',
+                                            childActive
+                                                ? 'nav-active-pill font-medium'
+                                                : 'text-[#4B5A54] hover:bg-[#F3F6F5] hover:text-[#111917]',
+                                        )}
+                                    >
+                                        <ChildIcon
+                                            className={cn(
+                                                'h-[15px] w-[15px] shrink-0',
+                                                childActive ? 'text-white' : 'text-[#8A9993]',
+                                            )}
+                                        />
+                                        <span className="truncate">{child.label}</span>
+                                    </NavTargetLink>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            ) : null}
 
             <CommandPalette
                 open={cmdOpen}

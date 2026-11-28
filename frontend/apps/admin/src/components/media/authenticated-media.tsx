@@ -3,6 +3,9 @@ import { Image as ImageIcon } from 'lucide-react';
 import { fetchMediaBlob } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { isValidHexColor } from '@/lib/markdown';
+import { applyTokenStyleToElement, getCodeLanguageLabel, tokenizeCodeAsync } from '@/lib/shiki';
+
+const CODE_LANG_CLASS_REGEX = /(?:^|\s)language-([a-zA-Z0-9_+.#-]+)(?=\s|$)/;
 
 /**
  * 通过 Bearer Token 安全读取私有媒体内容，并在组件卸载时释放 Object URL。
@@ -108,6 +111,55 @@ export function SafeHtmlPreview({
                     if (controller.signal.aborted) return;
                     img.alt = `${img.alt || '图片'}（无法加载媒体）`;
                 });
+        }
+
+        // 异步使用 Shiki 为预览区代码块着色（通过 DOM API 构造 span，避免破坏消毒边界）
+        const codeBlocks = Array.from(host.querySelectorAll<HTMLElement>('pre > code'));
+        for (const codeEl of codeBlocks) {
+            const pre = codeEl.parentElement;
+            if (!pre) continue;
+            const match = CODE_LANG_CLASS_REGEX.exec(codeEl.className);
+            const rawLang = match?.[1] ?? '';
+            const langLabel = getCodeLanguageLabel(rawLang);
+
+            // 幂等包裹代码块容器与语言标题栏，避免横向滚动导致标题栏错位，兼容 StrictMode 二次执行
+            let wrapper = pre.parentElement;
+            if (!wrapper?.classList.contains('silva-code-block')) {
+                wrapper = document.createElement('div');
+                wrapper.className = 'silva-code-block';
+                const header = document.createElement('div');
+                header.className = 'silva-code-block-header';
+                const badge = document.createElement('span');
+                badge.className = 'font-code text-[11.5px] font-medium text-[#8b949e]';
+                badge.textContent = langLabel;
+                header.append(badge);
+                pre.classList.add('silva-code-block-pre');
+                pre.parentNode?.insertBefore(wrapper, pre);
+                wrapper.append(header, pre);
+            }
+            wrapper.setAttribute('data-language', rawLang || 'plaintext');
+
+            const rawCode = codeEl.textContent ?? '';
+            if (!rawLang || !rawCode) continue;
+
+            void tokenizeCodeAsync(rawCode, rawLang).then((lines) => {
+                if (controller.signal.aborted || !lines) return;
+                const fragment = document.createDocumentFragment();
+                for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+                    const tokens = lines[lineIndex] ?? [];
+                    for (const token of tokens) {
+                        const span = document.createElement('span');
+                        span.textContent = token.content;
+                        applyTokenStyleToElement(span, token);
+                        fragment.append(span);
+                    }
+                    if (lineIndex < lines.length - 1) {
+                        fragment.append(document.createTextNode('\n'));
+                    }
+                }
+                codeEl.replaceChildren(fragment);
+                pre.classList.add('silva-shiki');
+            });
         }
 
         return () => {

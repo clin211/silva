@@ -56,6 +56,7 @@ export function UsersPage() {
         { mode: 'create' } | { mode: 'edit'; target: Schemas['User'] } | null
     >(null);
     const [statusModalTarget, setStatusModalTarget] = useState<Schemas['User'] | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<Schemas['User'] | null>(null);
     const [formTopError, setFormTopError] = useState<string | null>(null);
 
     const queryParams = {
@@ -182,6 +183,34 @@ export function UsersPage() {
     const users = usersQuery.data?.data ?? [];
     const pagination = usersQuery.data?.meta.pagination;
 
+    const deleteMutation = useMutation({
+        mutationFn: (target: Schemas['User']) =>
+            unwrapResponse(
+                apiClient.DELETE('/api/v1/admin/users/{id}', {
+                    params: { path: { id: target.id } },
+                }),
+            ),
+        onSuccess: (_, target) => {
+            setDeleteTarget(null);
+            toast(`已删除账户「${target.display_name}」`, 'ok');
+            if (users.length === 1 && page > 1) setPage(page - 1);
+            queryClient.removeQueries({ queryKey: queryKeys.users.detail(target.id) });
+        },
+        onError: (error) => {
+            setDeleteTarget(null);
+            toast(formatErrorWithRequestId(error), 'bad');
+        },
+        onSettled: () => {
+            for (const queryKey of [
+                queryKeys.users.all,
+                queryKeys.roles.list,
+                queryKeys.auditLogs.all,
+            ]) {
+                void queryClient.invalidateQueries({ queryKey });
+            }
+        },
+    });
+
     const handleFormSubmit = (values: UserFormValues) => {
         setFormTopError(null);
         if (drawerMode?.mode === 'create') {
@@ -208,7 +237,7 @@ export function UsersPage() {
             <PageHeader
                 eyebrow="MEMBERS"
                 title="账户"
-                description="创建后台账户、分配内置角色、重置密码以及停用或启用。站点不提供公开注册。"
+                description="创建后台账户、分配内置角色、重置密码、启停或删除账户。站点不提供公开注册。"
                 actions={
                     <Button variant="primary" onClick={() => openUserDrawer({ mode: 'create' })}>
                         <UserPlus className="h-4 w-4" />
@@ -414,6 +443,16 @@ export function UsersPage() {
                                                             {isDisabled ? '启用' : '停用'}
                                                         </button>
                                                     )}
+                                                    {!isSelf && (
+                                                        <button
+                                                            type="button"
+                                                            aria-label={`删除账户「${item.display_name}」`}
+                                                            onClick={() => setDeleteTarget(item)}
+                                                            className="rounded-md px-2 py-1 text-[13px] font-medium text-bad hover:bg-bad-tint"
+                                                        >
+                                                            删除
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -596,6 +635,40 @@ export function UsersPage() {
                     </fieldset>
                 </form>
             </Drawer>
+
+            <Modal
+                open={deleteTarget !== null}
+                onClose={() => {
+                    if (!deleteMutation.isPending) setDeleteTarget(null);
+                }}
+                role="alertdialog"
+                title={`删除账户「${deleteTarget?.display_name ?? ''}」？`}
+                footer={
+                    <>
+                        <Button
+                            variant="secondary"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => setDeleteTarget(null)}
+                        >
+                            取消
+                        </Button>
+                        <Button
+                            variant="danger"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => {
+                                if (deleteTarget) deleteMutation.mutate(deleteTarget);
+                            }}
+                        >
+                            {deleteMutation.isPending ? '删除中…' : '确认删除'}
+                        </Button>
+                    </>
+                }
+            >
+                <p className="text-[14px] leading-6 text-ui-sub">
+                    删除后，{deleteTarget?.email}{' '}
+                    可用于新建账户。原账户无法恢复，所有会话立即失效。文章、修订、媒体和审计记录保留原归属。
+                </p>
+            </Modal>
 
             {/* 停用 / 启用确认弹窗 */}
             <Modal

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Schemas } from '@silva/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -18,7 +18,6 @@ import { Drawer, Modal } from '@/components/ui/overlay';
 import { useToast } from '@/components/ui/toast';
 import { apiClient, unwrapResponse } from '@/lib/api';
 import { applyApiFieldErrors, formatErrorWithRequestId, isApiError } from '@/lib/errors';
-import { formatGeneration } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 
 type TabKey = 'categories' | 'tags';
@@ -51,11 +50,25 @@ type DeleteTarget =
 
 export function TaxonomyPage() {
     const queryClient = useQueryClient();
-    const navigate = useNavigate();
+    const navigate = useNavigate({ from: '/taxonomy' });
+    const search = useSearch({ from: '/_authed/taxonomy' });
     const { toast } = useToast();
 
-    const [activeTab, setActiveTab] = useState<TabKey>('categories');
-    const [searchText, setSearchText] = useState('');
+    const activeTab: TabKey = search.tab === 'tags' ? 'tags' : 'categories';
+    const [searchDraft, setSearchDraft] = useState<{ tab: TabKey; value: string }>({
+        tab: activeTab,
+        value: '',
+    });
+    const searchText = searchDraft.tab === activeTab ? searchDraft.value : '';
+    const setSearchText = (value: string) => setSearchDraft({ tab: activeTab, value });
+
+    const selectTab = (nextTab: TabKey) => {
+        setSearchDraft({ tab: nextTab, value: '' });
+        void navigate({
+            to: '/taxonomy',
+            search: { tab: nextTab },
+        });
+    };
     const [drawerTarget, setDrawerTarget] = useState<DrawerTarget>(null);
     const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
     const [blockedDelete, setBlockedDelete] = useState<{
@@ -160,14 +173,10 @@ export function TaxonomyPage() {
                         ? queryKeys.taxonomy.categories
                         : queryKeys.taxonomy.tags,
             });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
             if (result.publication) {
-                const jobId = result.publication.publish_job_id;
-                const gen = formatGeneration(result.publication.desired_generation);
-                toast(`已保存，站点更新 ${gen} 已排队待上线`, 'ok', {
-                    label: '查看任务',
-                    onClick: () => void navigate({ to: '/publishing/$jobId', params: { jobId } }),
-                });
-                void queryClient.invalidateQueries({ queryKey: queryKeys.publishing.all });
+                toast('公开内容已更新', 'ok');
+                void queryClient.invalidateQueries({ queryKey: queryKeys.publicSite.current });
             } else {
                 toast('已保存', 'ok');
             }
@@ -205,6 +214,7 @@ export function TaxonomyPage() {
                         ? queryKeys.taxonomy.categories
                         : queryKeys.taxonomy.tags,
             });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.posts.all });
             setDeleteTarget(null);
             toast(`已删除「${target.item.name}」`, 'ok');
         },
@@ -262,9 +272,13 @@ export function TaxonomyPage() {
     return (
         <PageContainer className="space-y-6">
             <PageHeader
-                eyebrow="TAXONOMY"
-                title="分类与标签"
-                description="修改已出现在线上文章中的分类或标签名称时，会作为独立的站点更新排队上线，不属于任何文章草稿。"
+                eyebrow="BLOG · TAXONOMY"
+                title={activeTab === 'categories' ? '分类管理' : '标签管理'}
+                description={
+                    activeTab === 'categories'
+                        ? '维护博客文章与专栏的分类体系；修改已用于公开内容的分类后，访客即可看到新名称。'
+                        : '维护博客文章的标签体系；修改已用于公开内容的标签后，访客即可看到新名称。'
+                }
                 actions={
                     <Button
                         variant="primary"
@@ -287,10 +301,7 @@ export function TaxonomyPage() {
                             type="button"
                             role="tab"
                             aria-selected={activeTab === 'categories'}
-                            onClick={() => {
-                                setActiveTab('categories');
-                                setSearchText('');
-                            }}
+                            onClick={() => selectTab('categories')}
                             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-ui-sub transition-colors aria-selected:bg-rail aria-selected:text-white"
                         >
                             <span>分类</span>
@@ -302,10 +313,7 @@ export function TaxonomyPage() {
                             type="button"
                             role="tab"
                             aria-selected={activeTab === 'tags'}
-                            onClick={() => {
-                                setActiveTab('tags');
-                                setSearchText('');
-                            }}
+                            onClick={() => selectTab('tags')}
                             className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-ui-sub transition-colors aria-selected:bg-rail aria-selected:text-white"
                         >
                             <span>标签</span>
@@ -360,12 +368,13 @@ export function TaxonomyPage() {
                         />
                     ) : (
                         <div className="overflow-x-auto">
-                            <table className="tbl min-w-[640px]">
+                            <table className="tbl min-w-[700px]">
                                 <thead>
                                     <tr>
                                         <th>名称</th>
                                         <th>Slug</th>
                                         <th>说明</th>
+                                        <th className="text-right">文章数</th>
                                         <th className="text-right">引用修订数</th>
                                         <th className="text-right">操作</th>
                                     </tr>
@@ -381,9 +390,26 @@ export function TaxonomyPage() {
                                                 {cat.description || '—'}
                                             </td>
                                             <td className="tnum text-right text-[13px]">
+                                                <Link
+                                                    to="/posts"
+                                                    search={{ category_id: cat.id }}
+                                                    title={`查看「${cat.name}」下的文章`}
+                                                    className="inline-flex items-center rounded-md px-2 py-0.5 font-medium text-accent transition-colors hover:bg-accent-tint hover:underline"
+                                                >
+                                                    {cat.post_count}
+                                                </Link>
+                                            </td>
+                                            <td className="tnum text-right text-[13px]">
                                                 {cat.revision_count}
                                             </td>
                                             <td className="whitespace-nowrap text-right">
+                                                <Link
+                                                    to="/posts"
+                                                    search={{ category_id: cat.id }}
+                                                    className="rounded-md px-2 py-1 text-[13px] text-ui-sub transition-colors hover:bg-ui-bg hover:text-ui-text"
+                                                >
+                                                    查看文章
+                                                </Link>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
@@ -443,11 +469,12 @@ export function TaxonomyPage() {
                     />
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="tbl min-w-[600px]">
+                        <table className="tbl min-w-[660px]">
                             <thead>
                                 <tr>
                                     <th>名称</th>
                                     <th>Slug</th>
+                                    <th className="text-right">文章数</th>
                                     <th className="text-right">引用修订数</th>
                                     <th className="text-right">操作</th>
                                 </tr>
@@ -460,9 +487,26 @@ export function TaxonomyPage() {
                                             {tag.slug}
                                         </td>
                                         <td className="tnum text-right text-[13px]">
+                                            <Link
+                                                to="/posts"
+                                                search={{ tag_id: tag.id }}
+                                                title={`查看带有「${tag.name}」标签的文章`}
+                                                className="inline-flex items-center rounded-md px-2 py-0.5 font-medium text-accent transition-colors hover:bg-accent-tint hover:underline"
+                                            >
+                                                {tag.post_count}
+                                            </Link>
+                                        </td>
+                                        <td className="tnum text-right text-[13px]">
                                             {tag.revision_count}
                                         </td>
                                         <td className="whitespace-nowrap text-right">
+                                            <Link
+                                                to="/posts"
+                                                search={{ tag_id: tag.id }}
+                                                className="rounded-md px-2 py-1 text-[13px] text-ui-sub transition-colors hover:bg-ui-bg hover:text-ui-text"
+                                            >
+                                                查看文章
+                                            </Link>
                                             <button
                                                 type="button"
                                                 onClick={() =>
@@ -609,7 +653,7 @@ export function TaxonomyPage() {
                     {drawerTarget?.mode === 'edit' ? (
                         <p className="rounded-md bg-ui-bg p-3 text-[13px] text-ui-sub">
                             若该{drawerTarget.kind === 'categories' ? '分类' : '标签'}
-                            已被线上文章使用，保存后名称变更会自动进入站点发布队列。
+                            已用于公开文章，保存后访客即可看到新名称。
                         </p>
                     ) : null}
                 </form>
@@ -660,7 +704,7 @@ export function TaxonomyPage() {
                     当前仍有{' '}
                     <span className="tnum font-medium text-ui-text">{blockedDelete?.count}</span>{' '}
                     条文章修订引用了这个{blockedDelete?.kind === 'categories' ? '分类' : '标签'}
-                    （包括历史修订和草稿修订）。请先解除相关文章的引用后再删除。
+                    （包括当前草稿和已发布文章）。请先解除相关文章的引用后再删除。
                 </p>
             </Modal>
         </PageContainer>

@@ -1,53 +1,313 @@
 ---
-import { Image } from 'astro:assets';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import Icon from '../components/Icon.astro';
 import Cover from '../components/Cover.astro';
-import hero from '../assets/hero-balloon.webp';
-import { getGeneration, getProfile, getTrending, listPosts } from '../lib/data';
-import { categoryUrl, postUrl, repoUrl, siteDescription } from '../lib/site';
-import { day, growth } from '../lib/format';
+
+import type { Sample, WindowDays } from '../lib/trending';
+import {
+    categoryUrl,
+    postUrl,
+    repoUrl,
+    seriesDomainUrl,
+    seriesUrl,
+    siteDescription,
+    tagUrl,
+} from '../lib/site';
+import { day, growth, growthClass, number } from '../lib/format';
 import { defaultFilters, rank } from '../lib/ranking';
 
-const [profile, posts, trending, generation] = await Promise.all([
-    getProfile(),
-    listPosts(),
-    getTrending(),
-    getGeneration(),
-]);
+const [profile, posts, seriesList, postSeriesMap, categories, tags, trending, generation] =
+    await Promise.all([
+        Astro.locals.content.getProfile(),
+        Astro.locals.content.listPosts(),
+        Astro.locals.content.listSeries(),
+        Astro.locals.content.getPostSeriesMap(),
+        Astro.locals.content.listCategories(),
+        Astro.locals.content.listTags(),
+        Astro.locals.content.getTrending(),
+        Astro.locals.content.getGeneration(),
+    ]);
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+const formatCompactCount = (value: number) => {
+    if (value >= 10000) return `${(value / 10000).toFixed(1)} 万`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+    return String(value);
+};
+
+const formatStars = (value: number) =>
+    value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
+
+// Band 02: Knowledge Atlas (Domain Bento + Topic Atlas)
+const totalWords = posts.reduce((sum, post) => sum + post.reading.count, 0);
+const totalReadingMinutes = posts.reduce((sum, post) => sum + post.reading.minutes, 0);
+const latestPublishedDate = posts[0] ? day(posts[0].published) : undefined;
+
+const domainIconFor = (slug: string) => {
+    switch (slug) {
+        case 'backend':
+            return 'server' as const;
+        case 'ai-engineering':
+            return 'spark' as const;
+        case 'frontend':
+            return 'code' as const;
+        case 'devops':
+            return 'layers' as const;
+        case 'cross-platform':
+            return 'mobile' as const;
+        case 'notes':
+            return 'book' as const;
+        default:
+            return 'folder' as const;
+    }
+};
+
+const domainToneFor = (color?: string) => {
+    switch (color) {
+        case 'chip-coral':
+            return 'coral';
+        case 'chip-sun':
+            return 'sun';
+        case 'chip-indigo':
+            return 'indigo';
+        case 'chip-done':
+            return 'done';
+        default:
+            return 'teal';
+    }
+};
+
+const domainCards = categories
+    .map((cat) => {
+        const catSeries = seriesList.filter((item) => item.category?.slug === cat.slug);
+        const catPosts = posts.filter((post) => post.categories.some((c) => c.slug === cat.slug));
+        return {
+            category: cat,
+            seriesCount: catSeries.length,
+            postCount: catPosts.length,
+            latestPost: catPosts[0],
+            icon: domainIconFor(cat.slug),
+            tone: domainToneFor(cat.color),
+            href: catSeries.length > 0 ? seriesDomainUrl(cat.slug) : categoryUrl(cat.slug),
+        };
+    })
+    .filter((item) => item.seriesCount > 0 || item.postCount > 0)
+    .sort(
+        (a, b) =>
+            b.seriesCount - a.seriesCount ||
+            b.postCount - a.postCount ||
+            a.category.name.localeCompare(b.category.name, 'zh-CN'),
+    );
+
+const tagPostCount = new Map<string, number>();
+for (const post of posts) {
+    for (const tag of post.tags) {
+        tagPostCount.set(tag.slug, (tagPostCount.get(tag.slug) ?? 0) + 1);
+    }
+}
+const topicTags = tags
+    .map((tag) => ({ ...tag, count: tagPostCount.get(tag.slug) ?? 0 }))
+    .filter((tag) => tag.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh-CN'))
+    .slice(0, 12);
+
+const hasDomainsSection = domainCards.length > 0 || topicTags.length > 0;
+const featuredDomainCount = domainCards.length >= 4 ? 2 : 0;
+
+// Band 03: Curated Series Bookshelf
+const orderedSeries = [
+    ...seriesList.filter((item) => item.featured),
+    ...seriesList.filter((item) => !item.featured),
+];
+const leadSeries = orderedSeries[0];
+const secondarySeries = orderedSeries.slice(1, 4);
+const hasSeriesSection = Boolean(leadSeries);
+
+// Band 04: Latest Writing + Monthly Writing Cadence
 const primary = posts.find((post) => post.featured) ?? posts[0];
-const recent = posts.filter((post) => post !== primary).slice(0, 2);
-const top = trending ? rank(trending.repos, defaultFilters).slice(0, 3) : [];
-const distinct = (key: 'categories' | 'tags') =>
-    new Set(posts.flatMap((post) => post[key].map((item) => item.slug))).size;
+const primarySeries = primary ? postSeriesMap.get(primary.slug) : undefined;
+const recent = posts.filter((post) => post !== primary).slice(0, 4);
+
+const monthlyMap = new Map<string, number>();
+for (const post of posts) {
+    const key = post.published.slice(0, 7);
+    monthlyMap.set(key, (monthlyMap.get(key) ?? 0) + 1);
+}
+const monthlyActivity = [...monthlyMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, count]) => ({
+        key,
+        shortMonth: key.slice(5, 7),
+        count,
+    }));
+const maxMonthlyCount = Math.max(1, ...monthlyActivity.map((item) => item.count));
+
+// Band 05: AI Open-Source Observatory (7d & 30d Windows + Server-Rendered Sparkline)
+const languageColor = (lang: string) => {
+    switch (lang.toLowerCase()) {
+        case 'typescript':
+            return '#3178c6';
+        case 'python':
+            return '#4b8bbe';
+        case 'rust':
+            return '#dea584';
+        case 'go':
+            return '#00add8';
+        case 'c++':
+            return '#f34b7d';
+        default:
+            return '#5ed6cc';
+    }
+};
+
+function buildSparkline(samples: Sample[]) {
+    if (samples.length < 2) return undefined;
+    const recentSamples = samples.slice(-24);
+    const values = recentSamples.map((s) => s.stars);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(1, max - min);
+    const width = 280;
+    const height = 56;
+    const padY = 6;
+    const points = recentSamples.map((sample, index) => {
+        const x = (index / (recentSamples.length - 1)) * width;
+        const y = height - padY - ((sample.stars - min) / range) * (height - padY * 2);
+        return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
+    });
+    const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+    const area = `${line} L${width},${height} L0,${height} Z`;
+    const last = points[points.length - 1]!;
+    return { line, area, last };
+}
+
+const top7 = trending ? rank(trending.repos, { ...defaultFilters, window: 7 }).slice(0, 5) : [];
+const top30 = trending ? rank(trending.repos, { ...defaultFilters, window: 30 }).slice(0, 5) : [];
+
+const [spark7Samples, spark30Samples] = await Promise.all([
+    top7[0] ? Astro.locals.content.getRepositoryHistory(top7[0].slug) : Promise.resolve([]),
+    top30[0] ? Astro.locals.content.getRepositoryHistory(top30[0].slug) : Promise.resolve([]),
+]);
+
+const trendWindows: {
+    days: WindowDays;
+    label: string;
+    repos: typeof top7;
+    maxGrowth: number;
+    sparkline: ReturnType<typeof buildSparkline>;
+}[] = trending
+    ? [
+          {
+              days: 7,
+              label: '近 7 天',
+              repos: top7,
+              maxGrowth: Math.max(1, ...top7.map((r) => Math.max(0, r.growth.stars[7] ?? 0))),
+              sparkline: buildSparkline(spark7Samples),
+          },
+          {
+              days: 30,
+              label: '近 30 天',
+              repos: top30,
+              maxGrowth: Math.max(1, ...top30.map((r) => Math.max(0, r.growth.stars[30] ?? 0))),
+              sparkline: buildSparkline(spark30Samples),
+          },
+      ]
+    : [];
+
+const ecosystemBreakdown = trending
+    ? [
+          ...trending.repos.reduce((acc, repo) => {
+              acc.set(repo.category, (acc.get(repo.category) ?? 0) + 1);
+              return acc;
+          }, new Map<string, number>()),
+      ]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'))
+          .map(([name, count]) => ({ name, count }))
+    : [];
+
+// Hero Snapshot Stats
 const stats = [
+    { label: '专栏', value: seriesList.length },
     { label: '文章', value: posts.length },
-    { label: '分类', value: distinct('categories') },
-    { label: '标签', value: distinct('tags') },
+    { label: '分类', value: categories.length },
     { label: '榜单收录', value: trending?.repos.length ?? '—' },
 ];
+
+// Band alternation helpers so neighboring bands always have clear visual rhythm
+const recentBandClass = hasSeriesSection ? 'band' : hasDomainsSection ? 'band band-mist' : 'band';
 ---
 
-<SiteLayout
-    title={profile?.name ?? '首页'}
-    active="home"
-    flush
-    image={{ path: hero.src, alt: '蓝天中的热气球' }}
->
+<SiteLayout title={profile?.name ?? '首页'} active="home" flush>
+    <!-- ================================================================ -->
+    <!-- BAND 01 · HERO（保留深青玻璃风格 · 层叠远山与林间晨光）           -->
+    <!-- ================================================================ -->
     <section class="hero band-teal" aria-labelledby="hero-title">
-        <div class="hero-sky" aria-hidden="true">
-            <Image
-                src={hero}
-                alt=""
-                widths={[640, 1000, 1500, 2000, 2600]}
-                sizes="100vw"
-                width={1500}
-                height={2250}
-                format="webp"
-                loading="eager"
-                fetchpriority="high"
-            />
+        <div class="hero-canopy" aria-hidden="true">
+            <div class="hero-canopy-sky"></div>
+            <div class="hero-ray hero-ray-primary"></div>
+            <div class="hero-ray hero-ray-secondary"></div>
+
+            <!-- Layered misty mountains: valley rebounding into higher peaks -->
+            <svg class="hero-ridges" viewBox="0 0 1440 520" preserveAspectRatio="none" fill="none">
+                <defs>
+                    <linearGradient id="ridgeFarGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#0b6e78" stop-opacity="0.58" />
+                        <stop offset="100%" stop-color="#054249" stop-opacity="0.72" />
+                    </linearGradient>
+                    <linearGradient id="ridgeMidGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#06535c" stop-opacity="0.78" />
+                        <stop offset="100%" stop-color="#04373e" stop-opacity="0.88" />
+                    </linearGradient>
+                    <linearGradient id="ridgeNearGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#043b42" stop-opacity="0.9" />
+                        <stop offset="100%" stop-color="#03262b" stop-opacity="0.96" />
+                    </linearGradient>
+                </defs>
+                <!-- Far peaks & dawn mist crest -->
+                <path
+                    class="hero-ridge hero-ridge-far"
+                    d="M0,335 C120,285 215,345 355,275 C495,205 585,295 735,215 C885,135 1005,210 1165,122 C1270,66 1355,95 1440,68 L1440,520 L0,520 Z"
+                    fill="url(#ridgeFarGrad)"
+                />
+                <!-- Subtle sunlit rim highlight along the far ascending peaks -->
+                <path
+                    class="hero-ridge hero-ridge-far"
+                    d="M355,275 C495,205 585,295 735,215 C885,135 1005,210 1165,122 C1270,66 1355,95 1440,68"
+                    stroke="#9ee8df"
+                    stroke-width="1.25"
+                    stroke-opacity="0.28"
+                />
+                <!-- Mid ridge: dip into valley, rebound stronger -->
+                <path
+                    class="hero-ridge hero-ridge-mid"
+                    d="M0,390 C165,340 285,395 450,330 C615,265 735,340 915,248 C1085,162 1235,230 1440,158 L1440,520 L0,520 Z"
+                    fill="url(#ridgeMidGrad)"
+                />
+                <!-- Near forested silhouette -->
+                <path
+                    class="hero-ridge hero-ridge-near"
+                    d="M0,438 C210,402 395,436 620,382 C845,328 1030,378 1245,314 C1335,288 1392,298 1440,284 L1440,520 L0,520 Z"
+                    fill="url(#ridgeNearGrad)"
+                />
+            </svg>
+
+            <!-- Gentle rising dawn motes in the open right sky -->
+            <svg
+                class="hero-motes"
+                viewBox="0 0 1200 600"
+                preserveAspectRatio="xMidYMid slice"
+                fill="none"
+            >
+                <circle class="hero-mote hero-mote-a" cx="760" cy="240" r="2.2" fill="#f8da78" />
+                <circle class="hero-mote hero-mote-b" cx="890" cy="175" r="1.8" fill="#d4f7f3" />
+                <circle class="hero-mote hero-mote-c" cx="1010" cy="255" r="2.4" fill="#f8da78" />
+                <circle class="hero-mote hero-mote-d" cx="695" cy="305" r="1.6" fill="#d4f7f3" />
+                <circle class="hero-mote hero-mote-e" cx="1105" cy="145" r="2" fill="#5ed6cc" />
+            </svg>
         </div>
+
         <div class="hero-shade" aria-hidden="true"></div>
         <div class="wrap hero-grid">
             <div class="hero-content">
@@ -75,8 +335,8 @@ const stats = [
                         : siteDescription}
                 </p>
                 <div class="actions">
-                    <a href="/blog/" class="btn btn-light">
-                        浏览文章
+                    <a href="/series/" class="btn btn-light">
+                        浏览博客
                     </a>
                     <a href="/about/" class="btn btn-ghost">
                         {profile ? '关于长林' : '关于本站'}
@@ -87,9 +347,7 @@ const stats = [
                 <div class="snapshot-surface">
                     <header>
                         <h2 id="snapshot-title">站点快照</h2>
-                        <span class="snapshot-label">
-                            {generation === undefined ? '本地预览' : `第 ${generation} 版`}
-                        </span>
+                        <span class="snapshot-label mono">第 {generation} 版</span>
                     </header>
                     <dl>
                         {stats.map(({ label, value }) => (
@@ -99,13 +357,13 @@ const stats = [
                             </div>
                         ))}
                     </dl>
-                    {top[0] && (
-                        <a href={repoUrl(top[0].slug)} class="snapshot-leader">
+                    {top7[0] && (
+                        <a href={repoUrl(top7[0].slug)} class="snapshot-leader">
                             <span>
                                 <small>近 7 天 Stars 增长最快</small>
-                                <strong>{top[0].name}</strong>
+                                <strong>{top7[0].name}</strong>
                             </span>
-                            <span class="mono">{growth(top[0].growth.stars[7])}</span>
+                            <span class="mono">{growth(top7[0].growth.stars[7])}</span>
                         </a>
                     )}
                 </div>
@@ -113,186 +371,1146 @@ const stats = [
         </div>
     </section>
 
-    <section class="band" aria-labelledby="recent-title">
-        <div class="wrap">
-            <header class="section-heading">
-                <h2 id="recent-title" class="t-h1">
-                    最近更新
-                </h2>
-                <a class="btn btn-ghost btn-sm" href="/blog/">
-                    全部文章
-                </a>
-            </header>
-            {primary ? (
-                <div class:list={['recent-grid', { 'only-feature': !recent.length }]}>
-                    <article class="bezel lift">
-                        <a class="face feature-post" href={postUrl(primary.slug)}>
-                            {primary.cover && (
-                                <Cover
-                                    cover={primary.cover}
-                                    label={primary.categories[0]?.name}
-                                    class="feature-cover"
-                                />
+    <!-- ================================================================ -->
+    <!-- BAND 02 · 知识版图 BENTO + 热门主题标签带                         -->
+    <!-- ================================================================ -->
+    {hasDomainsSection && (
+        <section class="band" aria-labelledby="home-knowledge-title">
+            <div class="wrap">
+                <header class="section-heading home-band-head">
+                    <div>
+                        <span class="eyebrow">知识版图 · Knowledge Atlas</span>
+                        <h2 id="home-knowledge-title" class="t-h1 home-band-title">
+                            按领域探索
+                        </h2>
+                        <p class="t-small muted home-section-sub">
+                            选择感兴趣的技术领域，直接进入对应专栏书架或分类归档。
+                        </p>
+                    </div>
+                    {posts.length > 0 && (
+                        <div class="panel home-pulse-pill t-xs" aria-label="站点内容体量统计">
+                            <span class="muted">内容体量</span>
+                            <strong class="mono num">{formatCompactCount(totalWords)}字</strong>
+                            <span class="pulse-sep" aria-hidden="true">
+                                |
+                            </span>
+                            <strong class="mono num">约 {totalReadingMinutes} 分钟阅读</strong>
+                            {latestPublishedDate && (
+                                <>
+                                    <span class="pulse-sep" aria-hidden="true">
+                                        |
+                                    </span>
+                                    <span class="mono num pulse-accent">
+                                        更新于 {latestPublishedDate}
+                                    </span>
+                                </>
                             )}
-                            <div class="feature-copy">
-                                <div class="metadata">
-                                    {primary.featured && <span class="chip chip-sun">精选</span>}
-                                    <time class="num" datetime={primary.published}>
-                                        {day(primary.published)}
-                                    </time>
-                                </div>
-                                <h3 class="t-h2 hover-accent">{primary.title}</h3>
-                                <p class="ink-2">{primary.summary}</p>
-                            </div>
-                        </a>
-                    </article>
-                    {recent.length > 0 && (
-                        <ul class="home-list rows">
-                            {recent.map(({ slug, title, summary, published, categories }) => (
-                                <li>
-                                    <div class="metadata">
-                                        {categories[0] && (
-                                            <a
-                                                href={categoryUrl(categories[0].slug)}
-                                                class:list={['chip', categories[0].color]}
-                                            >
-                                                {categories[0].name}
-                                            </a>
-                                        )}
-                                        <time datetime={published} class="num">
-                                            {day(published)}
-                                        </time>
-                                    </div>
-                                    <h3 class="t-h3">
-                                        <a class="hover-accent" href={postUrl(slug)}>
-                                            {title}
+                        </div>
+                    )}
+                </header>
+
+                {domainCards.length > 0 && (
+                    <ul class="domain-bento">
+                        {domainCards.map(
+                            (
+                                { category, seriesCount, postCount, latestPost, icon, tone, href },
+                                idx,
+                            ) => {
+                                const isFeatured = idx < featuredDomainCount;
+                                return (
+                                    <li class:list={{ 'is-featured': isFeatured }}>
+                                        <a
+                                            class:list={[
+                                                'panel',
+                                                'lift',
+                                                'domain-bento-card',
+                                                `tone-${tone}`,
+                                                { 'is-featured': isFeatured },
+                                            ]}
+                                            href={href}
+                                        >
+                                            <div class="domain-bento-top">
+                                                <div class="domain-bento-ident">
+                                                    <span
+                                                        class:list={[
+                                                            'domain-icon-box',
+                                                            `tone-${tone}`,
+                                                        ]}
+                                                        aria-hidden="true"
+                                                    >
+                                                        <Icon
+                                                            name={icon}
+                                                            size={isFeatured ? 20 : 17}
+                                                        />
+                                                    </span>
+                                                    <div>
+                                                        {isFeatured && (
+                                                            <span
+                                                                class:list={[
+                                                                    'domain-role-badge',
+                                                                    `tone-${tone}`,
+                                                                ]}
+                                                            >
+                                                                {idx === 0
+                                                                    ? '核心领域'
+                                                                    : '重点方向'}
+                                                            </span>
+                                                        )}
+                                                        <h3 class="domain-bento-title hover-accent">
+                                                            {category.name}
+                                                        </h3>
+                                                    </div>
+                                                </div>
+                                                <span
+                                                    class="domain-card-arrow arrow muted"
+                                                    aria-hidden="true"
+                                                >
+                                                    ↗
+                                                </span>
+                                            </div>
+                                            {category.description && (
+                                                <p class="domain-card-desc t-small ink-2">
+                                                    {category.description}
+                                                </p>
+                                            )}
+                                            <div class="domain-bento-foot t-xs">
+                                                {isFeatured && latestPost && (
+                                                    <span class="domain-latest muted">
+                                                        最新：<strong>{latestPost.title}</strong>
+                                                    </span>
+                                                )}
+                                                <span class="domain-card-stat mono num">
+                                                    {seriesCount > 0 && (
+                                                        <span>{seriesCount} 专栏</span>
+                                                    )}
+                                                    {seriesCount > 0 && postCount > 0 && (
+                                                        <span aria-hidden="true">·</span>
+                                                    )}
+                                                    {postCount > 0 && <span>{postCount} 篇</span>}
+                                                </span>
+                                            </div>
                                         </a>
-                                    </h3>
-                                    <p class="ink-2">{summary}</p>
+                                    </li>
+                                );
+                            },
+                        )}
+                    </ul>
+                )}
+
+                {topicTags.length > 0 && (
+                    <nav class="panel home-topic-atlas" aria-label="热门主题标签">
+                        <span class="topic-atlas-label t-xs muted">热门主题标签</span>
+                        <ul class="chips">
+                            {topicTags.map((tag, index) => (
+                                <li>
+                                    <a
+                                        href={tagUrl(tag.slug)}
+                                        class:list={['chip', 'hash', { 'chip-teal': index === 0 }]}
+                                    >
+                                        <span>{tag.name}</span>
+                                        <span class="topic-count mono num">{tag.count}</span>
+                                    </a>
                                 </li>
                             ))}
                         </ul>
+                    </nav>
+                )}
+            </div>
+        </section>
+    )}
+
+    <!-- ================================================================ -->
+    <!-- BAND 03 · 精选专栏书架（7:5 主次书架 + 章节路线直达）              -->
+    <!-- ================================================================ -->
+    {hasSeriesSection && leadSeries && (
+        <section class="band band-mist" aria-labelledby="home-series-title">
+            <div class="wrap">
+                <header class="section-heading home-band-head">
+                    <div>
+                        <span class="eyebrow">系统阅读 · Curated Series</span>
+                        <h2 id="home-series-title" class="t-h1 home-band-title">
+                            精选专栏书架
+                        </h2>
+                    </div>
+                    <a class="btn btn-ghost btn-sm" href="/series/">
+                        进入完整书架
+                        <Icon name="arrowRight" size={14} />
+                    </a>
+                </header>
+
+                <div
+                    class:list={[
+                        'series-shelf-grid',
+                        { 'is-single': secondarySeries.length === 0 },
+                    ]}
+                >
+                    <!-- Primary Lead Series Double-Bezel Spotlight Card -->
+                    <article class="bezel lift series-spotlight">
+                        <div class="face series-spotlight-face">
+                            <div class="series-spotlight-cover-wrap">
+                                <Cover
+                                    cover={leadSeries.cover}
+                                    label={leadSeries.category?.name}
+                                    class="series-spotlight-cover"
+                                />
+                                <div class="series-spotlight-badges">
+                                    {leadSeries.featured && (
+                                        <span class="chip chip-sun">精选专栏</span>
+                                    )}
+                                    <span
+                                        class:list={[
+                                            'chip',
+                                            leadSeries.completionStatus === 'completed'
+                                                ? 'chip-done'
+                                                : 'chip-teal',
+                                        ]}
+                                    >
+                                        {leadSeries.completionStatus === 'completed'
+                                            ? '已完结'
+                                            : '连载中'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="series-spotlight-body">
+                                <div>
+                                    <div class="metadata t-xs">
+                                        {leadSeries.category && (
+                                            <a
+                                                class:list={[
+                                                    'chip',
+                                                    leadSeries.category.color ?? 'chip-teal',
+                                                ]}
+                                                href={categoryUrl(leadSeries.category.slug)}
+                                            >
+                                                {leadSeries.category.name}
+                                            </a>
+                                        )}
+                                        <span class="mono num">
+                                            {leadSeries.postCount} 篇 · {leadSeries.totalMinutes}{' '}
+                                            分钟
+                                        </span>
+                                    </div>
+                                    <h3 class="t-h2 series-spotlight-title">
+                                        <a class="hover-accent" href={seriesUrl(leadSeries.slug)}>
+                                            {leadSeries.title}
+                                        </a>
+                                    </h3>
+                                    {leadSeries.description && (
+                                        <p class="t-small ink-2 series-spotlight-desc">
+                                            {leadSeries.description}
+                                        </p>
+                                    )}
+                                    {leadSeries.entries.length > 0 && (
+                                        <ol class="rows series-roadmap">
+                                            {leadSeries.entries.slice(0, 3).map((entry) => (
+                                                <li>
+                                                    <a
+                                                        class="series-roadmap-link"
+                                                        href={postUrl(entry.post.slug)}
+                                                    >
+                                                        <span class="mono num series-roadmap-idx">
+                                                            {pad(entry.index)}
+                                                        </span>
+                                                        <span class="series-roadmap-title hover-accent">
+                                                            {entry.displayTitle}
+                                                        </span>
+                                                        <span class="mono num t-xs muted">
+                                                            {entry.post.reading.minutes} min ↗
+                                                        </span>
+                                                    </a>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    )}
+                                </div>
+                                <div class="series-spotlight-foot">
+                                    <span class="mono num t-xs muted">
+                                        更新于 {day(leadSeries.updated)}
+                                    </span>
+                                    <a
+                                        class="btn btn-dark btn-sm"
+                                        href={
+                                            leadSeries.entries[0]
+                                                ? postUrl(leadSeries.entries[0].post.slug)
+                                                : seriesUrl(leadSeries.slug)
+                                        }
+                                    >
+                                        从第一章开始读
+                                        <Icon name="arrowRight" size={14} />
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+
+                    <!-- Secondary Series Column -->
+                    {secondarySeries.length > 0 && (
+                        <div class="series-secondary-col">
+                            {secondarySeries.map((item) => {
+                                const isCompleted = item.completionStatus === 'completed';
+                                return (
+                                    <article class="panel lift series-compact-card">
+                                        <div class="series-compact-head">
+                                            <a
+                                                href={seriesUrl(item.slug)}
+                                                class="series-compact-cover-link"
+                                                aria-hidden="true"
+                                                tabindex="-1"
+                                            >
+                                                <Cover
+                                                    cover={item.cover}
+                                                    small
+                                                    class="r-md series-compact-cover"
+                                                />
+                                            </a>
+                                            <div class="series-compact-meta">
+                                                <div class="series-compact-tags t-xs">
+                                                    <span
+                                                        class:list={[
+                                                            'chip',
+                                                            isCompleted ? 'chip-done' : 'chip-teal',
+                                                        ]}
+                                                    >
+                                                        {isCompleted ? '已完结' : '连载中'}
+                                                    </span>
+                                                    {item.category && (
+                                                        <span class="muted">
+                                                            {item.category.name}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <h3 class="series-compact-title">
+                                                    <a
+                                                        class="hover-accent"
+                                                        href={seriesUrl(item.slug)}
+                                                    >
+                                                        {item.title}
+                                                    </a>
+                                                </h3>
+                                                {item.description && (
+                                                    <p class="series-compact-desc t-xs ink-2">
+                                                        {item.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {item.entries.length > 0 && (
+                                            <ol class="series-compact-chapters">
+                                                {item.entries.slice(0, 2).map((entry) => (
+                                                    <li>
+                                                        <a
+                                                            class="series-compact-chapter-link t-xs"
+                                                            href={postUrl(entry.post.slug)}
+                                                        >
+                                                            <span class="mono num series-roadmap-idx">
+                                                                {pad(entry.index)}
+                                                            </span>
+                                                            <span class="series-compact-chapter-name hover-accent">
+                                                                {entry.displayTitle}
+                                                            </span>
+                                                            <span
+                                                                class="muted arrow"
+                                                                aria-hidden="true"
+                                                            >
+                                                                ↗
+                                                            </span>
+                                                        </a>
+                                                    </li>
+                                                ))}
+                                            </ol>
+                                        )}
+
+                                        <div class="series-compact-foot t-xs">
+                                            <span class="mono num muted">
+                                                {item.postCount} 篇 · {item.totalMinutes} 分钟
+                                            </span>
+                                            <a
+                                                class="series-row-cta hover-accent"
+                                                href={seriesUrl(item.slug)}
+                                            >
+                                                <span>阅读专栏</span>
+                                                <span class="arrow" aria-hidden="true">
+                                                    ↗
+                                                </span>
+                                            </a>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+
+                            {secondarySeries.length === 1 && (
+                                <div class="panel series-guide-callout">
+                                    <div>
+                                        <p class="series-guide-label t-xs">跨领域延伸阅读</p>
+                                        <p class="t-xs ink-2">
+                                            支持按领域筛选推荐起点与公用延伸专栏，快速建立完整知识脉络。
+                                        </p>
+                                    </div>
+                                    <a class="btn btn-dark btn-sm" href="/series/">
+                                        全部专栏
+                                        <Icon name="arrowRight" size={14} />
+                                    </a>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
+            </div>
+        </section>
+    )}
+
+    <!-- ================================================================ -->
+    <!-- BAND 04 · 深度阅读与最近更新（1 精选大卡 + 4 篇流 + 写作节律条）    -->
+    <!-- ================================================================ -->
+    <section class={recentBandClass} aria-labelledby="recent-title">
+        <div class="wrap">
+            <header class="section-heading home-band-head">
+                <div>
+                    <span class="eyebrow">近期写作 · Latest Dispatches</span>
+                    <h2 id="recent-title" class="t-h1 home-band-title">
+                        深度阅读与最近更新
+                    </h2>
+                </div>
+                <a class="btn btn-ghost btn-sm" href="/blog/">
+                    按时间归档全部文章
+                    <Icon name="arrowRight" size={14} />
+                </a>
+            </header>
+
+            {primary ? (
+                <>
+                    <div class:list={['recent-grid', { 'only-feature': !recent.length }]}>
+                        <article class="bezel lift">
+                            <a class="face feature-post" href={postUrl(primary.slug)}>
+                                {primary.cover && (
+                                    <div class="feature-cover-wrap">
+                                        <Cover
+                                            cover={primary.cover}
+                                            label={primary.categories[0]?.name}
+                                            class="feature-cover"
+                                        />
+                                        <span class="feature-reading-badge mono num t-xs">
+                                            <Icon name="clock" size={13} />
+                                            {primary.reading.minutes} 分钟 ·{' '}
+                                            {formatCompactCount(primary.reading.count)}字
+                                        </span>
+                                    </div>
+                                )}
+                                <div class="feature-copy">
+                                    <div class="metadata">
+                                        {primary.featured && (
+                                            <span class="chip chip-sun">精选</span>
+                                        )}
+                                        {primarySeries && (
+                                            <span class="chip chip-series">
+                                                {primarySeries.series.title} ·{' '}
+                                                {pad(primarySeries.index)}
+                                            </span>
+                                        )}
+                                        <time class="num mono" datetime={primary.published}>
+                                            {day(primary.published)}
+                                        </time>
+                                    </div>
+                                    <h3 class="t-h2 hover-accent">{primary.title}</h3>
+                                    <p class="ink-2">{primary.summary}</p>
+                                    <div class="feature-foot">
+                                        <div class="chips">
+                                            {primary.tags.slice(0, 3).map((tag) => (
+                                                <span class="chip hash">{tag.name}</span>
+                                            ))}
+                                        </div>
+                                        <span class="feature-read-more t-xs">
+                                            阅读全文
+                                            <span class="arrow-r" aria-hidden="true">
+                                                →
+                                            </span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </a>
+                        </article>
+
+                        {recent.length > 0 && (
+                            <div class="panel home-stream-panel">
+                                <ul class="home-stream rows">
+                                    {recent.map((post) => {
+                                        const ctx = postSeriesMap.get(post.slug);
+                                        return (
+                                            <li>
+                                                <div class="home-stream-meta t-xs">
+                                                    <div class="home-stream-tags">
+                                                        {post.categories[0] && (
+                                                            <a
+                                                                href={categoryUrl(
+                                                                    post.categories[0].slug,
+                                                                )}
+                                                                class:list={[
+                                                                    'chip',
+                                                                    post.categories[0].color,
+                                                                ]}
+                                                            >
+                                                                {post.categories[0].name}
+                                                            </a>
+                                                        )}
+                                                        {ctx && (
+                                                            <a
+                                                                href={seriesUrl(ctx.series.slug)}
+                                                                class="chip chip-series"
+                                                            >
+                                                                {ctx.series.title} ·{' '}
+                                                                {pad(ctx.index)}
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                    <span class="mono num muted home-stream-date">
+                                                        <time datetime={post.published}>
+                                                            {day(post.published)}
+                                                        </time>
+                                                        <span aria-hidden="true">·</span>
+                                                        <span>{post.reading.minutes} min</span>
+                                                    </span>
+                                                </div>
+                                                <h3 class="home-stream-title">
+                                                    <a
+                                                        class="hover-accent"
+                                                        href={postUrl(post.slug)}
+                                                    >
+                                                        {post.title}
+                                                    </a>
+                                                </h3>
+                                                <p class="home-stream-summary t-small muted">
+                                                    {post.summary}
+                                                </p>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+
+                    {monthlyActivity.length >= 2 && (
+                        <div class="panel home-cadence-strip">
+                            <div class="cadence-copy">
+                                <span class="cadence-dot" aria-hidden="true" />
+                                <div>
+                                    <p class="cadence-title t-xs">
+                                        近期写作节律（按公开文章发布月份聚合）
+                                    </p>
+                                    <p class="t-xs muted">
+                                        共公开 {posts.length} 篇文章，累计约{' '}
+                                        {formatCompactCount(totalWords)}字实践记录
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                class="cadence-bars"
+                                role="img"
+                                aria-label={`近 ${monthlyActivity.length} 个活跃月份的文章发布分布`}
+                            >
+                                {monthlyActivity.map((item, idx) => {
+                                    const pct = Math.max(
+                                        24,
+                                        Math.round((item.count / maxMonthlyCount) * 100),
+                                    );
+                                    const isLatest = idx === monthlyActivity.length - 1;
+                                    return (
+                                        <div
+                                            class:list={['cadence-col', { 'is-latest': isLatest }]}
+                                            title={`${item.key}：${item.count} 篇`}
+                                        >
+                                            <span class="cadence-bar-track">
+                                                <span
+                                                    class="cadence-bar-fill"
+                                                    style={`height:${pct}%`}
+                                                />
+                                            </span>
+                                            <span class="mono num cadence-month">
+                                                {item.shortMonth}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </>
             ) : (
                 <p class="panel empty-state">还没有发布的文章。</p>
             )}
         </div>
     </section>
 
+    <!-- ================================================================ -->
+    <!-- BAND 05 · AI 开源生态雷达（暗色 Bento 驾驶舱 + 7d/30d 切换）       -->
+    <!-- ================================================================ -->
     <section class="band band-deep" aria-labelledby="trending-title">
-        <div class="wrap home-band-grid">
-            <div>
-                <h2 id="trending-title" class="t-h1">
-                    AI 开源趋势
-                </h2>
-                <p class="t-lead ink-2">用 Stars 净增长观察已收录的 GitHub 项目。</p>
-                <a class="btn btn-light" href="/ai-trending/">
-                    查看完整榜单
-                </a>
-            </div>
-            <div class="bezel">
-                <div class="face dark-ranking">
-                    {trending && top.length ? (
-                        <>
-                            <header>
-                                <h3 class="t-h3">近 7 天 Stars 净增长</h3>
-                                <p class="t-small muted">
-                                    示例数据 ·{' '}
-                                    <time class="num" datetime={trending.date}>
-                                        {trending.date}
-                                    </time>{' '}
-                                    UTC
-                                </p>
-                            </header>
-                            <ol class="rows">
-                                {top.map((repo, index) => (
-                                    <li>
-                                        <a href={repoUrl(repo.slug)}>
-                                            <span class="mono muted">
-                                                {String(index + 1).padStart(2, '0')}
-                                            </span>
-                                            <span class="hover-accent">{repo.name}</span>
-                                            <strong class="mono">
-                                                {growth(repo.growth.stars[7])}
-                                            </strong>
-                                        </a>
-                                    </li>
-                                ))}
-                            </ol>
-                        </>
-                    ) : (
-                        <p class="ink-2">暂无数据。</p>
-                    )}
+        <div class="wrap">
+            <header class="section-heading home-band-head">
+                <div>
+                    <span class="eyebrow">AI 开源生态雷达 · Observatory</span>
+                    <h2 id="trending-title" class="t-h1 home-band-title">
+                        AI 开源趋势
+                    </h2>
+                    <p class="t-small ink-2 home-section-sub">
+                        {trending
+                            ? `按 Stars 净增长追踪 ${trending.repos.length} 个已收录 GitHub AI 项目，观察智能体、推理引擎与检索基础设施演进。`
+                            : '用 Stars 与 Forks 净增长持续观察已收录的 GitHub AI 开源项目。'}
+                    </p>
                 </div>
-            </div>
-        </div>
-    </section>
+                <div class="trending-head-actions">
+                    {trendWindows.length === 2 && (
+                        <div class="choice choice-dark" role="group" aria-label="增长统计窗口">
+                            {trendWindows.map((win, idx) => (
+                                <button
+                                    type="button"
+                                    data-trend-trigger={String(win.days)}
+                                    aria-pressed={idx === 0 ? 'true' : 'false'}
+                                >
+                                    {win.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <a class="btn btn-light btn-sm" href="/ai-trending/">
+                        查看完整榜单
+                        <Icon name="arrowRight" size={14} />
+                    </a>
+                </div>
+            </header>
 
-    {profile && (
-        <>
-            <section class="band band-mist" aria-labelledby="about-title">
-                <div class="wrap home-band-grid">
-                    <div>
-                        <h2 id="about-title" class="t-h1">
-                            关于我
-                        </h2>
-                        <p class="t-lead ink-2">{profile.summary}</p>
-                        <a class="btn btn-dark" href="/about/">
-                            查看个人档案
-                        </a>
-                    </div>
-                    {profile.focus.length > 0 && (
-                        <div class="panel home-focus">
-                            <h3 class="t-h3">最近关注</h3>
+            {trending && top7.length > 0 ? (
+                <>
+                    {trendWindows.map((win, winIdx) => {
+                        const leader = win.repos[0];
+                        return (
+                            <div
+                                class="trending-observatory-grid"
+                                data-trend-panel={String(win.days)}
+                                hidden={winIdx !== 0}
+                            >
+                                {leader && (
+                                    <div class="bezel">
+                                        <a
+                                            href={repoUrl(leader.slug)}
+                                            class="face observatory-spotlight"
+                                        >
+                                            <div>
+                                                <div class="observatory-spot-top t-xs">
+                                                    <span class="chip chip-sun">#01 领跑项目</span>
+                                                    <time
+                                                        class="mono num muted"
+                                                        datetime={trending.date}
+                                                    >
+                                                        {trending.date} UTC
+                                                    </time>
+                                                </div>
+                                                <h3 class="observatory-repo-name mono hover-accent">
+                                                    {leader.name}
+                                                </h3>
+                                                <p class="t-small ink-2 observatory-repo-desc">
+                                                    {leader.description}
+                                                </p>
+                                                <div class="chips observatory-repo-tags">
+                                                    <span class="chip">
+                                                        <span
+                                                            class="lang-dot"
+                                                            style={`background:${languageColor(leader.language)}`}
+                                                            aria-hidden="true"
+                                                        />
+                                                        {leader.language}
+                                                    </span>
+                                                    <span class="chip chip-teal">
+                                                        {leader.category}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div class="observatory-spark-box">
+                                                <div class="observatory-spark-head">
+                                                    <span class="t-xs muted">
+                                                        {win.label} Stars 净增长
+                                                    </span>
+                                                    <strong
+                                                        class:list={[
+                                                            'mono',
+                                                            'num',
+                                                            'observatory-spark-value',
+                                                            growthClass(
+                                                                leader.growth.stars[win.days],
+                                                            ),
+                                                        ]}
+                                                    >
+                                                        {growth(leader.growth.stars[win.days])}
+                                                    </strong>
+                                                </div>
+                                                {win.sparkline && (
+                                                    <svg
+                                                        viewBox="0 0 280 56"
+                                                        class="observatory-spark-svg"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <defs>
+                                                            <linearGradient
+                                                                id={`sparkFill-${win.days}`}
+                                                                x1="0"
+                                                                y1="0"
+                                                                x2="0"
+                                                                y2="1"
+                                                            >
+                                                                <stop
+                                                                    offset="0%"
+                                                                    stop-color="#5ed6cc"
+                                                                    stop-opacity="0.32"
+                                                                />
+                                                                <stop
+                                                                    offset="100%"
+                                                                    stop-color="#5ed6cc"
+                                                                    stop-opacity="0"
+                                                                />
+                                                            </linearGradient>
+                                                        </defs>
+                                                        <path
+                                                            d={win.sparkline.area}
+                                                            fill={`url(#sparkFill-${win.days})`}
+                                                        />
+                                                        <path
+                                                            d={win.sparkline.line}
+                                                            fill="none"
+                                                            stroke="#5ed6cc"
+                                                            stroke-width="2.2"
+                                                            stroke-linecap="round"
+                                                            stroke-linejoin="round"
+                                                        />
+                                                        <circle
+                                                            cx={win.sparkline.last.x}
+                                                            cy={win.sparkline.last.y}
+                                                            r="3.5"
+                                                            fill="#f6bf35"
+                                                        />
+                                                    </svg>
+                                                )}
+                                            </div>
+
+                                            <div class="observatory-spot-foot t-xs">
+                                                <span class="mono num ink-2">
+                                                    ★ {formatStars(leader.stars)} · Forks{' '}
+                                                    {formatStars(leader.forks)}
+                                                </span>
+                                                <span class="observatory-more">
+                                                    查看趋势曲线
+                                                    <span class="arrow" aria-hidden="true">
+                                                        ↗
+                                                    </span>
+                                                </span>
+                                            </div>
+                                        </a>
+                                    </div>
+                                )}
+
+                                <div class="bezel">
+                                    <div class="face observatory-board">
+                                        <header class="observatory-board-head">
+                                            <h3 class="t-h3">
+                                                Stars 净增长 Top {win.repos.length}（{win.label}）
+                                            </h3>
+                                            <span class="mono num t-xs muted">
+                                                快照 · {trending.repos.length} 项目
+                                            </span>
+                                        </header>
+                                        <ol class="rows observatory-rows">
+                                            {win.repos.map((repo, index) => {
+                                                const delta = repo.growth.stars[win.days];
+                                                const pct =
+                                                    delta !== null && delta > 0
+                                                        ? Math.max(
+                                                              14,
+                                                              Math.round(
+                                                                  (delta / win.maxGrowth) * 100,
+                                                              ),
+                                                          )
+                                                        : 8;
+                                                return (
+                                                    <li>
+                                                        <a
+                                                            href={repoUrl(repo.slug)}
+                                                            class="observatory-row-link"
+                                                        >
+                                                            <span class="mono num muted observatory-rank">
+                                                                {pad(index + 1)}
+                                                            </span>
+                                                            <span class="observatory-row-main">
+                                                                <span class="observatory-row-top">
+                                                                    <span class="mono observatory-row-name hover-accent">
+                                                                        {repo.name}
+                                                                    </span>
+                                                                    <span class="chip">
+                                                                        {repo.category}
+                                                                    </span>
+                                                                </span>
+                                                                <span class="observatory-row-barline">
+                                                                    <span
+                                                                        class="observatory-bar-track"
+                                                                        aria-hidden="true"
+                                                                    >
+                                                                        <span
+                                                                            class="observatory-bar-fill"
+                                                                            style={`width:${pct}%`}
+                                                                        />
+                                                                    </span>
+                                                                    <span class="t-xs muted observatory-row-lang">
+                                                                        <span
+                                                                            class="lang-dot"
+                                                                            style={`background:${languageColor(repo.language)}`}
+                                                                            aria-hidden="true"
+                                                                        />
+                                                                        {repo.language} · ★{' '}
+                                                                        {formatStars(repo.stars)}
+                                                                    </span>
+                                                                </span>
+                                                            </span>
+                                                            <strong
+                                                                class:list={[
+                                                                    'mono',
+                                                                    'num',
+                                                                    'observatory-delta',
+                                                                    delta !== null && delta < 0
+                                                                        ? 'is-down'
+                                                                        : '',
+                                                                ]}
+                                                            >
+                                                                {growth(delta)}
+                                                            </strong>
+                                                        </a>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {ecosystemBreakdown.length > 0 && (
+                        <div class="observatory-ecosystem">
+                            <span class="t-xs muted">已收录赛道分布</span>
                             <ul class="chips">
-                                {profile.focus.map((item) => (
-                                    <li class="chip chip-teal">{item}</li>
+                                {ecosystemBreakdown.map(({ name, count }, idx) => (
+                                    <li
+                                        class:list={[
+                                            'chip',
+                                            idx === 0 ? 'chip-teal' : idx === 1 ? 'chip-sun' : '',
+                                        ]}
+                                    >
+                                        <span>{name}</span>
+                                        <strong class="mono num ecosystem-count">
+                                            {number(count)}
+                                        </strong>
+                                    </li>
                                 ))}
                             </ul>
                         </div>
                     )}
-                </div>
-            </section>
-            {profile.links.length > 0 && (
-                <section class="band band-sun" aria-labelledby="contact-title">
-                    <div class="wrap">
-                        <h2 id="contact-title" class="t-h1">
-                            保持联系
-                        </h2>
-                        <div class="actions">
-                            {profile.links.map(({ label, url }) => (
-                                <a class="btn btn-dark" href={url}>
-                                    {label}
-                                </a>
-                            ))}
+                </>
+            ) : (
+                <div class="bezel observatory-empty">
+                    <div class="face observatory-empty-face">
+                        <div>
+                            <span class="chip chip-sun">等待首批采集快照</span>
+                            <h3 class="t-h2 observatory-empty-title">暂无公开榜单数据</h3>
+                            <p class="t-small ink-2 observatory-empty-desc">
+                                完整采集批次发布后，这里会自动展示近 7 天 / 30 天 Stars
+                                净增长领跑项目与赛道分布。所有指标均按 UTC 每日快照差值计算。
+                            </p>
+                        </div>
+                        <div class="observatory-empty-rules">
+                            <div class="observatory-rule-card">
+                                <h4 class="t-xs">双窗口口径</h4>
+                                <p class="t-xs muted">同时对照 7 天短周期脉冲与 30 天持续增长。</p>
+                            </div>
+                            <div class="observatory-rule-card">
+                                <h4 class="t-xs">透明记录</h4>
+                                <p class="t-xs muted">净增长保留负值，缺失样本明确标注数据不足。</p>
+                            </div>
                         </div>
                     </div>
-                </section>
+                </div>
             )}
-        </>
+        </div>
+    </section>
+
+    <!-- ================================================================ -->
+    <!-- BAND 06 · 站主档案 BENTO（身份卡 + 履历时间线 + 分组技术栈）        -->
+    <!-- ================================================================ -->
+    {profile && (
+        <section class="band band-mist" aria-labelledby="about-title">
+            <div class="wrap">
+                <div class="author-bento-grid">
+                    <!-- Card A: Identity & Philosophy -->
+                    <div
+                        class:list={[
+                            'bezel',
+                            'author-identity-card',
+                            { 'is-full': profile.experience.length === 0 },
+                        ]}
+                    >
+                        <div class="face author-identity-face">
+                            <div>
+                                <div class="author-ident-head">
+                                    {profile.avatar ? (
+                                        <img
+                                            class="author-avatar"
+                                            src={profile.avatar.src}
+                                            width={profile.avatar.width}
+                                            height={profile.avatar.height}
+                                            alt={profile.avatar.alt}
+                                            loading="lazy"
+                                            decoding="async"
+                                        />
+                                    ) : (
+                                        <span class="author-avatar" aria-hidden="true">
+                                            {profile.initials}
+                                        </span>
+                                    )}
+                                    <div>
+                                        <h2 id="about-title" class="t-h2 author-name">
+                                            {profile.name}
+                                        </h2>
+                                        <p class="t-xs muted author-role-line">
+                                            {profile.title}
+                                            {profile.title && profile.location && (
+                                                <span aria-hidden="true"> · </span>
+                                            )}
+                                            {profile.location}
+                                        </p>
+                                    </div>
+                                </div>
+                                {profile.summary && (
+                                    <p class="t-small ink-2 author-summary">{profile.summary}</p>
+                                )}
+                            </div>
+                            <div class="author-actions">
+                                <a class="btn btn-dark btn-sm" href="/about/">
+                                    查看完整个人档案
+                                    <Icon name="arrowRight" size={14} />
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card B: Engineering Timeline (when experience exists) -->
+                    {profile.experience.length > 0 && (
+                        <div class="panel author-timeline-card">
+                            <header class="author-card-head">
+                                <h3 class="t-h3">工程履历脉络</h3>
+                                <a class="series-text-link t-xs hover-accent" href="/about/">
+                                    <span>全部经历</span>
+                                    <span class="arrow-r" aria-hidden="true">
+                                        →
+                                    </span>
+                                </a>
+                            </header>
+                            <ol class="author-timeline">
+                                {profile.experience.slice(0, 3).map((item, idx) => (
+                                    <li class="author-timeline-item">
+                                        {item.period && (
+                                            <span
+                                                class:list={[
+                                                    'mono',
+                                                    'num',
+                                                    't-xs',
+                                                    'author-timeline-period',
+                                                    { 'is-current': idx === 0 },
+                                                ]}
+                                            >
+                                                {item.period}
+                                            </span>
+                                        )}
+                                        <div class="author-timeline-copy">
+                                            <p class="author-timeline-role">
+                                                {item.role}
+                                                {item.organization && (
+                                                    <span class="t-xs muted">
+                                                        {' '}
+                                                        · {item.organization}
+                                                    </span>
+                                                )}
+                                            </p>
+                                            {item.descriptionHtml && (
+                                                <div
+                                                    class="t-xs muted author-timeline-desc"
+                                                    set:html={item.descriptionHtml}
+                                                />
+                                            )}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    )}
+
+                    <!-- Card C: Grouped Tech Stack Spec Strip -->
+                    {profile.skills.length > 0 && (
+                        <div class="panel author-skills-strip">
+                            <div class="author-skills-grid">
+                                {profile.skills.slice(0, 4).map(({ group, items }, idx) => (
+                                    <div class="author-skill-group">
+                                        <h3 class="t-xs muted author-skill-title">{group}</h3>
+                                        <ul class="chips">
+                                            {items.map((skill) => (
+                                                <li
+                                                    class:list={[
+                                                        'chip',
+                                                        { 'chip-coral': idx === 3 },
+                                                    ]}
+                                                >
+                                                    {skill}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
     )}
+
+    <!-- ================================================================ -->
+    <!-- BAND 07 · 订阅与连接终章（双栏社交联络 + RSS 一键订阅卡）           -->
+    <!-- ================================================================ -->
+    <section class="band band-sun home-closing-band" aria-labelledby="contact-title">
+        <div class="wrap home-closing-grid">
+            <div>
+                <span class="eyebrow">保持联系 · Stay Connected</span>
+                <h2 id="contact-title" class="t-h1 home-band-title">
+                    {profile?.links.length ? '持续记录，欢迎同行' : '持续更新，欢迎订阅'}
+                </h2>
+                <p class="t-small home-closing-copy">
+                    {profile?.links.length
+                        ? '如果你对全栈架构、AI 应用工程化或内容系统构建感兴趣，欢迎通过以下渠道交流，或直接订阅本站更新。'
+                        : '所有新发布的文章与专栏更新都会同步输出到 RSS 源，无算法推送干扰。'}
+                </p>
+                {profile && profile.links.length > 0 && (
+                    <div class="actions">
+                        {profile.links.map(({ label, url }) => (
+                            <a
+                                class="btn btn-dark"
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <span>{label}</span>
+                                <span class="arrow" aria-hidden="true">
+                                    ↗
+                                </span>
+                            </a>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div class="closing-rss-card">
+                <div class="closing-rss-head">
+                    <span class="closing-rss-title">
+                        <Icon name="rss" size={17} />
+                        <strong>通过 RSS 订阅新文章</strong>
+                    </span>
+                    <span class="closing-rss-badge t-xs">无算法推送</span>
+                </div>
+                <p class="t-xs closing-rss-desc">
+                    支持任意 RSS 阅读器，每篇新发布文章自动同步，不收集邮箱。
+                </p>
+                <div class="closing-rss-bar">
+                    <code class="mono closing-rss-url">/rss.xml</code>
+                    <button
+                        type="button"
+                        class="btn btn-dark btn-sm"
+                        data-copy-rss
+                        aria-label="复制 RSS 订阅地址"
+                    >
+                        <Icon name="copy" size={14} />
+                        <span data-copy-rss-label>复制地址</span>
+                    </button>
+                    <a class="btn btn-ghost btn-sm" href="/rss.xml">
+                        打开
+                    </a>
+                </div>
+                <span class="sr-only" role="status" aria-live="polite" data-copy-rss-status />
+                <nav class="closing-quick-nav t-xs" aria-label="快捷入口">
+                    <a href="/series/">专栏书架 →</a>
+                    <a href="/blog/">全部归档 →</a>
+                    <a href="/ai-trending/">AI 趋势榜 →</a>
+                    <a href="/about/">关于本站 →</a>
+                </nav>
+            </div>
+        </div>
+    </section>
 </SiteLayout>
 <script>
-    const sky = document.querySelector<HTMLElement>('.hero-sky');
+    // Subtle layered mountain parallax in Hero (respects prefers-reduced-motion)
+    const canopy = document.querySelector<HTMLElement>('.hero-canopy');
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-    if (sky && !reduced.matches) {
-        const hero = sky.closest('.hero');
+    if (canopy && !reduced.matches) {
+        const hero = canopy.closest('.hero');
         let frame = 0;
         window.addEventListener(
             'scroll',
             () => {
                 if (frame) return;
                 frame = requestAnimationFrame(() => {
-                    const limit = (hero?.clientHeight ?? 600) * 0.12;
-                    const movement = reduced.matches
-                        ? 0
-                        : Math.min(limit, Math.max(0, window.scrollY) * 0.16);
-                    sky.style.setProperty('--hero-drift', `${movement}px`);
+                    const limit = (hero?.clientHeight ?? 600) * 0.1;
+                    const y = reduced.matches ? 0 : Math.min(limit, Math.max(0, window.scrollY));
+                    canopy.style.setProperty('--ridge-far-y', `${(y * 0.16).toFixed(1)}px`);
+                    canopy.style.setProperty('--ridge-mid-y', `${(y * 0.08).toFixed(1)}px`);
                     frame = 0;
                 });
             },
             { passive: true },
         );
+    }
+
+    // Progressive enhancement: 7d / 30d switcher in AI Open-Source Observatory
+    const trendButtons = document.querySelectorAll<HTMLButtonElement>('[data-trend-trigger]');
+    const trendPanels = document.querySelectorAll<HTMLElement>('[data-trend-panel]');
+    if (trendButtons.length > 0 && trendPanels.length > 0) {
+        for (const button of trendButtons) {
+            button.addEventListener('click', () => {
+                const target = button.dataset.trendTrigger;
+                for (const btn of trendButtons) {
+                    btn.setAttribute('aria-pressed', String(btn.dataset.trendTrigger === target));
+                }
+                for (const panel of trendPanels) {
+                    panel.hidden = panel.dataset.trendPanel !== target;
+                }
+            });
+        }
+    }
+
+    // Progressive enhancement: One-click copy RSS URL with accessible status feedback
+    const copyBtn = document.querySelector<HTMLButtonElement>('[data-copy-rss]');
+    const copyLabel = document.querySelector<HTMLElement>('[data-copy-rss-label]');
+    const copyStatus = document.querySelector<HTMLElement>('[data-copy-rss-status]');
+    if (copyBtn && copyLabel) {
+        let resetTimer = 0;
+        copyBtn.addEventListener('click', async () => {
+            const rssHref = new URL('/rss.xml', window.location.origin).href;
+            try {
+                await navigator.clipboard.writeText(rssHref);
+                copyLabel.textContent = '已复制';
+                if (copyStatus) copyStatus.textContent = '已复制 RSS 订阅地址到剪贴板';
+            } catch {
+                copyLabel.textContent = '/rss.xml';
+                if (copyStatus) copyStatus.textContent = `RSS 地址为 ${rssHref}`;
+            }
+            window.clearTimeout(resetTimer);
+            resetTimer = window.setTimeout(() => {
+                copyLabel.textContent = '复制地址';
+            }, 1800);
+        });
     }
 </script>

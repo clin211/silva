@@ -7,17 +7,22 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
     const apiTarget = env.SILVA_API_TARGET || 'http://127.0.0.1:8088';
 
+    const operationsTarget = env.SILVA_OPERATIONS_TARGET || apiTarget;
     const proxy = {
+        '/api/v1/public/': {
+            target: env.SILVA_PUBLIC_API_TARGET || apiTarget,
+            changeOrigin: true,
+        },
         '/api': {
             target: apiTarget,
             changeOrigin: true,
         },
         '/health': {
-            target: apiTarget,
+            target: operationsTarget,
             changeOrigin: true,
         },
         '/metrics': {
-            target: apiTarget,
+            target: operationsTarget,
             changeOrigin: true,
         },
     };
@@ -37,11 +42,17 @@ export default defineConfig(({ mode }) => {
                         tanstack: ['@tanstack/react-query', '@tanstack/react-router'],
                         tiptap: [
                             '@tiptap/core',
+                            '@tiptap/extension-code-block',
                             '@tiptap/extension-image',
                             '@tiptap/extensions',
                             '@tiptap/markdown',
                             '@tiptap/react',
                             '@tiptap/starter-kit',
+                        ],
+                        shiki: [
+                            '@shikijs/core',
+                            '@shikijs/engine-javascript',
+                            '@shikijs/themes/github-dark',
                         ],
                         markdown: ['marked', 'dompurify'],
                     },

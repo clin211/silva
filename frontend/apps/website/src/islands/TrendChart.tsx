@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Metric, Sample } from '../data/trending';
+import type { Metric, Sample } from '../lib/trending';
 import { number } from '../lib/format';
 
 const metrics = [

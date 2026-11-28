@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore } from 'react';
-import type { Repository, WindowDays } from '../data/trending';
+import type { Repository, WindowDays } from '../lib/trending';
 import { growth, growthClass, number } from '../lib/format';
 import { defaultFilters, pageSize, rank, sortOptions, type Filters } from '../lib/ranking';
 import { repoUrl } from '../lib/site';

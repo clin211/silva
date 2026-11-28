@@ -16,13 +16,15 @@ import { LoginPage } from '@/features/auth/login-page';
 import { DashboardPage } from '@/features/dashboard/dashboard-page';
 import { MediaLibraryPage } from '@/features/media/media-library-page';
 import { PostEditorPage } from '@/features/posts/post-editor-page';
-import { PostRevisionDetailPage } from '@/features/posts/post-revision-detail-page';
-import { PostRevisionsPage } from '@/features/posts/post-revisions-page';
 import { PostsListPage, type PostsSearchParams } from '@/features/posts/posts-list-page';
 import { ProfilePage } from '@/features/profile/profile-page';
-import { PublishingJobDetailPage } from '@/features/publishing/publishing-detail-page';
-import { PublishingJobsPage } from '@/features/publishing/publishing-list-page';
 import { RolesPage } from '@/features/roles/roles-page';
+import {
+    SeriesListPage,
+    type SeriesSearchParams,
+    type SeriesSort,
+} from '@/features/series/series-list-page';
+import { SeriesWorkbenchPage } from '@/features/series/series-workbench-page';
 import { SystemHealthPage } from '@/features/system/system-health-page';
 import { TaxonomyPage } from '@/features/taxonomy/taxonomy-page';
 import { UsersPage } from '@/features/users/users-page';
@@ -153,28 +155,58 @@ const postsIndexRoute = createRoute({
     validateSearch: (search: Record<string, unknown>): PostsSearchParams => {
         const rawPage = Number(search.page);
         const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : undefined;
+        const rawPerPage = Number(search.per_page);
+        const per_page =
+            rawPerPage === 20 || rawPerPage === 50 || rawPerPage === 100
+                ? (rawPerPage as 20 | 50 | 100)
+                : undefined;
         const scope = search.scope === 'mine' || search.scope === 'all' ? search.scope : undefined;
         const q = typeof search.q === 'string' && search.q.trim() ? search.q : undefined;
-        const reviewStatus =
-            search.review_status === 'pending' ||
-            search.review_status === 'approved' ||
-            search.review_status === 'rejected'
-                ? (search.review_status as Schemas['ReviewStatus'])
-                : undefined;
         const published =
             search.published === true || search.published === 'true'
                 ? true
                 : search.published === false || search.published === 'false'
                   ? false
                   : undefined;
+        const uncategorized =
+            search.uncategorized === true || search.uncategorized === 'true' ? true : undefined;
         const category_id =
-            typeof search.category_id === 'string' && search.category_id
+            !uncategorized && typeof search.category_id === 'string' && search.category_id
                 ? search.category_id
                 : undefined;
         const tag_id =
             typeof search.tag_id === 'string' && search.tag_id ? search.tag_id : undefined;
+        const in_series =
+            search.in_series === true || search.in_series === 'true'
+                ? true
+                : search.in_series === false || search.in_series === 'false'
+                  ? false
+                  : undefined;
+        const series_id =
+            in_series !== false && typeof search.series_id === 'string' && search.series_id
+                ? search.series_id
+                : undefined;
+        const sort =
+            search.sort === 'updated_desc' ||
+            search.sort === 'created_desc' ||
+            search.sort === 'title_asc' ||
+            search.sort === 'title_desc'
+                ? (search.sort as Schemas['PostSort'])
+                : undefined;
 
-        return { page, scope, q, review_status: reviewStatus, published, category_id, tag_id };
+        return {
+            page,
+            per_page,
+            scope,
+            q,
+            published,
+            category_id,
+            uncategorized,
+            tag_id,
+            series_id,
+            in_series,
+            sort,
+        };
     },
     component: () => (
         <RequirePermission anyOf={[PERMISSIONS.POSTS_READ_OWN, PERMISSIONS.POSTS_MANAGE]}>
@@ -186,11 +218,21 @@ const postsIndexRoute = createRoute({
 const postNewRoute = createRoute({
     getParentRoute: () => authedRoute,
     path: '/posts/new',
-    component: () => (
-        <RequirePermission anyOf={[PERMISSIONS.POSTS_CREATE]}>
-            <PostEditorPage />
-        </RequirePermission>
-    ),
+    validateSearch: (search: Record<string, unknown>): { category_id?: string } => {
+        const category_id =
+            typeof search.category_id === 'string' && search.category_id.trim()
+                ? search.category_id.trim()
+                : undefined;
+        return { category_id };
+    },
+    component: function PostNewRouteComponent() {
+        const { category_id } = postNewRoute.useSearch();
+        return (
+            <RequirePermission anyOf={[PERMISSIONS.POSTS_CREATE]}>
+                <PostEditorPage initialCategoryId={category_id} />
+            </RequirePermission>
+        );
+    },
 });
 
 const postEditRoute = createRoute({
@@ -200,33 +242,70 @@ const postEditRoute = createRoute({
         const { postId } = postEditRoute.useParams();
         return (
             <RequirePermission anyOf={[PERMISSIONS.POSTS_READ_OWN, PERMISSIONS.POSTS_MANAGE]}>
-                <PostEditorPage postId={postId} />
+                <PostEditorPage key={postId} postId={postId} />
             </RequirePermission>
         );
     },
 });
 
-const postRevisionsRoute = createRoute({
+const seriesIndexRoute = createRoute({
     getParentRoute: () => authedRoute,
-    path: '/posts/$postId/revisions',
-    component: function PostRevisionsRouteComponent() {
-        const { postId } = postRevisionsRoute.useParams();
-        return (
-            <RequirePermission anyOf={[PERMISSIONS.POSTS_READ_OWN, PERMISSIONS.POSTS_MANAGE]}>
-                <PostRevisionsPage postId={postId} />
-            </RequirePermission>
-        );
+    path: '/series',
+    validateSearch: (search: Record<string, unknown>): SeriesSearchParams => {
+        const rawPage = Number(search.page);
+        const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : undefined;
+        const rawPerPage = Number(search.per_page);
+        const per_page =
+            rawPerPage === 20 || rawPerPage === 50 || rawPerPage === 100
+                ? (rawPerPage as 20 | 50 | 100)
+                : undefined;
+        const q = typeof search.q === 'string' && search.q.trim() ? search.q : undefined;
+        const category_id =
+            typeof search.category_id === 'string' && search.category_id
+                ? search.category_id
+                : undefined;
+        const published =
+            search.published === true || search.published === 'true'
+                ? true
+                : search.published === false || search.published === 'false'
+                  ? false
+                  : undefined;
+        const completion_status =
+            search.completion_status === 'ongoing' || search.completion_status === 'completed'
+                ? search.completion_status
+                : undefined;
+        const sort =
+            search.sort === 'sort_order_asc' ||
+            search.sort === 'updated_desc' ||
+            search.sort === 'created_desc'
+                ? (search.sort as SeriesSort)
+                : undefined;
+
+        return {
+            page,
+            per_page,
+            q,
+            category_id,
+            published,
+            completion_status,
+            sort,
+        };
     },
+    component: () => (
+        <RequirePermission anyOf={[PERMISSIONS.SERIES_MANAGE]}>
+            <SeriesListPage />
+        </RequirePermission>
+    ),
 });
 
-const postRevisionDetailRoute = createRoute({
+const seriesWorkbenchRoute = createRoute({
     getParentRoute: () => authedRoute,
-    path: '/posts/$postId/revisions/$revisionId',
-    component: function PostRevisionDetailRouteComponent() {
-        const { postId, revisionId } = postRevisionDetailRoute.useParams();
+    path: '/series/$seriesId',
+    component: function SeriesWorkbenchRouteComponent() {
+        const { seriesId } = seriesWorkbenchRoute.useParams();
         return (
-            <RequirePermission anyOf={[PERMISSIONS.POSTS_READ_OWN, PERMISSIONS.POSTS_MANAGE]}>
-                <PostRevisionDetailPage postId={postId} revisionId={revisionId} />
+            <RequirePermission anyOf={[PERMISSIONS.SERIES_MANAGE]}>
+                <SeriesWorkbenchPage seriesId={seriesId} />
             </RequirePermission>
         );
     },
@@ -235,6 +314,10 @@ const postRevisionDetailRoute = createRoute({
 const taxonomyRoute = createRoute({
     getParentRoute: () => authedRoute,
     path: '/taxonomy',
+    validateSearch: (search: Record<string, unknown>): { tab?: 'categories' | 'tags' } => ({
+        tab:
+            search.tab === 'tags' ? 'tags' : search.tab === 'categories' ? 'categories' : undefined,
+    }),
     component: () => (
         <RequirePermission anyOf={[PERMISSIONS.TAXONOMY_MANAGE]}>
             <TaxonomyPage />
@@ -260,29 +343,6 @@ const profileRoute = createRoute({
             <ProfilePage />
         </RequirePermission>
     ),
-});
-
-const publishingRoute = createRoute({
-    getParentRoute: () => authedRoute,
-    path: '/publishing',
-    component: () => (
-        <RequirePermission anyOf={[PERMISSIONS.JOBS_READ_OWN, PERMISSIONS.JOBS_READ]}>
-            <PublishingJobsPage />
-        </RequirePermission>
-    ),
-});
-
-const publishingDetailRoute = createRoute({
-    getParentRoute: () => authedRoute,
-    path: '/publishing/$jobId',
-    component: function PublishingDetailRouteComponent() {
-        const { jobId } = publishingDetailRoute.useParams();
-        return (
-            <RequirePermission anyOf={[PERMISSIONS.JOBS_READ_OWN, PERMISSIONS.JOBS_READ]}>
-                <PublishingJobDetailPage jobId={jobId} />
-            </RequirePermission>
-        );
-    },
 });
 
 const usersRoute = createRoute({
@@ -338,13 +398,11 @@ export const routeTree = rootRoute.addChildren([
         postsIndexRoute,
         postNewRoute,
         postEditRoute,
-        postRevisionsRoute,
-        postRevisionDetailRoute,
+        seriesIndexRoute,
+        seriesWorkbenchRoute,
         taxonomyRoute,
         mediaRoute,
         profileRoute,
-        publishingRoute,
-        publishingDetailRoute,
         usersRoute,
         rolesRoute,
         auditLogsRoute,

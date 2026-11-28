@@ -1,0 +1,59 @@
+---
+import type { Series } from '../lib/data';
+import { postUrl, seriesUrl } from '../lib/site';
+
+interface Props {
+    series: Series;
+    currentSlug: string;
+    mobile?: boolean;
+}
+
+const { series, currentSlug, mobile = false } = Astro.props;
+const pad = (value: number) => String(value).padStart(2, '0');
+---
+
+<nav aria-label={mobile ? '移动端系列目录' : '系列目录'} class="series-rail-nav">
+    <a class="series-rail-title hover-accent" href={seriesUrl(series.slug)}>
+        <span>{series.title}</span>
+        <span class="t-xs muted num">共 {series.postCount} 篇</span>
+    </a>
+    {series.rootItems.length > 0 && (
+        <ol class="series-rail-list">
+            {series.rootItems.map((entry) => {
+                const isCurrent = entry.post.slug === currentSlug;
+                return (
+                    <li>
+                        <a
+                            href={postUrl(entry.post.slug)}
+                            aria-current={isCurrent ? 'page' : undefined}
+                        >
+                            <span class="series-rail-num mono num">{pad(entry.index)}</span>
+                            <span class="series-rail-label">{entry.displayTitle}</span>
+                        </a>
+                    </li>
+                );
+            })}
+        </ol>
+    )}
+    {series.sections.map((section) => (
+        <div class="series-rail-section">
+            <p class="series-rail-section-title t-xs muted">{section.title}</p>
+            <ol class="series-rail-list">
+                {section.items.map((entry) => {
+                    const isCurrent = entry.post.slug === currentSlug;
+                    return (
+                        <li>
+                            <a
+                                href={postUrl(entry.post.slug)}
+                                aria-current={isCurrent ? 'page' : undefined}
+                            >
+                                <span class="series-rail-num mono num">{pad(entry.index)}</span>
+                                <span class="series-rail-label">{entry.displayTitle}</span>
+                            </a>
+                        </li>
+                    );
+                })}
+            </ol>
+        </div>
+    ))}
+</nav>

@@ -1,7 +1,7 @@
 ---
 import ArchiveLayout from '../../layouts/ArchiveLayout.astro';
-import { listPosts } from '../../lib/data';
-const posts = await listPosts();
+
+const posts = await Astro.locals.content.listPosts();
 ---
 
 <ArchiveLayout

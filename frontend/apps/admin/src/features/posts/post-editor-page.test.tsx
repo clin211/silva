@@ -6,10 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostEditorPage } from './post-editor-page';
 import { ToastProvider } from '@/components/ui/toast';
 import { PERMISSIONS } from '@/lib/permissions';
+import { ApiError } from '@/lib/errors';
 
 const mockNavigate = vi.fn();
 const mockGet = vi.fn();
 const mockPost = vi.fn();
+const mockPut = vi.fn();
+let permissions: string[];
 
 vi.mock('@tanstack/react-router', () => ({
     Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
@@ -27,12 +30,7 @@ vi.mock('@/features/auth/auth-context', () => ({
             email: 'admin@example.com',
             display_name: 'Admin',
             roles: ['admin'],
-            permissions: [
-                PERMISSIONS.POSTS_CREATE,
-                PERMISSIONS.POSTS_MANAGE,
-                PERMISSIONS.POSTS_SUBMIT_OWN,
-                PERMISSIONS.POSTS_PUBLISH,
-            ],
+            permissions,
         },
     }),
 }));
@@ -42,7 +40,7 @@ vi.mock('@/lib/api', () => ({
         GET: (...args: unknown[]) => mockGet(...args),
         POST: (...args: unknown[]) => mockPost(...args),
         PATCH: vi.fn(),
-        PUT: vi.fn(),
+        PUT: (...args: unknown[]) => mockPut(...args),
         DELETE: vi.fn(),
     },
     uploadMediaFile: vi.fn(),
@@ -68,24 +66,30 @@ vi.mock('./tiptap-markdown-editor', () => ({
     ),
 }));
 
-function renderEditor(postId?: string) {
+function renderEditor(postId?: string, initialCategoryId?: string) {
     const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
     });
     return render(
         <QueryClientProvider client={queryClient}>
             <ToastProvider>
-                <PostEditorPage postId={postId} />
+                <PostEditorPage postId={postId} initialCategoryId={initialCategoryId} />
             </ToastProvider>
         </QueryClientProvider>,
     );
 }
 
-describe('PostEditorPage (create mode)', () => {
+describe('PostEditorPage', () => {
     beforeEach(() => {
+        permissions = [
+            PERMISSIONS.POSTS_CREATE,
+            PERMISSIONS.POSTS_MANAGE,
+            PERMISSIONS.POSTS_PUBLISH,
+        ];
         mockNavigate.mockReset();
         mockGet.mockReset();
         mockPost.mockReset();
+        mockPut.mockReset();
         mockGet.mockResolvedValue({ data: { data: [] } });
     });
 
@@ -118,10 +122,13 @@ describe('PostEditorPage (create mode)', () => {
         // 文章设置抽屉默认关闭
         expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
 
-        // 返回按钮位于顶栏操作区，文章标题位于写作区，不在同一块
+        // 返回按钮独立位于操作栏上方，文章标题位于写作区，不在同一块
         const topBar = screen.getByRole('banner', { name: '文章操作栏' });
         const editorSection = screen.getByLabelText('正文编辑器');
-        expect(within(topBar).getByRole('button', { name: '返回文章列表' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '返回文章列表' })).toBeInTheDocument();
+        expect(
+            within(topBar).queryByRole('button', { name: '返回文章列表' }),
+        ).not.toBeInTheDocument();
         expect(within(topBar).queryByLabelText('文章标题')).not.toBeInTheDocument();
         expect(within(editorSection).getByLabelText('文章标题')).toBeInTheDocument();
     });
@@ -160,74 +167,236 @@ describe('PostEditorPage (create mode)', () => {
         expect(mockNavigate).toHaveBeenCalledWith({ to: '/posts' });
     });
 
-    it('supports manual settings drawer open and auto-opens settings drawer on create when slug is missing', async () => {
-        const user = userEvent.setup();
-        mockPost.mockResolvedValue({
-            data: {
-                data: {
-                    id: 'post-1',
-                    slug: 'my-first-post',
-                    slug_locked: false,
-                    current_revision_id: 'rev-1',
-                    current_revision: {
-                        id: 'rev-1',
-                        revision_no: 1,
-                        title: '第一篇文章',
-                        excerpt: null,
-                        markdown_body: 'hello',
-                        categories: [],
-                        tags: [],
-                        cover_media_id: null,
-                        is_featured: false,
-                        seo_title: null,
-                        seo_description: null,
-                        review: null,
-                        created_at: new Date().toISOString(),
-                    },
-                    publication: {
-                        desired_published_revision_id: null,
-                        live_revision_id: null,
-                        publication_version: 1,
-                    },
-                },
-            },
-        });
+    const revision = {
+        id: 'draft-1',
+        title: '草稿',
+        excerpt: null,
+        markdown_body: '',
+        categories: [],
+        tags: [],
+        revision_no: 1,
+        created_at: '2026-11-01T10:00:00Z',
+    };
+    const post = {
+        id: 'post-1',
+        slug: 'post',
+        current_revision_id: revision.id,
+        current_revision: revision,
+        slug_locked: false,
+        publication: {
+            published_revision_id: null,
 
+            publication_version: 0,
+        },
+    };
+
+    function mockArticle(read: () => unknown = () => post) {
+        mockGet.mockImplementation(async (path: string) => ({
+            data: { data: path === '/api/v1/admin/posts/{id}' ? read() : [] },
+        }));
+    }
+
+    it('lets authors save drafts and hides publication actions', async () => {
+        permissions = [PERMISSIONS.POSTS_CREATE, PERMISSIONS.POSTS_EDIT_OWN];
         renderEditor();
+        expect(screen.getByRole('button', { name: '保存草稿' })).toBeEnabled();
+        expect(screen.queryByRole('button', { name: '发布文章' })).not.toBeInTheDocument();
+    });
 
-        // 可手动打开并关闭文章设置抽屉
-        await user.click(screen.getByRole('button', { name: /文章设置/ }));
-        expect(screen.getByRole('heading', { name: '文章设置' })).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: '关闭抽屉' }));
-        expect(screen.queryByRole('heading', { name: '文章设置' })).not.toBeInTheDocument();
-
-        // 仅填写标题未填 Slug，点击「创建文章」自动打开设置抽屉并提示填写 Slug
+    it('saves a new draft with a custom link without publishing', async () => {
+        const user = userEvent.setup();
+        mockPost.mockResolvedValue({ data: { data: post } });
+        renderEditor();
         await user.type(screen.getByLabelText('文章标题'), '第一篇文章');
-        await user.click(screen.getByRole('button', { name: '创建文章' }));
+        await user.click(screen.getByRole('button', { name: /文章设置/ }));
+        await user.type(screen.getByLabelText('Slug'), 'my-first-post');
+        await user.click(
+            within(screen.getByRole('dialog')).getByRole('button', { name: '保存草稿' }),
+        );
+        await waitFor(() =>
+            expect(mockNavigate).toHaveBeenCalledWith({
+                to: '/posts/$postId/edit',
+                params: { postId: 'post-1' },
+            }),
+        );
+        expect(mockPost).toHaveBeenCalledWith(
+            '/api/v1/admin/posts',
+            expect.objectContaining({
+                body: expect.objectContaining({ title: '第一篇文章', slug: 'my-first-post' }),
+            }),
+        );
+        expect(mockPut).not.toHaveBeenCalled();
+    });
 
-        expect(screen.getByRole('heading', { name: '文章设置' })).toBeInTheDocument();
-        expect(screen.getByText('请填写 Slug 后再创建文章')).toBeInTheDocument();
-        expect(mockPost).not.toHaveBeenCalled();
-
-        // 在抽屉内填写 Slug 并点击抽屉底部的创建文章
-        await user.type(screen.getByLabelText(/Slug/), 'my-first-post');
-        const drawer = screen.getByRole('dialog');
-        await user.click(within(drawer).getByRole('button', { name: '创建文章' }));
-
-        await waitFor(() => {
-            expect(mockPost).toHaveBeenCalledWith(
-                '/api/v1/admin/posts',
-                expect.objectContaining({
-                    body: expect.objectContaining({
-                        title: '第一篇文章',
-                        slug: 'my-first-post',
-                    }),
+    it('creates and publishes a new article in one click with an automatic slug', async () => {
+        const user = userEvent.setup();
+        mockPost.mockImplementation(async (_path, { body }) => ({
+            data: { data: { ...post, slug: body.slug } },
+        }));
+        mockPut.mockResolvedValue({
+            data: { data: { generation: 1 } },
+        });
+        mockArticle(() => ({
+            ...post,
+            publication: { ...post.publication, published_revision_id: revision.id },
+        }));
+        renderEditor();
+        await user.type(screen.getByLabelText('文章标题'), '第一篇文章');
+        await user.type(screen.getByLabelText('Markdown 正文编辑器'), '正文');
+        await user.click(screen.getByRole('button', { name: '发布文章' }));
+        await waitFor(() =>
+            expect(mockNavigate).toHaveBeenCalledWith({
+                to: '/posts/$postId/edit',
+                params: { postId: 'post-1' },
+            }),
+        );
+        expect(mockPost).toHaveBeenCalledWith(
+            '/api/v1/admin/posts',
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    title: '第一篇文章',
+                    markdown_body: '正文',
+                    slug: expect.stringMatching(/^post-[a-f0-9]+$/),
                 }),
-            );
+            }),
+        );
+        expect(mockPut).toHaveBeenCalledWith('/api/v1/admin/posts/{id}/publication', {
+            params: { path: { id: 'post-1' } },
+            body: { revision_id: revision.id, expected_publication_version: 0 },
         });
-        expect(mockNavigate).toHaveBeenCalledWith({
-            to: '/posts/$postId/edit',
-            params: { postId: 'post-1' },
+        expect(screen.getByText('文章已上线')).toBeInTheDocument();
+    });
+
+    it('opens the created draft for retry when publication fails', async () => {
+        const user = userEvent.setup();
+        mockPost.mockImplementation(async (_path, { body }) => ({
+            data: { data: { ...post, slug: body.slug } },
+        }));
+        mockPut.mockRejectedValue(new Error('publication failed'));
+        renderEditor();
+        await user.type(screen.getByLabelText('文章标题'), '新文章');
+        await user.click(screen.getByRole('button', { name: '发布文章' }));
+        await waitFor(() =>
+            expect(mockNavigate).toHaveBeenCalledWith({
+                to: '/posts/$postId/edit',
+                params: { postId: post.id },
+            }),
+        );
+        expect(mockPost).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText('文章已上线')).not.toBeInTheDocument();
+    });
+
+    it('waits for an existing save and publishes the exact revision at click time', async () => {
+        const user = userEvent.setup();
+        mockArticle();
+        let finishFirstSave!: (value: unknown) => void;
+        mockPost.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishFirstSave = resolve;
+                }),
+        );
+        mockPost.mockResolvedValueOnce({ data: { data: { ...revision, id: 'draft-3' } } });
+        mockPut.mockResolvedValue({
+            data: { data: { generation: 1 } },
         });
+        renderEditor('post-1');
+        const title = await screen.findByDisplayValue('草稿');
+        await user.type(title, '一');
+        await user.click(screen.getByRole('button', { name: '保存文章' }));
+        await user.type(title, '二');
+        await user.click(screen.getByRole('button', { name: '发布文章' }));
+        await user.type(title, '三');
+        expect(mockPut).not.toHaveBeenCalled();
+        finishFirstSave({ data: { data: { ...revision, id: 'draft-2' } } });
+        await waitFor(() =>
+            expect(mockPut).toHaveBeenCalledWith('/api/v1/admin/posts/{id}/publication', {
+                params: { path: { id: 'post-1' } },
+                body: { revision_id: 'draft-3', expected_publication_version: 0 },
+            }),
+        );
+        expect(mockPost).toHaveBeenLastCalledWith(
+            '/api/v1/admin/posts/{id}/revisions',
+            expect.objectContaining({
+                body: expect.objectContaining({
+                    title: '草稿一二',
+                    expected_revision_id: 'draft-2',
+                }),
+            }),
+        );
+        expect(title).toHaveValue('草稿一二三');
+        expect(
+            await screen.findByText('点击发布时的版本已上线，后续编辑仍在草稿中。'),
+        ).toBeInTheDocument();
+    });
+
+    it('keeps local edits and stops publication after a revision conflict', async () => {
+        const user = userEvent.setup();
+        mockArticle();
+        mockPost.mockRejectedValue(new ApiError({ status: 409, code: 'revision_conflict' }));
+        renderEditor('post-1');
+        const title = await screen.findByDisplayValue('草稿');
+        await user.type(title, '新版');
+        await user.click(screen.getByRole('button', { name: '发布文章' }));
+        expect(await screen.findByText('有新版本，已停止自动保存。')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '发布文章' })).toBeDisabled();
+        expect(title).toHaveValue('草稿新版');
+        expect(mockPut).not.toHaveBeenCalled();
+    });
+
+    it('requires review when another editor replaces the revision just before publication', async () => {
+        const user = userEvent.setup();
+        mockArticle();
+        mockPut.mockRejectedValue(
+            new ApiError({
+                status: 422,
+                code: 'validation_error',
+                details: [
+                    {
+                        field: 'revision_id',
+                        code: 'invalid_value',
+                        message: 'revision was replaced',
+                    },
+                ],
+            }),
+        );
+        renderEditor('post-1');
+        const title = await screen.findByDisplayValue('草稿');
+        await user.click(screen.getByRole('button', { name: '发布文章' }));
+        expect(await screen.findByText('有新版本，已停止自动保存。')).toBeInTheDocument();
+        expect(title).toHaveValue('草稿');
+        expect(screen.getByRole('button', { name: '发布文章' })).toBeDisabled();
+        expect(mockPut).toHaveBeenCalledTimes(1);
+    });
+
+    it('pre-selects initialCategoryId in create mode', async () => {
+        const user = userEvent.setup();
+        mockGet.mockImplementation((path: string) => {
+            if (path === '/api/v1/admin/categories') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 'cat-backend',
+                                slug: 'backend',
+                                name: '后端架构',
+                                description: null,
+                                post_count: 3,
+                                revision_count: 3,
+                                created_at: '2026-11-01T00:00:00Z',
+                                updated_at: '2026-11-01T00:00:00Z',
+                            },
+                        ],
+                    },
+                });
+            }
+            return Promise.resolve({ data: { data: [] } });
+        });
+
+        renderEditor(undefined, 'cat-backend');
+
+        await user.click(screen.getByRole('button', { name: /文章设置/ }));
+        const categoryBtn = await screen.findByRole('button', { name: '后端架构' });
+        expect(categoryBtn).toHaveAttribute('aria-pressed', 'true');
     });
 });

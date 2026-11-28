@@ -1,12 +1,10 @@
 ---
-import { render } from 'astro:content';
 import type { Body } from '../lib/data';
 
 interface Props {
     body: Body;
 }
 const { body } = Astro.props;
-const Content = 'entry' in body ? (await render(body.entry)).Content : undefined;
 ---
 
-{Content ? <Content /> : 'html' in body && <Fragment set:html={body.html} />}
+<Fragment set:html={await body.renderHtml()} />

@@ -1,0 +1,85 @@
+---
+import type { Series } from '../lib/data';
+import { postUrl, seriesUrl } from '../lib/site';
+import Cover from './Cover.astro';
+
+interface Props {
+    series: Series;
+    tagLabel?: string;
+}
+
+const { series, tagLabel } = Astro.props;
+const firstEntry = series.entries[0]!;
+const statusLabel = series.completionStatus === 'completed' ? '已完结' : '连载中';
+const isCompleted = series.completionStatus === 'completed';
+
+const shortMark = (mark: string) => {
+    const trimmed = mark.trim();
+    if (trimmed.length <= 4) return trimmed;
+    const first = trimmed.split(/[-_\s]+/)[0] ?? trimmed;
+    return first.slice(0, 4);
+};
+
+const normalizedCover =
+    series.cover.kind === 'placeholder'
+        ? { ...series.cover, mark: shortMark(series.cover.mark) }
+        : series.cover;
+---
+
+<article class="bezel lift series-start-wrap">
+    <div class="face series-start-card">
+        <a
+            href={seriesUrl(series.slug)}
+            class="series-start-media"
+            tabindex="-1"
+            aria-hidden="true"
+        >
+            <Cover
+                cover={normalizedCover}
+                label={
+                    tagLabel ?? (series.category ? `${series.category.name} · 起点` : '建议起点')
+                }
+                class="series-start-cover"
+            />
+        </a>
+        <div class="series-start-body">
+            <div class="series-start-copy">
+                <p class="series-row-meta t-xs num">
+                    <span class:list={['series-status-text', { 'is-done': isCompleted }]}>
+                        {statusLabel}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>共 {series.postCount} 篇</span>
+                    {series.sections.length > 0 && (
+                        <>
+                            <span aria-hidden="true">·</span>
+                            <span>{series.sections.length} 篇章</span>
+                        </>
+                    )}
+                    <span aria-hidden="true">·</span>
+                    <span>约 {series.totalMinutes} 分钟</span>
+                </p>
+                <h3 class="t-h2 series-start-title">
+                    <a class="hover-accent" href={seriesUrl(series.slug)}>
+                        {series.title}
+                    </a>
+                </h3>
+                {series.description && <p class="series-start-desc ink-2">{series.description}</p>}
+            </div>
+            <div class="series-start-actions">
+                <a class="btn btn-dark" href={postUrl(firstEntry.post.slug)}>
+                    <span>从第 1 篇开始阅读</span>
+                    <span class="dot" aria-hidden="true">
+                        <span class="arrow">↗</span>
+                    </span>
+                </a>
+                <a class="series-text-link hover-accent" href={seriesUrl(series.slug)}>
+                    <span>查看全部目录</span>
+                    <span class="arrow-r" aria-hidden="true">
+                        →
+                    </span>
+                </a>
+            </div>
+        </div>
+    </div>
+</article>

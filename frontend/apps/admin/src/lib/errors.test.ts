@@ -51,4 +51,17 @@ describe('errors mapping', () => {
         });
         expect(unmatched).toHaveLength(1);
     });
+
+    it('maps series conflict error codes to clear Chinese messages', () => {
+        expect(new ApiError({ status: 409, code: 'series_edit_conflict' }).message).toContain(
+            '最新版本',
+        );
+        expect(new ApiError({ status: 409, code: 'series_in_use' }).message).toContain('下线');
+        expect(new ApiError({ status: 409, code: 'post_already_in_series' }).message).toContain(
+            '其他系列',
+        );
+        expect(new ApiError({ status: 409, code: 'already_published' }).message).toContain(
+            '公开状态',
+        );
+    });
 });

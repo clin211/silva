@@ -1,24 +1,16 @@
 ---
-import type { GetStaticPaths } from 'astro';
 import Breadcrumb from '../../components/Breadcrumb.astro';
 import SampleTable from '../../components/SampleTable.astro';
 
 import TrendChart from '../../islands/TrendChart';
 import SiteLayout from '../../layouts/SiteLayout.astro';
-import { getRepositoryHistory, getTrending } from '../../lib/data';
 import { growth, growthClass, number } from '../../lib/format';
 
-export const getStaticPaths = (async () => {
-    const snapshot = await getTrending();
-    if (!snapshot) return [];
-    return snapshot.repos.map((repo) => ({
-        params: { slug: repo.slug },
-        props: { repo, date: snapshot.date },
-    }));
-}) satisfies GetStaticPaths;
-
-const { repo, date } = Astro.props;
-const samples = await getRepositoryHistory(repo.slug);
+const snapshot = await Astro.locals.content.getTrending();
+const repo = snapshot?.repos.find((item) => item.slug === Astro.params.slug);
+if (!repo || !snapshot) return Astro.rewrite('/404');
+const date = snapshot.date;
+const samples = await Astro.locals.content.getRepositoryHistory(repo.slug);
 const recent = samples.slice(-14).reverse();
 const older = samples.slice(0, -14).reverse();
 const metrics = [
@@ -61,14 +53,14 @@ const metrics = [
             </div>
             <div class="repo-status panel">
                 <p class="snapshot-notice t-small">
-                    示例数据 ·{' '}
+                    快照日期 ·{' '}
                     <time class="num" datetime={date}>
                         {date}
                     </time>{' '}
                     UTC
                 </p>
                 <p class="t-small muted">
-                    示例仓库更新时间{' '}
+                    仓库更新时间{' '}
                     <time class="num" datetime={repo.updated}>
                         {repo.updated}
                     </time>

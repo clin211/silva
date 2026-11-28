@@ -12,7 +12,7 @@
         "lint": "oxlint --deny-warnings .",
         "lint:fix": "oxlint --fix --deny-warnings .",
         "typecheck": "pnpm --filter @silva/api-client typecheck && pnpm --filter @silva/website check && pnpm --filter @silva/admin typecheck",
-        "test": "pnpm --filter @silva/admin test",
+        "test": "pnpm --filter @silva/admin test && pnpm --filter @silva/website test:ssr",
         "check": "pnpm format:check && pnpm lint && pnpm typecheck",
         "build": "pnpm --filter @silva/website build && pnpm --filter @silva/admin build",
         "build:website": "pnpm --filter @silva/website build",

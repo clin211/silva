@@ -113,10 +113,10 @@ export function LoginPage() {
                         Headless CMS · Publishing Console
                     </p>
                     <h2 className="mt-3 text-[34px] leading-[1.2] font-semibold tracking-[-0.025em] text-white">
-                        内容创作、不可变修订与静态发布的统一工作台
+                        内容管理工作台
                     </h2>
                     <p className="mt-4 text-[15px] leading-7 text-white/80">
-                        把编辑草稿、审核批准与站点快照上线彻底解耦，让每一次发布都可追踪、可验证、互不干扰。
+                        保存草稿，并在内容准备好时发布到站点。
                     </p>
 
                     <ul className="mt-8 space-y-3.5">
@@ -126,10 +126,10 @@ export function LoginPage() {
                             </span>
                             <div>
                                 <div className="text-[14px] font-medium text-white">
-                                    不可变修订隔离
+                                    自动保存草稿
                                 </div>
                                 <div className="mt-0.5 text-[12.5px] text-white/75">
-                                    新草稿自动保存与送审不影响线上正在展示的稳定版本。
+                                    编辑时自动保存草稿，发布后站点会展示最新内容。
                                 </div>
                             </div>
                         </li>
@@ -139,10 +139,10 @@ export function LoginPage() {
                             </span>
                             <div>
                                 <div className="text-[14px] font-medium text-white">
-                                    原子化站点发布
+                                    一键发布文章
                                 </div>
                                 <div className="mt-0.5 text-[12.5px] text-white/75">
-                                    文章、分类标签与个人资料统一排队构建，按 Generation 原子切换。
+                                    点击发布即可更新正文、文章列表和订阅。
                                 </div>
                             </div>
                         </li>
@@ -164,7 +164,6 @@ export function LoginPage() {
 
                 <div className="relative z-10 flex items-center justify-between text-[12px] text-white/70">
                     <span>Silva Developer Hub</span>
-                    <span className="font-code">API-First · Static-First</span>
                 </div>
             </aside>
 

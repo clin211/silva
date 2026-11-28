@@ -1,21 +1,18 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { Schemas } from '@silva/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { AuthenticatedImage, SafeHtmlPreview } from '@/components/media/authenticated-media';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { ErrorBanner, LoadingCard, PageContainer, PageHeader } from '@/components/ui/feedback';
-import { StatusChip } from '@/components/ui/status-chip';
 import { useToast } from '@/components/ui/toast';
-import { publishJobStatusMeta } from '@/features/dashboard/dashboard-page';
 import { MediaPickerDrawer } from '@/features/media/media-picker-drawer';
 import { apiClient, unwrapResponse } from '@/lib/api';
 import { applyApiFieldErrors, formatErrorWithRequestId, isApiError } from '@/lib/errors';
-import { formatGeneration } from '@/lib/format';
 import { renderSafeMarkdown } from '@/lib/markdown';
 import { queryKeys } from '@/lib/query-keys';
 
@@ -124,7 +121,6 @@ export function ProfilePage() {
     const [bioTab, setBioTab] = useState<'src' | 'preview'>('src');
     const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
     const [topError, setTopError] = useState<string | null>(null);
-    const [lastSiteTarget, setLastSiteTarget] = useState<Schemas['SiteTarget'] | null>(null);
 
     const profileQuery = useQuery({
         queryKey: queryKeys.profile.current,
@@ -133,30 +129,11 @@ export function ProfilePage() {
                 const res = await unwrapResponse(apiClient.GET('/api/v1/public/profile'));
                 return res.data;
             } catch (error) {
-                // 站点尚未上线（503）或尚未录入个人资料（404）时展示空表单
-                if (isApiError(error) && (error.status === 404 || error.status === 503)) {
+                if (isApiError(error) && error.status === 404) {
                     return null;
                 }
                 throw error;
             }
-        },
-    });
-
-    const jobQuery = useQuery({
-        queryKey: queryKeys.publishing.job(lastSiteTarget?.publish_job_id ?? ''),
-        queryFn: async () => {
-            const res = await unwrapResponse(
-                apiClient.GET('/api/v1/admin/publishing/jobs/{id}', {
-                    params: { path: { id: lastSiteTarget!.publish_job_id } },
-                }),
-            );
-            return res.data;
-        },
-        enabled: Boolean(lastSiteTarget?.publish_job_id),
-        refetchInterval: (query) => {
-            const st = query.state.data?.status;
-            if (!st || st === 'queued' || st === 'building') return 3000;
-            return false;
         },
     });
 
@@ -192,16 +169,12 @@ export function ProfilePage() {
             );
             return res.data;
         },
-        onSuccess: (siteTarget, values) => {
+        onSuccess: (_, values) => {
             setTopError(null);
-            setLastSiteTarget(siteTarget);
             reset(values);
             void queryClient.invalidateQueries({ queryKey: queryKeys.profile.current });
-            void queryClient.invalidateQueries({ queryKey: queryKeys.publishing.all });
-            toast(
-                `个人资料已保存，站点版本 ${formatGeneration(siteTarget.desired_generation)} 待上线`,
-                'ok',
-            );
+            void queryClient.invalidateQueries({ queryKey: queryKeys.publicSite.current });
+            toast('个人资料已更新', 'ok');
         },
         onError: (error) => {
             const unmatched = applyApiFieldErrors(error, setError);
@@ -214,6 +187,7 @@ export function ProfilePage() {
     const avatarMediaId = useWatch({ control, name: 'avatar_media_id' });
     const displayName = useWatch({ control, name: 'display_name' });
     const bioMd = useWatch({ control, name: 'bio_md' });
+    const watchedExperiences = useWatch({ control, name: 'experiences' });
     const bioPreviewHtml = useMemo(() => renderSafeMarkdown(bioMd), [bioMd]);
 
     if (profileQuery.isLoading) {
@@ -236,7 +210,6 @@ export function ProfilePage() {
         );
     }
 
-    const jobMeta = jobQuery.data ? publishJobStatusMeta(jobQuery.data.status) : null;
     const isFirstTime = profileQuery.data === null;
 
     return (
@@ -244,46 +217,12 @@ export function ProfilePage() {
             <PageHeader
                 eyebrow="PUBLIC PROFILE"
                 title="个人资料"
-                description="用于公开站点首页首屏、关于页与页脚联络。所有区块统一保存，保存后自动进入站点发布队列。"
-                actions={
-                    lastSiteTarget ? (
-                        <div className="flex items-center gap-2 text-[13px]" aria-live="polite">
-                            <span className="text-ui-sub">上线状态</span>
-                            <StatusChip tone={jobMeta?.tone ?? 'warn'}>
-                                {jobMeta?.label ?? '待上线'}
-                            </StatusChip>
-                            <Link
-                                to="/publishing/$jobId"
-                                params={{ jobId: lastSiteTarget.publish_job_id }}
-                                className="font-medium text-accent hover:underline"
-                            >
-                                查看任务
-                            </Link>
-                        </div>
-                    ) : null
-                }
+                description="用于公开站点首页首屏、关于页与页脚联络。保存后同步更新公开资料。"
             />
 
             {isFirstTime ? (
                 <div className="rounded-xl border border-[#BBDCD8] bg-accent-tint px-4 py-3 text-[13.5px] text-accent-2">
-                    当前尚未配置个人资料。填写下方信息并保存后，系统会自动创建资料并排队更新公开站点。
-                </div>
-            ) : null}
-
-            {jobQuery.data?.status === 'failed' ? (
-                <div
-                    role="alert"
-                    className="rounded-xl border border-[#F0C2BD] bg-bad-tint px-4 py-3 text-[13px] text-bad"
-                >
-                    资料已保存，但包含本次变更的站点版本构建失败，访客仍看到上一版资料。可前往{' '}
-                    <Link
-                        to="/publishing/$jobId"
-                        params={{ jobId: jobQuery.data.id }}
-                        className="font-medium underline"
-                    >
-                        发布任务详情
-                    </Link>{' '}
-                    查看原因。
+                    当前尚未配置个人资料。填写下方信息并保存后，访客即可查看公开资料。
                 </div>
             ) : null}
 
@@ -560,24 +499,62 @@ export function ProfilePage() {
                                             ) : null}
                                         </div>
                                         <div>
-                                            <label className="text-[12px] text-ui-sub">
+                                            <label
+                                                htmlFor={`exp-${field.id}-started-on`}
+                                                className="block text-[12px] text-ui-sub"
+                                            >
                                                 开始日期（可选）
-                                                <input
-                                                    type="date"
-                                                    className="mt-1 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] text-ui-text focus:border-accent focus:outline-none"
-                                                    {...register(`experiences.${index}.started_on`)}
-                                                />
                                             </label>
+                                            <Controller
+                                                control={control}
+                                                name={`experiences.${index}.started_on`}
+                                                render={({ field: dateField }) => (
+                                                    <DatePicker
+                                                        id={`exp-${field.id}-started-on`}
+                                                        value={dateField.value}
+                                                        onChange={dateField.onChange}
+                                                        placeholder="选择开始日期"
+                                                        ariaLabel={`第 ${index + 1} 条经历开始日期`}
+                                                        className="mt-1"
+                                                    />
+                                                )}
+                                            />
+                                            {errors.experiences?.[index]?.started_on ? (
+                                                <p className="mt-1 text-[12px] text-bad">
+                                                    {errors.experiences[index].started_on.message}
+                                                </p>
+                                            ) : null}
                                         </div>
                                         <div>
-                                            <label className="text-[12px] text-ui-sub">
+                                            <label
+                                                htmlFor={`exp-${field.id}-ended-on`}
+                                                className="block text-[12px] text-ui-sub"
+                                            >
                                                 结束日期（可选）
-                                                <input
-                                                    type="date"
-                                                    className="mt-1 h-9 w-full rounded-md border border-ui-line px-3 text-[14px] text-ui-text focus:border-accent focus:outline-none"
-                                                    {...register(`experiences.${index}.ended_on`)}
-                                                />
                                             </label>
+                                            <Controller
+                                                control={control}
+                                                name={`experiences.${index}.ended_on`}
+                                                render={({ field: dateField }) => (
+                                                    <DatePicker
+                                                        id={`exp-${field.id}-ended-on`}
+                                                        value={dateField.value}
+                                                        onChange={dateField.onChange}
+                                                        placeholder="选择结束日期"
+                                                        ariaLabel={`第 ${index + 1} 条经历结束日期`}
+                                                        min={
+                                                            watchedExperiences?.[index]
+                                                                ?.started_on || undefined
+                                                        }
+                                                        className="mt-1"
+                                                    />
+                                                )}
+                                            />
+                                            {errors.experiences?.[index]?.ended_on ? (
+                                                <p className="mt-1 text-[12px] text-bad">
+                                                    {errors.experiences[index].ended_on.message}
+                                                </p>
+                                            ) : null}
                                         </div>
                                         <div className="sm:col-span-2">
                                             <label className="text-[12px] text-ui-sub">

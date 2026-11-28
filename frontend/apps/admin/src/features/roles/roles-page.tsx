@@ -30,18 +30,14 @@ const ROLE_VISUALS: Record<
         iconBg: 'bg-[#EEF6F2]',
         iconColor: 'text-[#2C6E51]',
         barColor: 'bg-[#52B086]',
-        highlights: ['创建与编辑本人文章及修订', '上传并管理本人媒体资源', '提交指定修订审核'],
+        highlights: ['创建与编辑本人文章及修订', '上传并管理本人媒体资源'],
     },
     editor: {
         icon: PenTool,
         iconBg: 'bg-accent-tint',
         iconColor: 'text-accent',
         barColor: 'bg-accent',
-        highlights: [
-            '管理全部文章与媒体资源',
-            '审核修订、发布与取消发布',
-            '维护分类标签与个人资料',
-        ],
+        highlights: ['管理全部文章与媒体资源', '发布与取消发布', '维护分类标签与个人资料'],
     },
     admin: {
         icon: ShieldCheck,
@@ -51,21 +47,20 @@ const ROLE_VISUALS: Record<
         highlights: [
             '包含 Editor 全部内容与发布权限',
             '管理后台账户并分配内置角色',
-            '全站重建、失败重试、审计与系统健康',
+            '刷新公开内容、审计与系统健康',
         ],
     },
 };
 
 function getPermissionGroup(perm: string): string {
-    if (perm.startsWith('posts.')) return '文章与审核';
+    if (perm.startsWith('posts.')) return '文章';
     if (perm.startsWith('media.') || perm.startsWith('taxonomy.') || perm.startsWith('profile.')) {
         return '分类、媒体与资料';
     }
-    if (perm.startsWith('jobs.') || perm.startsWith('publishing.')) return '站点发布';
     return '账户与系统安全';
 }
 
-const GROUP_ORDER = ['文章与审核', '分类、媒体与资料', '站点发布', '账户与系统安全'];
+const GROUP_ORDER = ['文章', '分类、媒体与资料', '账户与系统安全'];
 
 export function RolesPage() {
     const rolesQuery = useQuery({

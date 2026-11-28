@@ -3,9 +3,8 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 import Body from '../components/Body.astro';
 import Icon from '../components/Icon.astro';
 import PageIntro from '../components/PageIntro.astro';
-import { getProfile } from '../lib/data';
 
-const profile = await getProfile();
+const profile = await Astro.locals.content.getProfile();
 const structuredData = profile && {
     '@context': 'https://schema.org',
     '@type': 'Person',
@@ -28,15 +27,7 @@ const structuredData = profile && {
             description={
                 profile?.summary ?? 'Silva 是一个记录工程实践和 AI 开源趋势的个人技术门户。'
             }
-        >
-            {Boolean(profile?.focus.length) && (
-                <ul class="chips intro-chips">
-                    {profile?.focus.map((item) => (
-                        <li class="chip chip-teal">{item}</li>
-                    ))}
-                </ul>
-            )}
-        </PageIntro>
+        />
         {profile && (
             <div class="about-layout">
                 <aside class="about-identity" aria-label="个人档案">
@@ -91,13 +82,7 @@ const structuredData = profile && {
                             </h2>
                             <ol class="rows jobs">
                                 {profile.experience.map(
-                                    ({
-                                        period,
-                                        role,
-                                        organization,
-                                        description,
-                                        descriptionHtml,
-                                    }) => (
+                                    ({ period, role, organization, descriptionHtml }) => (
                                         <li>
                                             <p class="num t-small muted">{period}</p>
                                             <div>
@@ -105,7 +90,6 @@ const structuredData = profile && {
                                                 {organization && (
                                                     <p class="t-small muted">{organization}</p>
                                                 )}
-                                                {description && <p class="ink-2">{description}</p>}
                                                 {descriptionHtml && (
                                                     <div class="ink-2" set:html={descriptionHtml} />
                                                 )}
@@ -150,8 +134,8 @@ const structuredData = profile && {
                         {label}
                     </a>
                 ))}
-                <a class="btn btn-ghost" href="/blog/">
-                    阅读文章
+                <a class="btn btn-ghost" href="/series/">
+                    浏览博客
                 </a>
             </div>
         </div>
