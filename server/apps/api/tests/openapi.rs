@@ -98,6 +98,7 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/users/profile", "put"),
         ("/api/v1/admin/users/{id}", "get"),
         ("/api/v1/admin/users/{id}", "patch"),
+        ("/api/v1/admin/users/{id}", "delete"),
         ("/api/v1/admin/roles", "get"),
         ("/api/v1/admin/audit-logs", "get"),
         ("/api/v1/admin/audit-logs/{id}", "get"),
@@ -109,17 +110,25 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/media/{id}/content", "get"),
         ("/api/v1/admin/posts", "get"),
         ("/api/v1/admin/posts", "post"),
+        ("/api/v1/admin/posts/category-counts", "get"),
         ("/api/v1/admin/posts/{id}", "get"),
         ("/api/v1/admin/posts/{id}", "patch"),
+        ("/api/v1/admin/posts/{id}", "delete"),
         ("/api/v1/admin/posts/{id}/revisions", "get"),
         ("/api/v1/admin/posts/{id}/revisions", "post"),
         ("/api/v1/admin/posts/{id}/revisions/{revision_id}", "get"),
-        ("/api/v1/admin/posts/{id}/reviews", "get"),
-        ("/api/v1/admin/posts/{id}/reviews", "post"),
-        ("/api/v1/admin/posts/{id}/reviews/{review_id}", "get"),
-        ("/api/v1/admin/posts/{id}/reviews/{review_id}", "patch"),
         ("/api/v1/admin/posts/{id}/publication", "put"),
         ("/api/v1/admin/posts/{id}/publication", "delete"),
+        ("/api/v1/admin/series", "get"),
+        ("/api/v1/admin/series", "post"),
+        ("/api/v1/admin/series/{id}", "get"),
+        ("/api/v1/admin/series/{id}", "patch"),
+        ("/api/v1/admin/series/{id}", "delete"),
+        ("/api/v1/admin/series/{id}/publication", "put"),
+        ("/api/v1/admin/series/{id}/publication", "delete"),
+        ("/api/v1/admin/series/{id}/outline", "put"),
+        ("/api/v1/admin/series/{id}/items", "post"),
+        ("/api/v1/admin/series/{id}/items/{post_id}", "delete"),
         ("/api/v1/admin/categories", "get"),
         ("/api/v1/admin/categories", "post"),
         ("/api/v1/admin/categories/{id}", "get"),
@@ -130,11 +139,8 @@ fn contract_has_no_broken_references_and_covers_every_exposed_route() {
         ("/api/v1/admin/tags/{id}", "get"),
         ("/api/v1/admin/tags/{id}", "patch"),
         ("/api/v1/admin/tags/{id}", "delete"),
-        ("/api/v1/admin/publishing/jobs", "get"),
-        ("/api/v1/admin/publishing/jobs", "post"),
-        ("/api/v1/admin/publishing/jobs/{id}", "get"),
-        ("/api/v1/admin/publishing/jobs/{id}/attempts", "post"),
         ("/api/v1/public/site", "get"),
+        ("/api/v1/public/site-snapshot", "get"),
         ("/api/v1/public/posts", "get"),
         ("/api/v1/public/posts/{slug}", "get"),
         ("/api/v1/public/categories", "get"),
@@ -211,10 +217,8 @@ fn all_entity_and_request_ids_constrain_uuid_version_and_variant() {
         "MediaId",
         "PostId",
         "RevisionId",
-        "ReviewId",
         "CategoryId",
         "TagId",
-        "PublishJobId",
         "PublicMediaId",
         "PostAuthorFilter",
         "PostCategoryFilter",
@@ -264,11 +268,19 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
             assert!(unauthorized["headers"].get("WWW-Authenticate").is_some());
         }
     }
+    assert!(
+        spec["paths"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .all(|p| !p.starts_with("/api/v1/admin/publishing/"))
+    );
     for (path, method, permission) in [
         ("/api/v1/admin/users", "get", "users.manage"),
         ("/api/v1/admin/users", "post", "users.manage"),
         ("/api/v1/admin/users/{id}", "get", "users.manage"),
         ("/api/v1/admin/users/{id}", "patch", "users.manage"),
+        ("/api/v1/admin/users/{id}", "delete", "users.manage"),
         ("/api/v1/admin/roles", "get", "roles.read"),
         ("/api/v1/admin/audit-logs", "get", "audit.read"),
         ("/api/v1/admin/audit-logs/{id}", "get", "audit.read"),
@@ -283,20 +295,11 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
             "media.manage_own",
         ),
         ("/api/v1/admin/posts", "post", "posts.create"),
+        ("/api/v1/admin/posts/{id}", "delete", "posts.manage"),
         (
             "/api/v1/admin/posts/{id}/revisions",
             "post",
             "posts.edit_own",
-        ),
-        (
-            "/api/v1/admin/posts/{id}/reviews",
-            "post",
-            "posts.submit_own",
-        ),
-        (
-            "/api/v1/admin/posts/{id}/reviews/{review_id}",
-            "patch",
-            "posts.review",
         ),
         (
             "/api/v1/admin/posts/{id}/publication",
@@ -311,12 +314,6 @@ fn bearer_jwt_and_rbac_requirements_are_explicit() {
         ("/api/v1/admin/users/profile", "put", "profile.manage"),
         ("/api/v1/admin/categories", "post", "taxonomy.manage"),
         ("/api/v1/admin/tags/{id}", "delete", "taxonomy.manage"),
-        ("/api/v1/admin/publishing/jobs", "get", "jobs.read_own"),
-        (
-            "/api/v1/admin/publishing/jobs/{id}/attempts",
-            "post",
-            "publishing.retry",
-        ),
     ] {
         assert_eq!(
             spec["paths"][path][method]["x-required-permission"],
@@ -338,8 +335,6 @@ fn input_shapes_and_pagination_match_runtime_validation() {
         "CreatePostInput",
         "CreateRevisionInput",
         "UpdatePostInput",
-        "CreateReviewInput",
-        "DecideReviewInput",
         "PublicationInput",
         "CreateCategoryInput",
         "UpdateCategoryInput",
@@ -486,7 +481,7 @@ fn error_code_registries_match_runtime() {
     let schemas = &spec["components"]["schemas"];
     assert_eq!(
         schemas["ErrorCode"]["enum"],
-        serde_json::to_value(silva_api::ErrorCode::ALL).unwrap(),
+        serde_json::to_value(silva_api::ErrorCode::ALL.as_slice()).unwrap(),
         "OpenAPI ErrorCode 必须与运行时错误码登记表一致"
     );
     assert_eq!(
@@ -609,15 +604,13 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
         access_token_ttl: Duration::from_secs(900),
         refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
+        trust_proxy_ip_header: false,
         api_rate_per_minute: 1000,
         login_rate_per_minute: 100,
         login_lockout_threshold: 5,
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
-        site_build: None,
-        publish_poll_interval: Duration::from_secs(5),
-        site_serve: false,
     };
     let app = silva_api::build_router(config, pool).await.unwrap();
     let spec = contract();
@@ -627,7 +620,7 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
             let path = template
                 .replace("{id}", "019535d9-3df7-79fb-b466-fa907fa17f9e")
                 .replace("{revision_id}", "019535da-0c4e-7a10-9b2d-3c4e5f607182")
-                .replace("{review_id}", "019535da-4f11-7b22-8c33-d4e5f6071829")
+                .replace("{post_id}", "019535d9-3df7-79fb-b466-fa907fa17f9e")
                 .replace("{slug}", "example");
             let response = app
                 .clone()
@@ -861,6 +854,51 @@ async fn contract_and_declared_routes_are_served_without_database_access() {
             code: "validation_error",
             field: Some(("id", "invalid_format")),
         },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/posts?uncategorized=maybe",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("uncategorized", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/posts?sort=oldest",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("sort", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/posts?uncategorized=true&category_id=019535d9-3df7-79fb-b466-fa907fa17f9e",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("uncategorized", "invalid_value")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/posts/category-counts?author_id=not-a-uuid",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("author_id", "invalid_format")),
+        },
+        Case {
+            method: "GET",
+            path: "/api/v1/admin/posts/category-counts?author_id=019535d9-3df7-79fb-b466-fa907fa17f9e&author_id=019535d9-3df7-79fb-b466-fa907fa17f9e",
+            content_type: None,
+            body: "",
+            status: invalid,
+            code: "validation_error",
+            field: Some(("author_id", "duplicate")),
+        },
     ];
     for Case {
         method,
@@ -1023,8 +1061,10 @@ fn paths_follow_restful_conventions() {
             let responses = operation["responses"].as_object().unwrap();
             if method == "delete" {
                 assert!(
-                    responses.contains_key("204") || responses.contains_key("202"),
-                    "{method} {path}: 删除成功返回 204，异步受理返回 202"
+                    responses.contains_key("204")
+                        || responses.contains_key("202")
+                        || (path.ends_with("/publication") && responses.contains_key("200")),
+                    "{method} {path}: 删除成功返回 204，撤回并返回发布记录时返回 200，异步受理返回 202"
                 );
             }
             if method == "get" {

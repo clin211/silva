@@ -78,7 +78,7 @@
       "title": "能力范围与数据口径",
       "options": {
         "mode": "markdown",
-        "content": "当前 Worker 仅执行会话维护与媒体清理。发布、采集与 Outbox 消费尚未实现，空队列不代表业务链路已就绪。队列每 15 秒刷新，失败保留旧值，请先检查采集状态。采集等待时间以 started_at 或 UTC slot_date 起点估算。"
+        "content": "当前 Worker 仅执行会话维护与媒体清理。外部来源采集尚未实现，空队列不代表业务链路已就绪。队列每 15 秒刷新，失败保留旧值，请先检查采集状态。采集等待时间以 started_at 或 UTC slot_date 起点估算。"
       },
       "fieldConfig": {
         "defaults": {},
@@ -265,7 +265,7 @@
       }
     },
     {
-      "title": "待上线超过五分钟",
+      "title": "同步发布写入 5xx 比例",
       "type": "timeseries",
       "description": "",
       "datasource": {
@@ -274,9 +274,95 @@
       },
       "targets": [
         {
-          "expr": "silva_publish_delayed{job=\"silva-api\"}",
+          "expr": "sum(rate(silva_http_requests_total{job=\"silva-api\",route=~\"/api/v1/admin/(posts|series)/[^/]+/publication\",method=~\"PUT|DELETE\",status=~\"5..\"}[5m])) / sum(rate(silva_http_requests_total{job=\"silva-api\",route=~\"/api/v1/admin/(posts|series)/[^/]+/publication\",method=~\"PUT|DELETE\"}[5m]))",
           "refId": "A",
-          "legendFormat": "{{job}} {{route}} {{operation}} {{queue}} {{outcome}}"
+          "legendFormat": "同步发布写入 5xx 比例"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "同步发布写入 P95",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(silva_http_request_duration_seconds_bucket{job=\"silva-api\",route=~\"/api/v1/admin/(posts|series)/[^/]+/publication\",method=~\"PUT|DELETE\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "同步发布写入 P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "查看当前时间范围的服务日志",
+              "url": "/explore?schemaVersion=1&panes=%7B%22logs%22%3A%7B%22datasource%22%3A%22silva-loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22silva-loki%22%7D%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22silva-api%5C%22%7D%22%2C%22queryType%22%3A%22range%22%2C%22editorMode%22%3A%22code%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": false
+            }
+          ],
+          "noValue": "无数据"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "快照读取 5xx（五分钟）",
+      "type": "timeseries",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "silva-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(silva_http_requests_total{job=\"silva-api\",route=~\"/(api/v1/public|internal)/site-snapshot\",method=\"GET\",status=~\"5..\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "快照读取 5xx（五分钟）"
         }
       ],
       "fieldConfig": {
@@ -299,10 +385,10 @@
           "placement": "bottom"
         }
       },
-      "id": 6,
+      "id": 8,
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 24,
         "w": 12,
         "h": 8
       }

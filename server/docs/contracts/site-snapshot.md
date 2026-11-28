@@ -2,27 +2,22 @@
 
 来源：`docs/03-backend-technical.md` §7.2、`docs/02-frontend-technical.md` §3.1。
 
-Worker 为每个站点 `generation` 导出一份不可变的 JSON 快照。Astro 只从这份快照构建公开站点，Public API 也只读取当前线上 generation 的同一份快照，两者内容一致。快照只含公开投影：不含账户、草稿、Markdown 原文、对象存储键或任何内部字段。
+公开投影只包含访客可见的数据。文章草稿、账户、对象键与 Markdown 原文均保留在服务端。
 
 ## 1. 交付方式
 
-Worker 把快照写入临时文件，再在 `frontend/apps/website` 中执行 Astro 构建，通过环境变量传入：
+Astro SSR 公开站点在请求时通过 `GET /api/v1/public/site-snapshot`（生产 Compose 可通过 `SILVA_SITE_SNAPSHOT_PATH` 指向内部路径）从服务端取得 `{ "data": … }`，不使用本地 mock 或示例内容。响应的 `X-Site-Generation` 对应本次读取的版本，空站点为 0。相同 ETag 的条件请求返回 304。订阅、页面、媒体和公开接口基于同一份已发布数据。
+
+运行与构建环境变量：
 
 | 变量 | 含义 |
 | --- | --- |
-| `SILVA_SNAPSHOT` | 快照文件的绝对路径。设置后进入快照模式；未设置时使用仓库内的示例内容（仅供本地开发） |
-| `SILVA_SNAPSHOT_SHA256` | 快照文件字节的 SHA-256（小写十六进制） |
-| `SILVA_SNAPSHOT_GENERATION` | 期望的 generation，十进制整数 |
-| `SILVA_SITE_OUT_DIR` | 构建输出目录的绝对路径，默认 `./dist` |
+| `SILVA_PUBLIC_API_ORIGIN` | Rust API 地址，本地默认 `http://127.0.0.1:8088` |
+| `SILVA_SITE_SNAPSHOT_PATH` | 快照读取路径，默认 `/api/v1/public/site-snapshot` |
+| `SILVA_SITE_OUT_DIR` | 构建输出目录，默认 `./dist` |
 | `SITE_URL` | 公开站点的完整 origin，用于 canonical、RSS 和 sitemap |
 
-快照模式下，构建必须在读取任何页面数据之前完成三项校验，任一失败即以非零状态退出，不回退到示例内容或空数据：
-
-1. 文件字节的 SHA-256 等于 `SILVA_SNAPSHOT_SHA256`。
-2. `schema_version` 等于构建器支持的版本（当前为 `1`）。
-3. `generation` 等于 `SILVA_SNAPSHOT_GENERATION`。
-
-构建产物的每个 HTML 页面在 `<head>` 中输出 `<meta name="silva:generation" content="<generation>">`。
+页面在 `<head>` 中输出 `<meta name="silva:generation" content="<generation>">`，并按本契约校验返回结构；校验失败或上游不可用时返回 HTTP 503，不回退到 mock 或空数据。
 
 ## 2. 结构（schema_version 1）
 
@@ -58,6 +53,7 @@ Worker 把快照写入临时文件，再在 `frontend/apps/website` 中执行 As
       "updated_at": "2026-11-12T18:30:00+08:00"
     }
   ],
+  "series": [],
   "categories": [{ "slug": "backend", "name": "后端", "description": "服务端架构与工程实践。" }],
   "tags": [{ "slug": "cms", "name": "CMS" }],
   "profile": null,
@@ -132,23 +128,20 @@ AI 采集尚未实现。快照固定为 `{"data_date": null, "repositories": []}
 
 ### 2.6 media
 
-快照引用的全部媒体（封面、正文图片、头像）。Public API 的 `GET /api/v1/public/media/{id}` 只提供当前线上快照中列出的媒体，其他 ID 返回 404。
+快照引用的全部媒体（文章和系列封面、正文图片、头像）。Public API 的 `GET /api/v1/public/media/{id}` 只提供当前线上快照中列出的媒体，其他 ID 返回 404。
 
-## 3. 产物与清单
+### 2.7 series
 
-Worker 把构建输出上传到 `site/{generation}/{attempt}/dist/`，快照上传到 `site/{generation}/{attempt}/snapshot.json`，并写入 `site/{generation}/{attempt}/manifest.json`：
+公开 API 在 v1 顶层输出 `series` 数组，旧快照缺省时按空数组读取。显式 null、无效封面、悬空或重复文章、空篇章或空系列均使校验失败。
 
-```json
-{
-  "generation": 12,
-  "attempt": 1,
-  "snapshot_sha256": "…",
-  "files": [{ "path": "index.html", "size": 10240, "sha256": "…", "content_type": "text/html; charset=utf-8" }]
-}
-```
+每项包含 `id`、`slug`、`title`、`description`、`category`、`completion_status`、`featured`、`cover`、`seo_title`、`seo_description`、`published_at`、`updated_at`、`items` 和 `sections`。可空的 category 内含 slug、name 和 description，可空的 cover 使用与文章相同的图片结构。公开时间取系列首发受理时间，更新时间取系列与可见文章更新时间中的最大值。
 
-线上切换只在全部文件和清单上传成功后进行。公开入口按 `site_state.active_generation` 对应任务的 `artifact_prefix` 读取文件；清单中不存在的路径返回 404 页面，不读取其他 generation 的产物。
+系列按排序权重升序、首次公开时间降序、ID 升序排列。阅读顺序先取根级 items，再逐章展开 sections。篇章包含 title、description 和 items。条目包含 post_slug 和 display_title，未设短标题时导出本代文章标题。只有具有期望公开修订的成员参与导出。系列封面按 ID 并入 media；系列主分类自带详情，顶层 categories 仍统计文章分类。后台编辑版本用于并发校验。
+
+## 3. 线上读取
+
+Astro 为每个页面请求确定一个公开版本，用该版本生成详情、归档或订阅。详情不存在时返回 HTTP 404；读取失败时返回 503。部署包内的 CSS、字体和脚本由 Node 提供。
 
 ## 4. 版本演进
 
-新增可选字段不改变 `schema_version`；删除字段、改变字段含义或类型时递增 `schema_version`，并同时更新 Worker 导出与构建器校验。
+新增可选字段不改变 `schema_version`；删除字段、改变字段含义或类型时递增 `schema_version`，并同时更新 Rust 投影与 Astro 校验。

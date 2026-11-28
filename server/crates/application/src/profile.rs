@@ -2,13 +2,13 @@
 
 use crate::ports::{ContentActor, RequestMeta};
 use async_trait::async_trait;
-use silva_domain::{identity::Principal, profile::Profile, site::SiteTarget};
+use silva_domain::{identity::Principal, profile::Profile, site::SiteVersion};
 use silva_shared::error::Result;
 use std::sync::Arc;
 
 #[async_trait]
 pub trait ProfileRepository: Send + Sync {
-    async fn save(&self, profile: &Profile, actor: &ContentActor<'_>) -> Result<SiteTarget>;
+    async fn save(&self, profile: &Profile, actor: &ContentActor<'_>) -> Result<SiteVersion>;
 }
 
 pub struct ProfileService {
@@ -25,7 +25,7 @@ impl ProfileService {
         principal: &Principal,
         profile: Profile,
         meta: &RequestMeta,
-    ) -> Result<SiteTarget> {
+    ) -> Result<SiteVersion> {
         principal.require("profile.manage")?;
         profile.validate()?;
         self.repository

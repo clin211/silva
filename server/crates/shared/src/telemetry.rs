@@ -170,7 +170,7 @@ pub fn trace_id(span: &tracing::Span) -> String {
     span.context().span().span_context().trace_id().to_string()
 }
 
-/// 供外部 HTTP 调用和后续 Outbox 生产者保存追踪上下文；不包含业务凭据。
+/// 供外部 HTTP 调用传递追踪上下文；不包含业务凭据。
 pub fn inject_context() -> HashMap<String, String> {
     let mut headers = HashMap::new();
     TraceContextPropagator::new().inject_context(&tracing::Span::current().context(), &mut headers);

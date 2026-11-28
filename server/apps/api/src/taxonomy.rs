@@ -8,7 +8,7 @@ use crate::{
 use axum::{extract::State, http::HeaderMap, response::Response};
 use serde::{Deserialize, Serialize};
 use silva_application::ports::{TaxonomyItem, TaxonomyKind};
-use silva_domain::{content::TaxonomyInput, site::SiteTarget};
+use silva_domain::{content::TaxonomyInput, site::SiteVersion};
 
 const CATEGORY: TaxonomyKind = TaxonomyKind::Category;
 const TAG: TaxonomyKind = TaxonomyKind::Tag;
@@ -52,11 +52,11 @@ pub(crate) struct UpdateTagInput {
     name: Option<String>,
 }
 
-/// 更新结果：条目本身，以及名称出现在已发布文章中时登记的站点目标（否则为 null）。
+/// 更新结果：条目本身，以及影响公开内容时的版本号（否则为 null）。
 #[derive(Serialize)]
 struct Updated {
     item: TaxonomyItem,
-    publication: Option<SiteTarget>,
+    publication: Option<SiteVersion>,
 }
 
 async fn list(state: AppState, headers: HeaderMap, kind: TaxonomyKind) -> HttpResult<Response> {

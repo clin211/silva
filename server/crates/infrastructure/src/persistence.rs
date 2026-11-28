@@ -15,7 +15,8 @@ use silva_shared::{
     pagination::{Page, PageRequest},
 };
 use sqlx::{
-    ConnectOptions, Postgres, Transaction, pool::PoolConnection, postgres::PgConnectOptions,
+    Acquire, ConnectOptions, Postgres, Transaction, pool::PoolConnection,
+    postgres::PgConnectOptions,
 };
 use sqlx::{
     PgConnection, PgPool, QueryBuilder, Row,
@@ -50,8 +51,16 @@ pub async fn connect(config: &Config) -> anyhow::Result<PgPool> {
 }
 
 pub async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
-    MIGRATOR.run(pool).await?;
-    seed_builtin_roles(pool).await?;
+    // SQLx 逐文件记录迁移。最外层事务使升级失败时旧服务仍能使用原有 schema 和权限。
+    let mut connection = pool.acquire().await?;
+    connection.close_on_drop();
+    let mut tx = connection.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(782039415)")
+        .execute(&mut *tx)
+        .await?;
+    MIGRATOR.run_direct(&mut *tx).await?;
+    seed_builtin_roles(&mut tx).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -105,21 +114,16 @@ pub async fn maintain_sessions(pool: &PgPool) -> anyhow::Result<u64> {
     Ok(sqlx::query("DELETE FROM sessions s USING users u WHERE s.user_id = u.id AND (s.expires_at <= now() OR u.status <> 'active')").execute(&mut *acquire(pool).await?).await.map_err(query_error)?.rows_affected())
 }
 
-async fn seed_builtin_roles(pool: &PgPool) -> anyhow::Result<()> {
-    let mut tx = begin(pool).await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(782039415)")
-        .execute(&mut *tx)
-        .await?;
+async fn seed_builtin_roles(connection: &mut PgConnection) -> anyhow::Result<()> {
     for key in ROLE_KEYS {
         let role_id: Uuid = sqlx::query_scalar("INSERT INTO roles (id, key, name) VALUES ($1, $2, $2) ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name RETURNING id")
-            .bind(ids::new_id()).bind(key).fetch_one(&mut *tx).await?;
+            .bind(ids::new_id()).bind(key).fetch_one(&mut *connection).await?;
         for permission in permissions_for_role(key) {
             let permission_id: Uuid = sqlx::query_scalar("INSERT INTO permissions (id, key, description) VALUES ($1,$2,$2) ON CONFLICT (key) DO UPDATE SET description = EXCLUDED.description RETURNING id")
-                .bind(ids::new_id()).bind(permission).fetch_one(&mut *tx).await?;
-            sqlx::query("INSERT INTO role_permissions (role_id, permission_id) VALUES ($1,$2) ON CONFLICT DO NOTHING").bind(role_id).bind(permission_id).execute(&mut *tx).await?;
+                .bind(ids::new_id()).bind(permission).fetch_one(&mut *connection).await?;
+            sqlx::query("INSERT INTO role_permissions (role_id, permission_id) VALUES ($1,$2) ON CONFLICT DO NOTHING").bind(role_id).bind(permission_id).execute(&mut *connection).await?;
         }
     }
-    tx.commit().await?;
     Ok(())
 }
 
@@ -171,7 +175,7 @@ fn read_user(row: &PgRow) -> std::result::Result<User, sqlx::Error> {
 }
 
 /// 账户列表筛选条件；参数依次为 `$1` LIKE 模式、`$2` 角色键、`$3` 状态，未提供时绑定 NULL。
-const USER_FILTER: &str = "WHERE ($1::text IS NULL OR u.email ILIKE $1 ESCAPE '\\' OR u.display_name ILIKE $1 ESCAPE '\\') \
+const USER_FILTER: &str = "WHERE u.deleted_at IS NULL AND ($1::text IS NULL OR u.email ILIKE $1 ESCAPE '\\' OR u.display_name ILIKE $1 ESCAPE '\\') \
      AND ($2::text IS NULL OR EXISTS (SELECT 1 FROM user_roles fr JOIN roles r ON r.id=fr.role_id WHERE fr.user_id=u.id AND r.key=$2)) \
      AND ($3::text IS NULL OR u.status=$3)";
 
@@ -190,12 +194,14 @@ fn contains_pattern(keyword: &str) -> String {
 }
 
 async fn user(connection: &mut PgConnection, id: Uuid) -> Result<User> {
-    let row = sqlx::query(&format!("{USER_SELECT} WHERE u.id=$1"))
-        .bind(id)
-        .fetch_optional(connection)
-        .await
-        .map_err(db)?
-        .ok_or(AppError::NotFound)?;
+    let row = sqlx::query(&format!(
+        "{USER_SELECT} WHERE u.id=$1 AND u.deleted_at IS NULL"
+    ))
+    .bind(id)
+    .fetch_optional(connection)
+    .await
+    .map_err(db)?
+    .ok_or(AppError::NotFound)?;
     read_user(&row).map_err(db)
 }
 
@@ -335,6 +341,15 @@ fn truncate_utf8(value: &str, max: usize) -> &str {
 /// 账户管理的串行化锁：可能减少管理员数量的修改必须先持有该锁，再检查剩余管理员。
 const ADMIN_GUARD_LOCK: i64 = 782_039_416;
 
+async fn lock_admin_changes(connection: &mut PgConnection) -> Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(ADMIN_GUARD_LOCK)
+        .execute(connection)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
 /// 至少保留一个启用状态的 admin 账户，避免后台被锁死后只能手工改库恢复。
 async fn ensure_active_admin(connection: &mut PgConnection) -> Result<()> {
     let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE r.key='admin' AND u.status='active')")
@@ -378,7 +393,7 @@ impl IdentityRepository for PgIdentityRepository {
     async fn find_login(&self, email: &str) -> Result<Option<LoginRecord>> {
         let _timer = METRICS.db_operation("find_login");
         sqlx::query(
-            "SELECT id,password_hash,status='active' AS active FROM users WHERE lower(email)=$1",
+            "SELECT id,password_hash,status='active' AS active FROM users WHERE lower(email)=$1 AND deleted_at IS NULL",
         )
         .bind(email)
         .fetch_optional(&mut *acquire(&self.pool).await.map_err(db)?)
@@ -415,18 +430,21 @@ impl IdentityRepository for PgIdentityRepository {
     }
 
     #[tracing::instrument(name = "db.create_session", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn create_session(&self, session: &NewSession<'_>, meta: &RequestMeta) -> Result<()> {
+    async fn create_session(
+        &self,
+        session: &NewSession<'_>,
+        meta: &RequestMeta,
+    ) -> Result<Option<LoginFailure>> {
         let _timer = METRICS.db_operation("create_session");
         let user_id = session.user_id;
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let active: Option<String> =
-            sqlx::query_scalar("SELECT status FROM users WHERE id=$1 FOR UPDATE")
-                .bind(user_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(db)?;
-        if active.as_deref() != Some("active") {
-            return Err(AppError::InvalidCredentials);
+        let account: Option<(bool, bool)> = sqlx::query_as(
+            "SELECT status='active', password_hash=$2 FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE"
+        ).bind(user_id).bind(session.verified_hash).fetch_optional(&mut *tx).await.map_err(db)?;
+        match account {
+            Some((true, true)) => {}
+            Some((false, true)) => return Ok(Some(LoginFailure::AccountDisabled)),
+            _ => return Ok(Some(LoginFailure::InvalidCredentials)),
         }
         sqlx::query("INSERT INTO sessions (id,user_id,token_hash,expires_at,last_seen_at) VALUES ($1,$2,$3,$4,now())")
             .bind(session.id).bind(user_id).bind(session.token_hash).bind(session.expires_at).execute(&mut *tx).await.map_err(db)?;
@@ -445,7 +463,7 @@ impl IdentityRepository for PgIdentityRepository {
         )
         .await?;
         tx.commit().await.map_err(db)?;
-        Ok(())
+        Ok(None)
     }
 
     #[tracing::instrument(name = "db.principal", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
@@ -457,7 +475,10 @@ impl IdentityRepository for PgIdentityRepository {
         if !live {
             return Err(AppError::Unauthorized);
         }
-        let user = user(&mut tx, user_id).await?;
+        let user = user(&mut tx, user_id).await.map_err(|err| match err {
+            AppError::NotFound => AppError::Unauthorized,
+            other => other,
+        })?;
         if user.status != "active" {
             return Err(AppError::Unauthorized);
         }
@@ -566,18 +587,23 @@ impl IdentityRepository for PgIdentityRepository {
     async fn change_password(
         &self,
         principal: &Principal,
+        verified_hash: &str,
         password_hash: String,
         meta: &RequestMeta,
     ) -> Result<()> {
         let _timer = METRICS.db_operation("change_password");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let updated =
-            sqlx::query("UPDATE users SET password_hash=$2 WHERE id=$1 AND status='active'")
-                .bind(principal.user.id)
-                .bind(password_hash)
-                .execute(&mut *tx)
-                .await
-                .map_err(db)?;
+        let updated = sqlx::query(
+            "UPDATE users SET password_hash=$2 WHERE id=$1 AND status='active' AND password_hash=$3
+                AND EXISTS (SELECT FROM sessions WHERE id=$4 AND user_id=$1 AND expires_at>now())",
+        )
+        .bind(principal.user.id)
+        .bind(password_hash)
+        .bind(verified_hash)
+        .bind(principal.session_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
         if updated.rows_affected() != 1 {
             return Err(AppError::Unauthorized);
         }
@@ -696,18 +722,15 @@ impl IdentityRepository for PgIdentityRepository {
         let reduces_admins =
             changes.roles.is_some() || changes.status.as_deref() == Some("disabled");
         if reduces_admins {
-            sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                .bind(ADMIN_GUARD_LOCK)
-                .execute(&mut *tx)
-                .await
-                .map_err(db)?;
+            lock_admin_changes(&mut tx).await?;
         }
-        let exists: Option<Uuid> =
-            sqlx::query_scalar("SELECT id FROM users WHERE id=$1 FOR UPDATE")
-                .bind(id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(db)?;
+        let exists: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db)?;
         if exists.is_none() {
             return Err(AppError::NotFound);
         }
@@ -766,6 +789,45 @@ impl IdentityRepository for PgIdentityRepository {
         let result = user(&mut tx, id).await?;
         tx.commit().await.map_err(db)?;
         Ok(result)
+    }
+
+    #[tracing::instrument(name = "db.delete_user", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn delete_user(&self, actor: Uuid, id: Uuid, meta: &RequestMeta) -> Result<()> {
+        let _timer = METRICS.db_operation("delete_user");
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        lock_admin_changes(&mut tx).await?;
+        let deleted = sqlx::query(
+            "UPDATE users SET deleted_at=now(), status='disabled', password_hash=NULL WHERE id=$1 AND deleted_at IS NULL",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
+        if deleted.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+        ensure_active_admin(&mut tx).await?;
+        sqlx::query("DELETE FROM user_roles WHERE user_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        sqlx::query("DELETE FROM sessions WHERE user_id=$1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        audit(
+            &mut tx,
+            Some(actor),
+            "users.delete",
+            id,
+            meta,
+            serde_json::json!({}),
+        )
+        .await?;
+        tx.commit().await.map_err(db)?;
+        Ok(())
     }
 
     #[tracing::instrument(name = "db.roles", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]

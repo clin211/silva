@@ -5,5 +5,5 @@ pub mod media;
 pub mod ports;
 pub mod profile;
 pub mod public_site;
-pub mod publishing;
+pub mod series;
 pub mod taxonomy;

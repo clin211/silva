@@ -1,15 +1,17 @@
-//! 媒体上传用例：流式写入、图片校验、旧版直传确认、读取、替代文本维护、删除和过期清理。
+//! 媒体上传用例：内容去重、图片校验、旧版直传确认、读取、替代文本维护、删除和过期清理。
 //!
 //! 授权规则：持有 `media.manage` 可操作全部媒体；只持有 `media.manage_own` 时只能看到并操作
 //! 自己上传的媒体，访问他人媒体按不存在处理（404），避免泄露媒体 ID 是否存在。
 
 use crate::ports::{
-    ByteStream, ImageInspector, MediaActor, MediaFilter, MediaRecord, MediaRepository, NewMedia,
-    ObjectStorage, PutOutcome, RequestMeta, StoredObject, StreamedObject,
+    ByteStream, CheckedUpload, ImageInspector, MediaActor, MediaFilter, MediaRecord,
+    MediaRepository, MediaUsage, MediaWrite, NewMedia, ObjectStorage, RequestMeta, StoredObject,
+    StreamedObject,
 };
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures_util::{StreamExt, stream};
+use futures_util::StreamExt;
+use sha2::{Digest, Sha256};
 use silva_domain::{
     identity::Principal,
     media::{
@@ -93,14 +95,14 @@ impl MediaService {
         self.storage.as_deref().ok_or(AppError::StorageUnavailable)
     }
 
-    /// 接收原始图片。先验证文件头，再按存储端的消费速度转发，解码通过才提交最后一个字节。
+    /// 在长度和并发上限内接收原始图片，完整解码后按内容复用。
     pub async fn upload(
         &self,
         principal: &Principal,
         request: UploadRequest,
         mut body: ByteStream,
         meta: &RequestMeta,
-    ) -> Result<(Media, String)> {
+    ) -> Result<(Media, String, bool)> {
         require_any(principal)?;
         let mut request = request.validate()?;
         let storage = self.storage()?;
@@ -131,87 +133,78 @@ impl MediaService {
             request.declared_mime_type = mime.to_owned();
         }
         let id = ids::new_id();
-        let key = storage_key(id);
         let expires = chrono::Duration::from_std(self.upload_ttl)
             .map_err(|e| AppError::Internal(e.into()))?;
-        self.repository
-            .create(
-                &NewMedia {
-                    id,
-                    upload_key: upload_key(id),
-                    original_filename: request.filename,
-                    declared_mime_type: request.declared_mime_type,
-                    declared_size_bytes: request.size_bytes,
-                    upload_expires_at: Utc::now() + expires,
-                    uploaded_by: principal.user.id,
-                },
-                meta,
-            )
-            .await?;
+        let new = NewMedia {
+            id,
+            upload_key: upload_key(id),
+            original_filename: request.filename,
+            declared_mime_type: request.declared_mime_type,
+            declared_size_bytes: request.size_bytes,
+            upload_expires_at: Utc::now() + expires,
+            uploaded_by: principal.user.id,
+        };
         let actor = MediaActor {
             user_id: principal.user.id,
             meta,
         };
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        let outgoing = stream::unfold(rx, |mut rx| async move {
-            rx.recv().await.map(|chunk| (Ok(chunk), rx))
-        });
-        let receive = self.forward_image(body, bytes, length, tx);
-        let transfer = storage.put_stream(&key, mime, request.size_bytes, Box::pin(outgoing));
-        let image = match tokio::try_join!(receive, transfer) {
-            Ok((image, ())) => image,
-            Err(error) => {
-                // 校验失败时 PUT 尚未完成。传输中断或存储状态未知时由 Worker 回收 pending 记录。
-                if let AppError::MediaInvalid { reason } = &error
-                    && let Some(reason) = RejectionReason::parse(reason)
-                {
-                    self.repository.mark_rejected(id, reason, &actor).await?;
-                }
-                return Err(error);
-            }
-        };
-        let url = storage.view_url(&key, self.upload_ttl).await?;
-        let media = match self.repository.mark_ready(id, &key, &image, &actor).await? {
-            Some(media) => media,
-            None => self.settled(storage, id).await?,
-        };
-        Ok((media, url))
-    }
-
-    async fn forward_image(
-        &self,
-        mut body: ByteStream,
-        mut bytes: Vec<u8>,
-        length: usize,
-        tx: tokio::sync::mpsc::Sender<Bytes>,
-    ) -> Result<VerifiedImage> {
-        let mut chunk = Bytes::copy_from_slice(&bytes);
-        loop {
-            // 保留最后一个字节，使任何长度正确的 PUT 都已经通过完整解码。
-            if bytes.len() == length && !chunk.is_empty() {
-                chunk.truncate(chunk.len() - 1);
-            }
-            if !chunk.is_empty() {
-                tx.send(chunk).await.map_err(|_| {
-                    AppError::Internal(anyhow::anyhow!("storage stopped receiving upload"))
-                })?;
-            }
-            let Some(next) = next_chunk(&mut body).await? else {
-                break;
-            };
-            append_chunk(&mut bytes, &next, length)?;
-            chunk = next;
+        while let Some(chunk) = next_chunk(&mut body).await? {
+            append_chunk(&mut bytes, &chunk, length)?;
         }
         if bytes.len() != length {
             return Err(invalid_length());
         }
-        let last = Bytes::copy_from_slice(&bytes[length - 1..]);
-        let (_, verdict) = self.inspector.inspect(bytes).await?;
-        let image = verdict.map_err(RejectionReason::into_error)?;
-        tx.send(last)
+        let (bytes, verdict) = self.inspector.inspect(bytes).await?;
+        let image = match verdict {
+            Ok(image) => image,
+            Err(reason) => {
+                self.repository.create(&new, meta).await?;
+                self.repository.mark_rejected(id, reason, &actor).await?;
+                return Err(reason.into_error());
+            }
+        };
+        let saved = self
+            .store(id, bytes, image, MediaWrite::Upload(&new, &actor), storage)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        let key = saved
+            .storage_key
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("ready media lacks storage key")))?;
+        let url = storage.view_url(&key, self.upload_ttl).await?;
+        let created = saved.media.id == id;
+        Ok((saved.media, url, created))
+    }
+
+    async fn store(
+        &self,
+        id: Uuid,
+        bytes: Vec<u8>,
+        image: VerifiedImage,
+        mode: MediaWrite<'_>,
+        storage: &dyn ObjectStorage,
+    ) -> Result<Option<MediaRecord>> {
+        let file = CheckedUpload {
+            id,
+            digest: hex::encode(Sha256::digest(&bytes)),
+            image,
+        };
+        let reservation = self.repository.reserve_blob(&file.digest).await?;
+        if !reservation.stored {
+            // 对象请求有独立的截止时间，远短于数据库预留的回收宽限。
+            tokio::time::timeout(
+                Duration::from_secs(120),
+                storage.put_if_absent(&reservation.key, bytes, file.image.mime_type),
+            )
             .await
-            .map_err(|_| AppError::Internal(anyhow::anyhow!("storage stopped receiving upload")))?;
-        Ok(image)
+            .map_err(|error| AppError::Internal(error.into()))??;
+        }
+        self.repository.store_image(file, mode, reservation).await
+    }
+
+    pub async fn detail(&self, principal: &Principal, id: Uuid) -> Result<(Media, MediaUsage)> {
+        let media = self.get(principal, id).await?;
+        let usage = self.repository.references(id, principal).await?;
+        Ok((media, usage))
     }
 
     #[tracing::instrument(name = "media.list", skip_all)]
@@ -306,25 +299,17 @@ impl MediaService {
         }
     }
 
-    /// 删除媒体记录及其对象。记录删除后对象删除失败只记日志，孤立对象不可被引用或读取。
-    /// 正式键按 ID 推导后一并删除：待确认记录也可能已有中断的确认写入的正式对象。
+    /// 删除未使用的媒体条目，由后台回收其文件。有引用时返回调用者可见的位置。
     #[tracing::instrument(name = "media.delete", skip_all)]
-    pub async fn delete(&self, principal: &Principal, id: Uuid, meta: &RequestMeta) -> Result<()> {
+    pub async fn delete(
+        &self,
+        principal: &Principal,
+        id: Uuid,
+        meta: &RequestMeta,
+    ) -> Result<Option<MediaUsage>> {
         self.load(principal, id).await?;
-        let storage = self.storage()?;
-        let deleted = self
-            .repository
-            .delete(
-                id,
-                &MediaActor {
-                    user_id: principal.user.id,
-                    meta,
-                },
-            )
-            .await?;
-        discard(storage, &deleted.upload_key).await;
-        discard(storage, &storage_key(id)).await;
-        Ok(())
+        self.storage()?;
+        self.repository.delete(id, principal, meta).await
     }
 
     /// 清理过期未确认和保留期已满的已拒绝媒体：先删临时对象，成功后再删记录，
@@ -354,7 +339,6 @@ impl MediaService {
             };
             match result {
                 Ok(true) => {
-                    discard(storage, &storage_key(media.id)).await;
                     report.purged += 1;
                 }
                 // 状态已变化或仍被引用，记录保留。
@@ -368,7 +352,43 @@ impl MediaService {
                 }
             }
         }
+        // 每轮只处理有限数量的旧图，损坏的对象延后重试。
+        for (id, key) in self.repository.legacy_images(PURGE_BATCH).await? {
+            if let Err(error) = self.backfill(storage, id, &key).await {
+                tracing::warn!(%id, %error, "legacy media backfill failed");
+                self.repository.defer_purge(id).await?;
+                report.failed += 1;
+            }
+        }
+        for key in self.repository.retired_objects(PURGE_BATCH).await? {
+            let result = storage.delete(&key).await;
+            if let Err(error) = &result {
+                tracing::warn!(%error, "media object deletion failed");
+                report.failed += 1;
+            }
+            self.repository
+                .finish_deletion(&key, result.is_ok())
+                .await?;
+        }
         Ok(report)
+    }
+
+    async fn backfill(&self, storage: &dyn ObjectStorage, id: Uuid, key: &str) -> Result<()> {
+        let StoredObject::Bytes(bytes) = storage.read(key, MAX_UPLOAD_BYTES).await? else {
+            return Err(AppError::Internal(anyhow::anyhow!(
+                "legacy media object is unavailable"
+            )));
+        };
+        let (bytes, verdict) = self.inspector.inspect(bytes).await?;
+        self.store(
+            id,
+            bytes,
+            verdict.map_err(RejectionReason::into_error)?,
+            MediaWrite::Backfill,
+            storage,
+        )
+        .await?;
+        Ok(())
     }
 
     /// 读取调用者可见的媒体；不可见与不存在同样返回 `NotFound`。
@@ -400,61 +420,38 @@ impl MediaService {
             .map_err(|error| AppError::Internal(error.into()))?;
         let id = record.media.id;
         let formal_key = storage_key(id);
-        let bytes = match storage.read(&record.upload_key, MAX_UPLOAD_BYTES).await? {
+        // 升级前已写入的正式对象优先于仍可被覆盖的临时对象。
+        let old = storage.read(&formal_key, MAX_UPLOAD_BYTES).await?;
+        let source = match old {
+            StoredObject::Missing => storage.read(&record.upload_key, MAX_UPLOAD_BYTES).await?,
+            other => other,
+        };
+        let bytes = match source {
             StoredObject::Bytes(bytes) => bytes,
             StoredObject::TooLarge { .. } => {
                 return self
                     .reject(storage, &record, RejectionReason::TooLarge, actor)
                     .await;
             }
-            // 临时对象缺失时，上次确认可能已写入正式对象但未更新记录。
-            StoredObject::Missing => match storage.read(&formal_key, MAX_UPLOAD_BYTES).await? {
-                StoredObject::Bytes(bytes) => bytes,
-                _ => return Err(AppError::Conflict(Conflict::UploadIncomplete)),
-            },
+            // 并发确认可能已提交，并删除了两个旧键；以数据库最终状态为准。
+            StoredObject::Missing => return self.settled(storage, id).await,
         };
         let (bytes, verdict) = self.inspector.inspect(bytes).await?;
         let image = match verdict {
             Ok(image) => image,
             Err(reason) => return self.reject(storage, &record, reason, actor).await,
         };
-        let image = match storage
-            .put_if_absent(&formal_key, bytes, image.mime_type)
-            .await?
-        {
-            PutOutcome::Created => image,
-            // 正式对象不可覆盖，已存在时以其实际内容为准。
-            PutOutcome::AlreadyExists => self.verify_existing(storage, &formal_key).await?,
-        };
         match self
-            .repository
-            .mark_ready(id, &formal_key, &image, actor)
+            .store(id, bytes, image, MediaWrite::Confirm(actor), storage)
             .await?
         {
-            Some(media) => {
+            Some(saved) => {
                 discard(storage, &record.upload_key).await;
-                Ok(media)
+                discard(storage, &formal_key).await;
+                Ok(saved.media)
             }
             None => self.settled(storage, id).await,
         }
-    }
-
-    async fn verify_existing(
-        &self,
-        storage: &dyn ObjectStorage,
-        key: &str,
-    ) -> Result<VerifiedImage> {
-        let StoredObject::Bytes(bytes) = storage.read(key, MAX_UPLOAD_BYTES).await? else {
-            return Err(AppError::Internal(anyhow::anyhow!(
-                "existing formal media object is unreadable"
-            )));
-        };
-        self.inspector.inspect(bytes).await?.1.map_err(|reason| {
-            AppError::Internal(anyhow::anyhow!(
-                "existing formal media object failed verification: {}",
-                reason.as_str()
-            ))
-        })
     }
 
     async fn reject(
@@ -478,7 +475,7 @@ impl MediaService {
     }
 
     /// 并发确认已先完成时，按记录的最终状态返回同一结果。记录已被删除时，
-    /// 删除本次确认可能刚写入的对象，避免留下无记录引用的正式对象。
+    /// 清除旧版私有临时对象，共享文件由后台回收。
     async fn settled(&self, storage: &dyn ObjectStorage, id: Uuid) -> Result<Media> {
         let Some(record) = self.repository.find(id).await? else {
             discard(storage, &upload_key(id)).await;
@@ -488,9 +485,10 @@ impl MediaService {
         match record.media.status {
             MediaStatus::Ready => Ok(record.media),
             MediaStatus::Rejected => Err(rejected_error(&record.media)),
-            MediaStatus::Pending => Err(AppError::Internal(anyhow::anyhow!(
-                "media is still pending after a lost confirmation race"
-            ))),
+            MediaStatus::Pending if record.media.upload_expires_at <= Utc::now() => {
+                Err(AppError::Conflict(Conflict::UploadExpired))
+            }
+            MediaStatus::Pending => Err(AppError::Conflict(Conflict::UploadIncomplete)),
         }
     }
 }

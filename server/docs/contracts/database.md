@@ -5,16 +5,33 @@
 ## 基础不变量
 
 - PostgreSQL 原生 `uuid`；先创建 `is_uuid_v7(input_id uuid) RETURNS boolean`，声明 `IMMUTABLE STRICT PARALLEL SAFE`。检查文本第 15 位为 `7`、第 20 位属于 `8/9/a/b`。不依赖数据库 UUIDv7 生成函数。
-- 全部业务实体 ID、无外键的 `outbox_events.aggregate_id`、`audit_logs.resource_id` 和 `audit_logs.request_id`（迁移 `20261123000001` 追加，可为 NULL）由 CHECK 校验 UUIDv7；普通/复合外键引用受校验实体。租约令牌是令牌，不强制 UUIDv7。`generation`/`revision_no`/slug/角色 key/外部来源 ID 不转为 UUID。
+- 全部业务实体 ID、无外键的 `audit_logs.resource_id` 和 `audit_logs.request_id`（迁移 `20261123000001` 追加，可为 NULL）由 CHECK 校验 UUIDv7；普通/复合外键引用受校验实体。租约令牌是令牌，不强制 UUIDv7。`generation`/`revision_no`/slug/角色 key/外部来源 ID 不转为 UUID。
 - 每张业务表及每个未删除用户字段必须有非空 `COMMENT ON TABLE/COLUMN`；不检查 PostgreSQL 系统表、`_sqlx_migrations`。所有字段的注释同迁移创建。CI 通过 `obj_description`、`col_description` 验证并输出具体缺失对象。
-- 所有 FK 写出删除策略。原文已有策略原样保留；原文未指定者统一显式 `ON DELETE NO ACTION`，保持 PostgreSQL 默认语义、避免擅自删除作者/审计/发布引用。两个 post revision 复合 FK 保持 `DEFERRABLE INITIALLY DEFERRED`，使用 `ON DELETE NO ACTION` 以允许事务内先预分配 post/revision ID 后写入。
-- `site_state` 在 schema migration 初始化唯一 `singleton=true` 行；期望与线上 generation 初值 NULL，不能伪造已上线。
+- 所有 FK 写出删除策略。原文已有策略原样保留；原文未指定者统一显式 `ON DELETE NO ACTION`，保持 PostgreSQL 默认语义、避免擅自删除作者/审计/发布引用。文章当前草稿的复合 FK 保持 `DEFERRABLE INITIALLY DEFERRED`，使用 `ON DELETE NO ACTION` 以允许事务内先预分配 post/revision ID 后写入。
+- `site_state` 在 schema migration 初始化唯一 `singleton=true` 行；公开内容 generation 初值为 0。
 - 账户密码仅 Argon2id hash、session 仅当前 refresh token 的 SHA-256 hash（迁移 `20261124000001` 更新 `sessions` 注释）；角色和权限由 Rust seed 通过 `shared::ids` 分配 UUIDv7，SQL 不写固定业务实体 ID。
-- 个人资料（迁移 `20261125000002`）使用 `site_state.active_avatar_media_id` 引用线上头像。保存资料时替换编辑版本；激活站点时切换线上引用。两个版本使用的头像均受媒体删除检查保护。
+- 当前资料头像由 `profiles.avatar_media_id` 直接保护。历史迁移 `20261125000002` 的线上头像副本随同步发布迁移移除。
 - 媒体（迁移 `20261124000002`）：`media_assets` 增加客户端声明的 `declared_mime_type`、`declared_size_bytes`，拒绝原因 `rejection_reason`、拒绝时间 `rejected_at`（已拒绝记录的保留期按它计算），Worker 清理失败时间 `purge_attempted_at`（失败的记录排到后续批次末尾），以及由触发器维护的 `updated_at`。CHECK 约束限定声明与实际类型为 JPEG、PNG、WebP，大小不超过 10 MiB，`ready` 必须有尺寸，`rejection_reason` 与 `rejected_at` 当且仅当 `rejected` 时有值。对象存储键 `upload_key`（`uploads/{id}`）与 `storage_key`（`media/{id}`）只在服务端使用，不出现在 API 中。删除媒体时锁定媒体行，并检查 `post_revisions.cover_media_id`、`post_revision_media` 和 `profiles.avatar_media_id` 中的引用；这三列补充了索引。
-- 项目展览与工具导航（迁移 `20261124000003`）：产品已取消这两项功能，删除 `projects`、`project_technologies`、`project_links`、`tools`，它们对媒体的引用随之移除。引用媒体的表只剩 `post_revisions`、`post_revision_media` 和 `profiles`。
-- 文章与站点发布（迁移 `20261125000001`）：`posts.first_published_at` 记录首次被接受发布的时间（公开发布时间），曾发布的文章必须 `slug_locked`；`post_revisions.rendered_headings` 保存与 `rendered_html` 标题 id 对应的目录；分类、标签增加由触发器维护的 `updated_at`，slug 受格式 CHECK 约束；`post_reviews.submitted_by` 记录提交人，审核决定与 `reviewed_at`、`reviewer_id` 一致；`publish_jobs` 的租约字段当且仅当 `building` 时有值。新增 `site_generation_posts`，在线上切换时写入该 generation 公开的文章与修订，后台据此查询文章当前线上修订。
-- schema 不替代业务授权：账号停用的会话撤销、动态读取角色权限、JWT 校验与 refresh token 轮换、媒体就绪及归属、只追加 revision、generation 原子切换和租约 fencing 由对应 Rust 用例负责。
+- 媒体去重（迁移 `20261126000001`）使用 `media_blobs` 按原始字节的 SHA-256 分配私有文件，媒体条目通过摘要和实际对象键关联。`media_blob_writes` 为每次写入登记最长一小时的凭证；对象请求限时两分钟，确认事务消费凭证，Worker 回收前检查所有进行中的写入。Worker 分批回填旧条目，保留原媒体 ID 和历史引用。旧文件保留一天供已签发的地址读取。后台将失去全部条目的共享文件移入 `media_object_deletions` 重试回收。`media_references` 汇总草稿与公开文章引用、资料头像及系列封面。
+- 项目展览与工具导航（迁移 `20261124000003`）：产品已取消这两项功能，删除 `projects`、`project_technologies`、`project_links`、`tools`，它们对媒体的引用随之移除。
+- 文章与站点发布（迁移 `20261125000001`）：`posts.first_published_at` 记录首次被接受发布的时间（公开发布时间），曾发布的文章必须 `slug_locked`；`post_revisions.rendered_headings` 保存与 `rendered_html` 标题 id 对应的目录；分类、标签增加由触发器维护的 `updated_at`，slug 受格式 CHECK 约束；`post_reviews.submitted_by` 记录提交人，审核决定与 `reviewed_at`、`reviewer_id` 一致；`publish_jobs` 的租约字段当且仅当 `building` 时有值。原异步流程使用 `site_generation_posts` 记录每代文章映射，已在同步发布迁移中移除。
+- 单修订迁移 `20261126000003` 在保留当前草稿前复制既有发布目标和线上媒体引用。每篇文章最多一条 `post_revisions`。公开副本与可继续编辑的修订分开保存。迁移同时移除审核表和审核权限。
+- 同步发布迁移 `20261127000001` 要求已有 `desired_generation` 与 `active_generation` 相等（或均为 NULL）；仍有待上线内容时整笔迁移停止，既有数据保留。后续迁移沿用线上版本与生效时间。`20261128000000` 直接清除旧发布任务、事件队列和任务专属日志。公开变更在业务事务中更新单例的 `generation` 和 `updated_at`。
+- `published_posts.post_id` 唯一标识一篇文章的公开副本，副本的 `id` 和 `published_at` 分别是公开修订和发布时间。文章表记录首次发布时间和发布并发版本。文章和系列都根据首次发布时间判断 slug 是否锁定。公开的正文与封面媒体来自 `published_post_media_references`。后台查看及删除检查通过 `media_references` 同时覆盖草稿和发布数据。迁移删除旧派生表 `site_generation_posts`、`site_generation_series`、`live_post_media` 及 `site_state.active_avatar_media_id`。内容操作仍记入审计。
+- 删除账户时设置 `users.deleted_at`，清空密码哈希、撤销会话并移除角色。邮箱唯一索引只覆盖未删除账户，历史关联继续引用原 ID。
+- 账户停用、角色权限、JWT、refresh token、媒体就绪及归属、编辑版本冲突和发布事务均由对应 Rust 用例处理。
+
+## 文章系列
+
+系列的当前存储使用以下三张表。
+
+| 表 | 约束与职责 |
+| --- | --- |
+| `series` | slug 唯一，首次公开时锁定。元数据和目录共用 `edit_version`，公开转换使用 `publication_version`。主分类和封面使用 RESTRICT 外键。 |
+| `series_sections` | 篇章按系列内 `position` 排序，组内唯一约束延迟至提交时检查。 |
+| `series_items` | 通过唯一的 `post_id` 挂载文章。复合外键保证篇章属于本系列。根组的 NULL 参与组内位置唯一性检查。 |
+
+三张表使用 UUIDv7 和更新时间触发器。系列删除后篇章与成员关系级联删除，文章和修订继续保留。系列公开并至少包含一篇已发布文章时对访客可见。媒体引用视图以 `series_cover` 标记 `series.cover_media_id` 并保护其删除。存量角色通过幂等权限初始化补齐 `series.manage`。
 
 ## 实施约束与待确认项
 
@@ -26,13 +43,13 @@
 ## 验证锚点
 
 1. 空 PostgreSQL 数据库执行全部 SQLx migration；再次 migrate 无操作，校验校验和。已有数据库追加执行清理迁移；已执行的历史迁移保留原版本与校验和。
-2. `tests/sql/schema_invariants.sql` 在事务内检查当前 28 张业务表、21 个 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录、项目展览与工具导航表仍存在时，输出对象名并使执行失败。同一脚本验证媒体状态约束（`ready` 缺尺寸、`rejected` 缺原因、`pending` 带原因、不允许的声明类型均被拒绝）和 `media_assets.updated_at` 触发器。
+2. `tests/sql/schema_invariants.sql` 在事务内检查必需业务表、所有 UUIDv7 实体的主键 CHECK 覆盖及全部业务表/字段注释；缺失或已取消的目录、项目展览与工具导航表仍存在时，输出对象名并使执行失败。同一脚本验证媒体状态约束（`ready` 缺尺寸、`rejected` 缺原因、`pending` 带原因、不允许的声明类型均被拒绝）和 `media_assets.updated_at` 触发器。
 3. 验证 `is_uuid_v7` 接受合法 v7、拒绝 v4 及版本位为 7 但变体位错误的 UUID；逐个实体表通过实际 INSERT 或事务更新现有主键验证 v4/错误变体被 CHECK 拒绝。
-4. 验证实际 `users` v7 插入成功、v4 和错误变体失败；无外键 UUID 引用（outbox aggregate、audit resource）也拒绝非法 UUID。
-5. 检查全部 FK 的删除策略、两个 post revision 外键的延迟属性、唯一约束、site_state 单例和未上线初始状态。
+4. 验证实际 `users` v7 插入成功、v4 和错误变体失败；无外键 UUID 引用（audit resource）也拒绝非法 UUID。
+5. 检查全部 FK 的删除策略、当前草稿外键的延迟属性、唯一约束、site_state 单例和未上线初始状态。
 6. PostgreSQL 客户端采用 `ON_ERROR_STOP=1`；验证 SQL 由 CLI 使用 SQLx 在外层事务执行并 rollback，不污染开发数据库；SQL 文件不包含事务命令和 psql 元命令。CLI 通过 `set_config` 设置 `silva.test_id` 和 `silva.test_other_id`，两者均由 `shared::ids` 生成不同的 UUIDv7。
 
-## 当前基线 DDL（源文逐字提取）
+## 初始迁移 DDL（后续变更见上文）
 
 ```sql
 CREATE FUNCTION is_uuid_v7(input_id uuid) RETURNS boolean

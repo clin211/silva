@@ -84,7 +84,7 @@
 | `GET /health/live` | 裸 JSON，如 `{"status": "ok"}` |
 | `GET /metrics` | Prometheus 文本格式 |
 
-开启 `SILVA_SITE_SERVE` 时，`/api` 之外的 GET、HEAD 路径由当前线上的静态站点响应：HTML、CSS 等文件原样返回，未知路径返回该版本的 `404.html`（HTTP 404），缺少结尾 `/` 的目录 301 重定向。`/_astro/` 下带内容哈希的资源使用 `Cache-Control: public, max-age=31536000, immutable`，其余仍为 `no-store`。
+公开页面由 Astro 服务按请求渲染；同域网关将 `/api/` 交给 Rust。SSR 的 HTML 按当前公开版本生成，缺失的详情页返回 HTTP 404。
 
 `GET /api/v1/admin/media/{id}/content` 与 `GET /api/v1/public/media/{id}` 返回文件原始字节，`Content-Type` 为服务端识别的图片类型，同样不套信封；它的错误响应仍使用第 4 节的结构。
 
@@ -150,28 +150,27 @@
 | 409 | `upload_incomplete` | 确认上传时存储中还没有直传的文件 | 完成直传后重试确认 |
 | 409 | `upload_expired` | 确认上传时已超过 `upload_expires_at` | 重新申请上传 |
 | 409 | `media_not_ready` | 媒体尚未通过校验，不能读取内容或被引用 | 先完成上传确认 |
-| 409 | `media_in_use` | 媒体仍被文章修订（含历史修订）或个人资料引用 | 先解除引用再删除 |
+| 409 | `media_in_use` | 媒体仍被文章修订、个人资料、系列封面或当前线上版本引用 | 从 `error.media_usage` 查看引用总数和有权访问的位置 |
 | 409 | `slug_in_use` | slug 已被同类资源使用 | 更换 slug |
-| 409 | `slug_locked` | 文章已被接受发布，slug 不能修改 | 提示 slug 已锁定 |
+| 409 | `slug_locked` | 文章或系列已被接受发布，slug 已锁定 | 提示 slug 已锁定 |
 | 409 | `revision_conflict` | `expected_revision_id` 不是当前编辑版本 | 重新读取并核对差异后重试 |
-| 409 | `review_already_submitted` | 该修订已经提交过审核 | 刷新审核状态 |
-| 409 | `review_not_pending` | 审核记录已有决定 | 刷新审核状态 |
 | 409 | `publication_conflict` | `expected_publication_version` 不是当前发布版本号 | 重新读取发布状态后重试 |
-| 409 | `revision_not_approved` | 修订未获批准，不能上线 | 先送审并批准 |
-| 409 | `already_unpublished` | 文章没有上线目标 | 刷新发布状态 |
-| 409 | `taxonomy_in_use` | 分类或标签仍被文章修订引用 | 先修改引用它的文章 |
-| 409 | `publish_job_not_retryable` | 只能重试仍为最新目标的失败任务 | 查看最新任务 |
+| 409 | `series_edit_conflict` | 系列资料或目录已由其他请求更新 | 回读详情并核对本地修改 |
+| 409 | `post_already_in_series` | 文章已有系列归属 | 回读文章与系列目录 |
+| 409 | `post_in_use` | 文章仍有发布目标或仍在线 | 取消发布后重试 |
+| 409 | `series_in_use` | 系列仍设为公开 | 取消公开后重试 |
+| 409 | `already_published` | 系列已设为公开 | 刷新发布状态 |
+| 409 | `already_unpublished` | 文章或系列没有上线目标 | 刷新发布状态 |
+| 409 | `taxonomy_in_use` | 分类或标签仍被修订引用，或分类仍被系列引用 | 先处理对应引用 |
 | 409 | `site_generation_changed` | 线上版本已不同于请求头 `X-Expected-Generation`；响应带 `X-Site-Generation` | 清空旧数据并提示刷新 |
-| 413 | `payload_too_large` | 请求体超过 64 KiB | 缩小请求 |
+| 413 | `payload_too_large` | 请求体超过对应接口的字节上限 | 缩小请求 |
 | 415 | `unsupported_media_type` | `Content-Type` 不是 `application/json` 或 `application/*+json` | 修正请求头 |
 | 422 | `validation_error` | 输入不满足约束，`details` 中列出具体字段 | 按 `details` 标注表单 |
 | 422 | `media_invalid` | 上传的文件未通过图片校验；`message` 含拒绝原因，详情见媒体的 `rejection_reason`，`details` 为空 | 提示原因并更换文件重新上传 |
 | 429 | `rate_limited` | 超过请求频率限制 | 按 `Retry-After` 秒数等待后重试 |
 | 500 | `internal_error` | 服务端内部错误 | 展示通用错误和响应头 `X-Request-Id` |
 | 503 | `storage_unavailable` | 服务端未配置对象存储（生产环境 API 不会以此状态启动） | 提示媒体功能暂不可用 |
-| 503 | `site_not_ready` | 站点尚未有任何线上版本 | 提示站点准备中 |
 
-[后端技术方案](../../../docs/03-backend-technical.md)中规划的 `revision_conflict`、`site_generation_changed`、`site_not_ready` 等错误码，要等对应接口实现时再按第 8 节的流程登记。
 
 ### 5.2 字段错误码（`error.details[].code`）
 
@@ -196,8 +195,8 @@
 - **422 中的业务规则：** 只涉及请求自身字段的规则（如“新密码不能与当前密码相同”）返回 422，并在 `details` 中指明字段；需要依赖其他资源状态的规则返回 409。
 - **429：** 必须带 `Retry-After` 响应头。
 - **500：** 未预期的错误返回 500，包括对象存储请求失败。
-- **503：** 依赖未配置或暂不可用：`storage_unavailable`、`site_not_ready`；新增时按第 8 节登记错误码。
-- **202：** 请求已受理、结果稍后生效，如文章上线与撤下、登记全站重建、重试发布任务。正文给出可查询的任务，不代表已经生效。
+- **503：** 依赖未配置或暂不可用：`storage_unavailable`；新增时按第 8 节登记错误码。
+- **200 / 201**。文章和系列发布、下线在事务提交后返回 200。手动创建公开版本返回 201 和对应的记录地址。
 
 ## 7. 响应头
 
@@ -209,7 +208,7 @@
 | `Content-Security-Policy: default-src 'none'; sandbox` | 媒体内容 | 禁止把上传的文件当作页面执行 |
 | `X-Content-Type-Options: nosniff` | 所有响应 | 禁止浏览器猜测内容类型 |
 | `Retry-After` | 429 | 需要等待的秒数 |
-| `X-Site-Generation` | Public API、静态站点、`409 site_generation_changed` | 本次读取的线上站点 generation |
+| `X-Site-Generation` | Public API、SSR 页面、`409 site_generation_changed` | 本次读取的线上站点 generation |
 | `Location` | 带独立 URI 的 201 | 新建资源的路径，如 `/api/v1/admin/users/{id}` |
 | `WWW-Authenticate` | 所有 401 | `Bearer`；access token 过期时为 `Bearer error="invalid_token", error_description="The access token expired"`，见 [身份契约](identity.md) |
 

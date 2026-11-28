@@ -1,4 +1,4 @@
-//! 媒体管理接口：流式上传、列表、详情、旧版上传确认与替代文本、授权读取内容和删除。
+//! 媒体管理接口：按内容去重上传、列表、详情、旧版上传确认与替代文本、授权读取内容和删除。
 
 use crate::{
     AppState,
@@ -104,6 +104,7 @@ pub(crate) async fn create(
             "File exceeds 10 MiB",
         ));
     }
+    crate::http::validate_query_encoding(request.uri())?;
     let query = axum::extract::Query::<UploadQuery>::try_from_uri(request.uri()).map_err(|_| {
         ApiError::validation(vec![FieldError::new(
             "filename",
@@ -124,12 +125,17 @@ pub(crate) async fn create(
         .into_body()
         .into_data_stream()
         .map_err(std::io::Error::other);
-    let (media, url) = state
+    let (media, url, created) = state
         .media
         .upload(&principal, upload, Box::pin(body), &meta)
         .await?;
     let location = format!("/api/v1/admin/media/{}", media.id);
-    Ok(response::created_at(&location, MediaUpload { media, url }))
+    let result = MediaUpload { media, url };
+    Ok(if created {
+        response::created_at(&location, result)
+    } else {
+        response::ok(result)
+    })
 }
 
 pub(crate) async fn list(
@@ -149,9 +155,8 @@ pub(crate) async fn get(
     IdPath(id): IdPath,
 ) -> HttpResult<Response> {
     let principal = authorize(&state, &headers).await?;
-    Ok(response::ok(
-        state.media.get(&principal, id.as_uuid()).await?,
-    ))
+    let (media, usage) = state.media.detail(&principal, id.as_uuid()).await?;
+    Ok(response::with_meta(media, usage))
 }
 
 #[derive(Deserialize)]
@@ -221,7 +226,13 @@ pub(crate) async fn delete(
     IdPath(id): IdPath,
 ) -> HttpResult<Response> {
     let principal = authorize(&state, &headers).await?;
-    state.media.delete(&principal, id.as_uuid(), &meta).await?;
+    if let Some(usage) = state.media.delete(&principal, id.as_uuid(), &meta).await? {
+        let mut error = ApiError::from(silva_shared::error::AppError::Conflict(
+            silva_shared::error::Conflict::MediaInUse,
+        ));
+        error.media_usage = Some(Box::new(usage));
+        return Err(error);
+    }
     Ok(response::no_content())
 }
 

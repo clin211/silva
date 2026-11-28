@@ -31,7 +31,6 @@ pub struct Metrics {
     pub business_last_success: IntGauge,
     pub queue: IntGaugeVec,
     pub queue_age: IntGaugeVec,
-    pub publish_delayed: IntGauge,
     pub worker_runs: IntCounterVec,
     pub worker_duration: HistogramVec,
     pub worker_last_success: IntGauge,
@@ -128,10 +127,6 @@ impl Default for Metrics {
             queue_age: register!(IntGaugeVec::new(
                 Opts::new("silva_queue_oldest_age_seconds", "最老未完成任务的年龄"),
                 &["queue"]
-            )),
-            publish_delayed: register!(IntGauge::new(
-                "silva_publish_delayed",
-                "当前发布目标未激活且等待超过五分钟"
             )),
             worker_runs: register!(IntCounterVec::new(
                 Opts::new(

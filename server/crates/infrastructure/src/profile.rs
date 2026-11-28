@@ -2,7 +2,7 @@
 
 use crate::{
     persistence::{audit_resource, begin, db},
-    publishing::enqueue_site_publish,
+    public_site::advance_generation,
 };
 use async_trait::async_trait;
 use serde_json::json;
@@ -12,7 +12,7 @@ use silva_application::{
 };
 use silva_domain::{
     profile::Profile,
-    site::{SiteTarget, SnapshotImage},
+    site::{SiteVersion, SnapshotImage},
 };
 use silva_shared::{
     error::{AppError, Conflict, FieldErrorCode, Result},
@@ -77,15 +77,9 @@ pub(crate) async fn export_profile(
 
 #[async_trait]
 impl ProfileRepository for PgProfileRepository {
-    async fn save(&self, profile: &Profile, actor: &ContentActor<'_>) -> Result<SiteTarget> {
+    async fn save(&self, profile: &Profile, actor: &ContentActor<'_>) -> Result<SiteVersion> {
         let _timer = METRICS.db_operation("profile_save");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        // 首次保存还没有资料行可锁；站点单例同时串行化首次创建、替换和发布登记。
-        sqlx::query("SELECT singleton FROM site_state WHERE singleton FOR UPDATE")
-            .execute(&mut *tx)
-            .await
-            .map_err(db)?;
-        let current = load(&mut tx).await?;
         let avatar_id = profile.avatar_media_id.map(|id| id.as_uuid());
         if let Some(id) = avatar_id {
             let status: String =
@@ -105,24 +99,19 @@ impl ProfileRepository for PgProfileRepository {
                 return Err(AppError::Conflict(Conflict::MediaNotReady));
             }
         }
+        // 首次保存还没有资料行可锁；站点单例同时串行化首次创建与后续更新。
+        let generation =
+            sqlx::query_scalar("SELECT generation FROM site_state WHERE singleton FOR UPDATE")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+        let current = load(&mut tx).await?;
         if current
             .as_ref()
             .is_some_and(|stored| stored.profile == *profile)
         {
-            // 后续文章等变更可能已经合并原任务；当前目标同样包含这份资料。
-            let target: Option<(Uuid, i64)> = sqlx::query_as(
-                "SELECT j.id, j.generation FROM site_state s JOIN publish_jobs j ON j.generation=s.desired_generation WHERE s.singleton",
-            )
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(db)?;
-            if let Some((publish_job_id, desired_generation)) = target {
-                tx.commit().await.map_err(db)?;
-                return Ok(SiteTarget {
-                    publish_job_id,
-                    desired_generation,
-                });
-            }
+            tx.commit().await.map_err(db)?;
+            return Ok(SiteVersion { generation });
         }
         let id = current.map(|stored| stored.id).unwrap_or_else(ids::new_id);
         sqlx::query(
@@ -141,7 +130,7 @@ impl ProfileRepository for PgProfileRepository {
         .await
         .map_err(db)?;
         replace_entries(&mut tx, id, profile).await?;
-        let target = enqueue_site_publish(&mut tx, "profile.update", Some(actor.user_id)).await?;
+        let target = advance_generation(&mut tx).await?;
         audit_resource(
             &mut tx,
             Some(actor.user_id),
@@ -149,7 +138,7 @@ impl ProfileRepository for PgProfileRepository {
             "profile",
             id,
             actor.meta,
-            json!({"generation": target.desired_generation, "publish_job_id": target.publish_job_id}),
+            json!({"generation": target.generation}),
         )
         .await?;
         tx.commit().await.map_err(db)?;

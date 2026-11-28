@@ -21,6 +21,8 @@ pub struct Config {
     /// refresh token 及其服务端会话的有效期；每次刷新从刷新时刻重新计算。
     pub refresh_token_ttl: Duration,
     pub worker_interval: Duration,
+    /// 仅在 API 只对可信内部服务开放、网关会覆盖 X-Real-IP 时开启，同时启用内部 SSR 接口。
+    pub trust_proxy_ip_header: bool,
     pub api_rate_per_minute: u32,
     pub login_rate_per_minute: u32,
     /// 同一登录邮箱在失败窗口内连续失败多少次后锁定。
@@ -31,50 +33,6 @@ pub struct Config {
     pub storage: Option<StorageConfig>,
     /// 媒体查看链接的有效期，也用于待处理上传的清理期限。
     pub media_upload_ttl: Duration,
-    /// 公开站点构建；未配置 `SILVA_SITE_BUILDER_DIR` 时 Worker 不处理发布任务。
-    pub site_build: Option<SiteBuildConfig>,
-    /// Worker 检查发布任务的间隔。
-    pub publish_poll_interval: Duration,
-    /// API 是否在 `/api` 之外的路径提供当前线上的静态站点（`SILVA_SITE_SERVE=true`）。
-    pub site_serve: bool,
-}
-
-/// Worker 调用 Astro 构建公开站点的配置。
-#[derive(Clone, Debug)]
-pub struct SiteBuildConfig {
-    /// `frontend/apps/website` 的路径，构建命令在此目录执行。
-    pub website_dir: std::path::PathBuf,
-    /// 构建命令与参数，按空白分隔，默认 `pnpm run build`。
-    pub command: Vec<String>,
-    /// 公开站点的完整 origin，用于 canonical、RSS 与 sitemap。
-    pub site_url: String,
-    pub timeout: Duration,
-}
-
-impl SiteBuildConfig {
-    fn from_env() -> anyhow::Result<Option<Self>> {
-        let Some(website_dir) = optional("SILVA_SITE_BUILDER_DIR")? else {
-            return Ok(None);
-        };
-        let site_url = optional("SILVA_SITE_URL")?
-            .context("SILVA_SITE_URL is required when SILVA_SITE_BUILDER_DIR is set")?;
-        let parsed =
-            url::Url::parse(&site_url).map_err(|_| anyhow::anyhow!("invalid SILVA_SITE_URL"))?;
-        if !["http", "https"].contains(&parsed.scheme()) || parsed.path() != "/" {
-            bail!("SILVA_SITE_URL must be an http(s) origin without path");
-        }
-        let command: Vec<String> = optional("SILVA_SITE_BUILD_COMMAND")?
-            .unwrap_or_else(|| "pnpm run build".into())
-            .split_whitespace()
-            .map(str::to_owned)
-            .collect();
-        Ok(Some(Self {
-            website_dir: website_dir.into(),
-            command,
-            site_url: site_url.trim_end_matches('/').to_owned(),
-            timeout: seconds("SILVA_SITE_BUILD_TIMEOUT_SECONDS", 600)?,
-        }))
-    }
 }
 
 /// 对象存储服务商。两者都通过各自的原生签名协议访问私有 bucket。
@@ -159,8 +117,13 @@ impl StorageConfig {
             || parsed.host_str().is_none()
             || parsed.path() != "/"
             || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
         {
-            bail!("SILVA_STORAGE_ENDPOINT must be an https origin without path or query");
+            bail!(
+                "SILVA_STORAGE_ENDPOINT must be an origin without credentials, path, query or fragment"
+            );
         }
         let root = normalize_root(optional("SILVA_STORAGE_ROOT")?.as_deref().unwrap_or("/"))?;
         let bucket = required("SILVA_STORAGE_BUCKET")?;
@@ -179,7 +142,7 @@ impl StorageConfig {
         };
         Ok(Some(Self {
             provider,
-            endpoint: endpoint.trim_end_matches('/').to_owned(),
+            endpoint: parsed.origin().ascii_serialization(),
             bucket,
             region,
             root,
@@ -282,15 +245,17 @@ impl Config {
             access_token_ttl: seconds("SILVA_ACCESS_TOKEN_TTL_SECONDS", 900)?,
             refresh_token_ttl: seconds("SILVA_REFRESH_TOKEN_TTL_SECONDS", 604_800)?,
             worker_interval: seconds("SILVA_WORKER_INTERVAL_SECONDS", 60)?,
+            trust_proxy_ip_header: match optional("SILVA_TRUST_PROXY_IP_HEADER")?.as_deref() {
+                None | Some("false" | "0") => false,
+                Some("true" | "1") => true,
+                Some(_) => bail!("SILVA_TRUST_PROXY_IP_HEADER must be true or false"),
+            },
             api_rate_per_minute: positive("SILVA_API_RATE_PER_MINUTE", 600)?,
             login_rate_per_minute: positive("SILVA_LOGIN_RATE_PER_MINUTE", 10)?,
             login_lockout_threshold: positive("SILVA_LOGIN_LOCKOUT_THRESHOLD", 5)?,
             login_lockout_duration: seconds("SILVA_LOGIN_LOCKOUT_SECONDS", 900)?,
             storage: StorageConfig::from_env(environment == "production")?,
             media_upload_ttl: upload_ttl()?,
-            site_build: SiteBuildConfig::from_env()?,
-            publish_poll_interval: seconds("SILVA_PUBLISH_POLL_SECONDS", 5)?,
-            site_serve: flag("SILVA_SITE_SERVE")?,
         })
     }
 
@@ -329,15 +294,6 @@ fn upload_ttl() -> anyhow::Result<Duration> {
         bail!("SILVA_MEDIA_UPLOAD_TTL_SECONDS must be at most {MEDIA_UPLOAD_TTL_MAX_SECONDS}");
     }
     Ok(ttl)
-}
-
-/// 读取布尔开关：`true`/`1` 为开，`false`/`0` 或未设置为关。
-fn flag(name: &str) -> anyhow::Result<bool> {
-    match optional(name)?.as_deref() {
-        None | Some("false" | "0") => Ok(false),
-        Some("true" | "1") => Ok(true),
-        Some(_) => bail!("{name} must be true or false"),
-    }
 }
 
 /// 读取可选字符串配置；未设置或去空白后为空时返回 None。
@@ -380,15 +336,13 @@ mod tests {
             access_token_ttl: Duration::from_secs(900),
             refresh_token_ttl: Duration::from_secs(604_800),
             worker_interval: Duration::from_secs(60),
+            trust_proxy_ip_header: false,
             api_rate_per_minute: 1,
             login_rate_per_minute: 1,
             login_lockout_threshold: 1,
             login_lockout_duration: Duration::from_secs(1),
             storage: None,
             media_upload_ttl: Duration::from_secs(900),
-            site_build: None,
-            publish_poll_interval: Duration::from_secs(5),
-            site_serve: false,
         }
     }
 

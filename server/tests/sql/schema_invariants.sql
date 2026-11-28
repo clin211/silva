@@ -24,10 +24,10 @@ BEGIN
   FROM unnest(ARRAY[
     'users', 'roles', 'permissions', 'user_roles', 'role_permissions', 'sessions',
     'posts', 'post_revisions', 'categories', 'tags', 'post_revision_categories',
-    'post_revision_tags', 'post_reviews', 'media_assets', 'post_revision_media', 'profiles',
+    'post_revision_tags', 'published_posts', 'published_post_categories', 'published_post_tags', 'published_post_media', 'media_assets', 'media_blobs', 'media_blob_writes', 'media_object_deletions', 'media_references', 'post_revision_media', 'profiles',
     'experiences', 'skills', 'social_links', 'ai_sources', 'ai_repositories',
-    'ai_ingestion_runs', 'ai_repository_snapshots', 'publish_jobs', 'site_state', 'site_generation_posts',
-    'outbox_events', 'audit_logs'
+    'ai_ingestion_runs', 'ai_repository_snapshots', 'site_state',
+    'audit_logs', 'series', 'series_sections', 'series_items'
   ]) AS expected(expected_name)
   WHERE to_regclass(format('public.%I', expected_name)) IS NULL;
   IF missing_objects IS NOT NULL THEN
@@ -38,8 +38,8 @@ BEGIN
   SELECT string_agg(removed_name, ', ' ORDER BY removed_name)
   INTO missing_objects
   FROM unnest(ARRAY[
-    'mcp_servers', 'mcp_server_versions', 'mcp_categories', 'mcp_server_categories',
-    'projects', 'project_technologies', 'project_links', 'tools'
+    'post_reviews', 'mcp_servers', 'mcp_server_versions', 'mcp_categories', 'mcp_server_categories',
+    'projects', 'project_technologies', 'project_links', 'tools', 'publication_history_archive', 'outbox_events', 'publish_jobs', 'live_post_media', 'site_generation_posts', 'site_generation_series'
   ]) AS removed(removed_name)
   WHERE to_regclass(format('public.%I', removed_name)) IS NOT NULL;
   IF missing_objects IS NOT NULL THEN
@@ -103,13 +103,15 @@ BEGIN
       string_agg(
         CASE
           WHEN a.attname = 'id' THEN '$1'
+          -- 未删除账户需要密码哈希，即使该列允许已删除账户使用 NULL。
+          WHEN entity_table.relname = 'users' AND a.attname = 'password_hash' THEN quote_literal('silva-schema-probe')
           WHEN NOT a.attnotnull THEN 'NULL'
           WHEN d.oid IS NOT NULL THEN 'DEFAULT'
           WHEN a.atttypid = 'uuid'::regtype THEN quote_literal(test_id) || '::uuid'
           WHEN a.atttypid = 'text'::regtype THEN
             CASE WHEN a.attname LIKE '%mime_type' THEN quote_literal('image/png')
             WHEN a.attname = 'status' THEN
-              quote_literal(CASE entity_table.relname WHEN 'post_reviews' THEN 'pending' ELSE 'queued' END)
+              quote_literal('queued')
             ELSE quote_literal('silva-schema-probe') END
           WHEN a.atttypid IN ('int2'::regtype, 'int4'::regtype, 'int8'::regtype) THEN '1'
           WHEN a.atttypid = 'timestamptz'::regtype THEN 'now()'
@@ -140,15 +142,58 @@ BEGIN
     END LOOP;
     DROP TABLE silva_uuid_probe;
   END LOOP;
-  IF entity_count < 21 THEN
+  IF entity_count < 23 THEN
     RAISE EXCEPTION 'UUID entity coverage unexpectedly low: %', entity_count;
   END IF;
+
+  -- 逐列核对系列外键的删除策略，篇章的复合外键不能退化为单列引用。
+  IF EXISTS (
+    SELECT 1 FROM (VALUES
+      ('series','cover_media_id','media_assets','id','r'), ('series','category_id','categories','id','r'),
+      ('series','created_by','users','id','a'), ('series_sections','series_id','series','id','c'),
+      ('series_items','series_id','series','id','c'), ('series_items','post_id','posts','id','c'),
+      ('series_items','series_id,section_id','series_sections','series_id,id','a')
+    ) AS e(src,cols,dst,refs,policy)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM pg_constraint c WHERE c.contype='f' AND c.conrelid=e.src::regclass
+        AND c.confrelid=e.dst::regclass AND c.confdeltype::text=e.policy
+        AND (SELECT string_agg(a.attname,',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(n,ord)
+             JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.n)=e.cols
+        AND (SELECT string_agg(a.attname,',' ORDER BY k.ord) FROM unnest(c.confkey) WITH ORDINALITY k(n,ord)
+             JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.n)=e.refs
+    )
+  ) THEN RAISE EXCEPTION '系列外键或删除策略不匹配'; END IF;
+  IF EXISTS (
+    SELECT 1 FROM unnest(ARRAY['series','series_sections','series_items']) t(name)
+    WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=t.name::regclass
+      AND tgfoid='maintain_updated_at()'::regprocedure AND tgtype=19 AND tgenabled='O')
+      OR NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=t.name::regclass
+        AND contype='p' AND pg_get_constraintdef(oid)='PRIMARY KEY (id)')
+  )
+  THEN RAISE EXCEPTION '系列主键或更新时间触发器不匹配'; END IF;
+
+  -- 两个系列中的同位置篇章不能互借；移到根后可删除原篇章而保留文章。
+  INSERT INTO series(id,slug,title) VALUES(test_id,test_id::text,'系列甲'),(other_test_id,other_test_id::text,'系列乙');
+  INSERT INTO series_sections(id,series_id,title,position) VALUES(test_id,test_id,'第一章',0);
+  INSERT INTO posts(id,slug,current_revision_id) VALUES(test_id,test_id::text,test_id);
+  INSERT INTO post_revisions(id,post_id,revision_no,title,markdown_body) VALUES(test_id,test_id,1,'成员','');
+  BEGIN
+    INSERT INTO series_items(id,series_id,section_id,post_id,position) VALUES(test_id,other_test_id,test_id,test_id,0);
+    RAISE EXCEPTION '目录接受了其他系列的篇章';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+  INSERT INTO series_items(id,series_id,section_id,post_id,position) VALUES(test_id,test_id,test_id,test_id,0);
+  UPDATE series_items SET section_id=NULL WHERE id=test_id;
+  DELETE FROM series_sections WHERE id=test_id;
+  IF NOT EXISTS (SELECT 1 FROM series_items WHERE series_id=test_id AND section_id IS NULL AND post_id=test_id)
+    THEN RAISE EXCEPTION '删除篇章丢失根条目'; END IF;
+  DELETE FROM series WHERE id IN (test_id,other_test_id);
+  IF NOT EXISTS (SELECT 1 FROM posts WHERE id=test_id)
+    THEN RAISE EXCEPTION '删除系列丢失文章'; END IF;
 
   -- 在真实业务表上校验无外键的 UUID 引用，不仅依赖通过 LIKE 复制的临时表。
   INSERT INTO users (id, email, password_hash, display_name)
   VALUES (test_id, test_id::text || '@schema.invalid', 'not-a-real-password-hash', 'Schema probe');
-  INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload)
-  VALUES (test_id, 'schema_probe', test_id, 'schema_probe', '{}');
   INSERT INTO audit_logs (id, actor_user_id, action, resource_type, resource_id)
   VALUES (test_id, test_id, 'schema_probe', 'schema_probe', test_id);
   FOREACH bad_id IN ARRAY ARRAY[
@@ -156,11 +201,6 @@ BEGIN
     '019535d9-3df7-79fb-7466-fa907fa17f9e'::uuid,
     '019535d9-3df7-79fb-c466-fa907fa17f9e'::uuid
   ] LOOP
-    BEGIN
-      UPDATE outbox_events SET aggregate_id = bad_id WHERE id = test_id;
-      RAISE EXCEPTION 'Invalid UUID accepted by outbox_events.aggregate_id: %', bad_id;
-    EXCEPTION WHEN check_violation THEN NULL;
-    END;
     BEGIN
       UPDATE audit_logs SET resource_id = bad_id WHERE id = test_id;
       RAISE EXCEPTION 'Invalid UUID accepted by audit_logs.resource_id: %', bad_id;
@@ -178,11 +218,17 @@ BEGIN
     END;
   END LOOP;
 
+  IF EXISTS (SELECT FROM pg_attribute WHERE attrelid='posts'::regclass
+      AND attname IN ('desired_published_revision_id','desired_published_at','published_revision_id','published_at','post_type','slug_locked')
+      AND NOT attisdropped) OR EXISTS (SELECT FROM pg_attribute WHERE attrelid='series'::regclass
+      AND attname IN ('desired_published_at','slug_locked') AND NOT attisdropped) THEN
+    RAISE EXCEPTION '文章或系列仍存有已弃用的发布字段';
+  END IF;
   IF (SELECT count(*) FROM pg_constraint
-      WHERE conname IN ('posts_current_revision_fk', 'posts_desired_revision_fk')
+      WHERE conname = 'posts_current_revision_fk'
         AND conrelid = 'posts'::regclass AND contype = 'f'
-        AND condeferrable AND condeferred AND confdeltype = 'a') <> 2 THEN
-    RAISE EXCEPTION 'posts revision FKs must both use deferred NO ACTION';
+        AND condeferrable AND condeferred AND confdeltype = 'a') <> 1 THEN
+    RAISE EXCEPTION 'posts current revision FK must use deferred NO ACTION';
   END IF;
   IF (SELECT count(*) FROM site_state WHERE singleton) <> 1
     OR EXISTS (SELECT 1 FROM site_state WHERE NOT singleton) THEN

@@ -7,26 +7,22 @@ pub const AUTHOR_PERMISSIONS: &[&str] = &[
     "posts.create",
     "posts.read_own",
     "posts.edit_own",
-    "posts.submit_own",
     "media.manage_own",
-    "jobs.read_own",
 ];
 pub const EDITOR_PERMISSIONS: &[&str] = &[
     "posts.manage",
-    "posts.review",
     "posts.publish",
     "media.manage",
     "taxonomy.manage",
+    "series.manage",
     "profile.manage",
     "resources.manage",
     "ai.manage",
-    "jobs.read",
 ];
 pub const ADMIN_PERMISSIONS: &[&str] = &[
     "users.manage",
     "roles.read",
     "ai.ingest",
-    "publishing.retry",
     "audit.read",
     "system.read",
 ];
@@ -251,7 +247,7 @@ mod tests {
     #[test]
     fn role_hierarchy_does_not_grant_author_editor_actions() {
         assert!(!permissions_for_role("author").contains(&"posts.publish"));
-        assert!(permissions_for_role("editor").contains(&"posts.review"));
+        assert!(permissions_for_role("editor").contains(&"posts.publish"));
         assert!(!permissions_for_role("editor").contains(&"users.manage"));
         assert!(permissions_for_role("admin").contains(&"users.manage"));
     }

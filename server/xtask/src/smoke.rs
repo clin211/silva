@@ -276,7 +276,7 @@ fn navigation_queries(dashboard: &Value, start_ms: i64, end_ms: i64) -> Result<H
 pub async fn run() -> Result<()> {
     let smoke = Smoke {
         client: client()?,
-        api: endpoint("SILVA_SMOKE_API", "http://127.0.0.1:8088"),
+        api: endpoint("SILVA_SMOKE_API", "http://127.0.0.1:8089"),
         prometheus: endpoint("SILVA_SMOKE_PROMETHEUS", "http://127.0.0.1:9090"),
         grafana: endpoint("SILVA_SMOKE_GRAFANA", "http://127.0.0.1:3001"),
         password: env::var("GRAFANA_ADMIN_PASSWORD")

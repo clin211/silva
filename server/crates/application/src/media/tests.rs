@@ -1,8 +1,9 @@
 //! 媒体用例的单元测试，使用内存仓储、内存对象存储和按前缀判定的图片检查器。
 
 use super::*;
-use crate::ports::StaleMedia;
+use crate::ports::{BlobReservation, PutOutcome, StaleMedia};
 use async_trait::async_trait;
+use futures_util::stream;
 use silva_domain::identity::{Principal, User, permissions_for_role};
 use std::{
     collections::HashMap,
@@ -12,6 +13,7 @@ use std::{
 #[derive(Default)]
 struct MemoryRepository {
     rows: Mutex<HashMap<Uuid, MediaRecord>>,
+    retired: Mutex<Vec<String>>,
     audits: Mutex<Vec<&'static str>>,
     /// 与数据库一致：保留期按拒绝时间计算，不随其他更新变化。
     rejected_at: Mutex<HashMap<Uuid, DateTime<Utc>>>,
@@ -107,13 +109,41 @@ impl MediaRepository for MemoryRepository {
         })
     }
 
-    async fn mark_ready(
+    async fn legacy_images(&self, _: i64) -> Result<Vec<(Uuid, String)>> {
+        Ok(vec![])
+    }
+    async fn retired_objects(&self, _: i64) -> Result<Vec<String>> {
+        Ok(self.retired.lock().unwrap().clone())
+    }
+    async fn finish_deletion(&self, key: &str, deleted: bool) -> Result<()> {
+        if deleted {
+            self.retired.lock().unwrap().retain(|queued| queued != key);
+        }
+        Ok(())
+    }
+    async fn reserve_blob(&self, digest: &str) -> Result<BlobReservation> {
+        Ok(BlobReservation {
+            id: ids::new_id(),
+            key: format!("blobs/{digest}"),
+            stored: false,
+        })
+    }
+    async fn references(&self, _: Uuid, _: &Principal) -> Result<MediaUsage> {
+        Ok(MediaUsage::default())
+    }
+
+    async fn store_image(
         &self,
-        id: Uuid,
-        storage_key: &str,
-        image: &VerifiedImage,
-        _actor: &MediaActor<'_>,
-    ) -> Result<Option<Media>> {
+        file: CheckedUpload,
+        mode: MediaWrite<'_>,
+        reservation: BlobReservation,
+    ) -> Result<Option<MediaRecord>> {
+        if let MediaWrite::Upload(new, actor) = mode {
+            self.create(new, actor.meta).await?;
+        }
+        let id = file.id;
+        let image = file.image;
+        let storage_key = reservation.key;
         if self
             .vanish_on_ready
             .load(std::sync::atomic::Ordering::SeqCst)
@@ -121,7 +151,7 @@ impl MediaRepository for MemoryRepository {
             self.rows().remove(&id);
             return Ok(None);
         }
-        Ok(self.transition(
+        self.transition(
             id,
             |record| {
                 record.storage_key = Some(storage_key.to_owned());
@@ -132,7 +162,8 @@ impl MediaRepository for MemoryRepository {
                 record.media.height = Some(image.height as i32);
             },
             "media.ready",
-        ))
+        );
+        self.find(id).await
     }
 
     async fn mark_rejected(
@@ -167,10 +198,14 @@ impl MediaRepository for MemoryRepository {
         Ok(record.media.clone())
     }
 
-    async fn delete(&self, id: Uuid, _actor: &MediaActor<'_>) -> Result<MediaRecord> {
+    async fn delete(&self, id: Uuid, _: &Principal, _: &RequestMeta) -> Result<Option<MediaUsage>> {
         let record = self.rows().remove(&id).ok_or(AppError::NotFound)?;
+        self.retired.lock().unwrap().extend([
+            record.upload_key,
+            record.storage_key.unwrap_or_else(|| storage_key(id)),
+        ]);
         self.audit("media.delete");
-        Ok(record)
+        Ok(None)
     }
 
     async fn stale(
@@ -221,6 +256,7 @@ impl MediaRepository for MemoryRepository {
                 .is_some_and(|record| record.media.status != MediaStatus::Ready);
         if removable {
             rows.remove(&id);
+            self.retired.lock().unwrap().push(storage_key(id));
         }
         Ok(removable)
     }
@@ -237,8 +273,6 @@ impl MediaRepository for MemoryRepository {
 #[derive(Default)]
 struct MemoryStorage {
     objects: Mutex<HashMap<String, Vec<u8>>>,
-    /// 收到第一块上传字节时唤醒测试客户端。
-    receiving: tokio::sync::Notify,
     /// 删除时总是失败的键。
     failing_deletes: Mutex<std::collections::HashSet<String>>,
 }
@@ -269,7 +303,6 @@ impl ObjectStorage for MemoryStorage {
         let mut bytes = Vec::new();
         while let Some(chunk) = body.next().await {
             bytes.extend_from_slice(&chunk.unwrap());
-            self.receiving.notify_one();
         }
         assert_eq!(bytes.len() as u64, length);
         assert_eq!(
@@ -454,39 +487,27 @@ fn assert_media_invalid(result: Result<Media>, expected: RejectionReason) {
     }
 }
 
-/// 客户端等到存储已收到文件头才发后半段，可区分流式转发和整文件缓冲后上传。
+/// 分块接收的无效图片不应写入对象存储。
 #[tokio::test]
-async fn forwards_bytes_before_input_eof_and_never_commits_rejected_content() {
+async fn rejects_invalid_chunks_before_storing() {
     let f = fixture();
     let author = principal("author");
-    let prefix = Bytes::from_static(b"\x89PNG\r\n\x1a\n1234");
-    let (client, rx) = tokio::sync::mpsc::channel(1);
-    let body = stream::unfold(
-        rx,
-        |mut rx| async move { rx.recv().await.map(|b| (Ok(b), rx)) },
-    );
-    let send = async {
-        client.send(prefix).await.unwrap();
-        f.storage.receiving.notified().await;
-        assert!(f.storage.objects.lock().unwrap().is_empty());
-        client.send(Bytes::from_static(b"x")).await.unwrap();
-        drop(client);
-    };
-    let meta = RequestMeta::default();
-    let receive = f.service.upload(
-        &author,
-        UploadRequest {
-            size_bytes: 13,
-            ..png_request()
-        },
-        Box::pin(body),
-        &meta,
-    );
-    let (_, result) = tokio::time::timeout(Duration::from_secs(2), async {
-        tokio::join!(send, receive)
-    })
-    .await
-    .unwrap();
+    let chunks = [
+        Ok(Bytes::from_static(b"\x89PNG\r\n\x1a\n1234")),
+        Ok(Bytes::from_static(b"x")),
+    ];
+    let result = f
+        .service
+        .upload(
+            &author,
+            UploadRequest {
+                size_bytes: 13,
+                ..png_request()
+            },
+            Box::pin(stream::iter(chunks)),
+            &RequestMeta::default(),
+        )
+        .await;
     assert!(matches!(result, Err(AppError::MediaInvalid { .. })));
     assert!(f.storage.objects.lock().unwrap().is_empty());
     assert_eq!(f.audits(), ["media.create", "media.rejected"]);
@@ -546,14 +567,34 @@ async fn confirming_valid_upload_writes_formal_object_and_is_idempotent() {
     let f = fixture();
     let author = principal("author");
     let id = f.pending(&author).await.id;
+    let pending = f.service.load(&author, id).await.unwrap();
     f.storage.put(&upload_key(id), b"PNG:64");
     let media = f.update(&author, id, confirm()).await.unwrap();
     assert_eq!(media.status, MediaStatus::Ready);
     assert_eq!(media.mime_type.as_deref(), Some("image/png"));
     assert_eq!((media.width, media.height), (Some(64), Some(10)));
     assert_eq!(media.size_bytes, Some(6));
-    assert_eq!(f.storage.get(&storage_key(id)).unwrap(), b"PNG:64");
+    assert_eq!(
+        f.storage
+            .get(f.repository.rows()[&id].storage_key.as_ref().unwrap())
+            .unwrap(),
+        b"PNG:64"
+    );
     assert!(f.storage.get(&upload_key(id)).is_none(), "临时对象已删除");
+    // 另一个确认已读到旧状态，读取对象时第一个请求已清除了临时键。
+    let concurrent = f
+        .service
+        .confirm(
+            pending,
+            &MediaActor {
+                user_id: author.user.id,
+                meta: &RequestMeta::default(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(concurrent.id, id);
+    assert_eq!(concurrent.status, MediaStatus::Ready);
     // 重复确认返回同一结果，不再写审计。
     let again = f.update(&author, id, confirm()).await.unwrap();
     assert_eq!(again.status, MediaStatus::Ready);
@@ -638,7 +679,12 @@ async fn existing_formal_object_wins_after_interrupted_confirmation() {
     f.storage.put(&upload_key(id), b"PNG:7");
     let media = f.update(&author, id, confirm()).await.unwrap();
     assert_eq!(media.width, Some(300), "以不可覆盖的正式对象为准");
-    assert_eq!(f.storage.get(&storage_key(id)).unwrap(), b"PNG:300");
+    assert_eq!(
+        f.storage
+            .get(f.repository.rows()[&id].storage_key.as_ref().unwrap())
+            .unwrap(),
+        b"PNG:300"
+    );
 
     // 临时对象已被删除但正式对象存在时同样可以完成确认。
     let other = f.pending(&author).await.id;
@@ -781,7 +827,8 @@ async fn delete_removes_record_and_objects() {
         .await
         .unwrap();
     assert!(f.repository.rows().is_empty());
-    assert!(f.storage.get(&storage_key(id)).is_none());
+    f.service.purge_stale(Utc::now()).await.unwrap();
+    assert!(f.storage.objects.lock().unwrap().is_empty());
     assert!(matches!(
         f.service.get(&author, id).await,
         Err(AppError::NotFound)
@@ -844,6 +891,7 @@ async fn purge_and_delete_remove_formal_objects_left_by_interrupted_confirmation
         .delete(&author, pending, &RequestMeta::default())
         .await
         .unwrap();
+    f.service.purge_stale(Utc::now()).await.unwrap();
     assert!(f.storage.get(&storage_key(pending)).is_none());
 }
 

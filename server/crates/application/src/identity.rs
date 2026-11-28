@@ -62,6 +62,13 @@ impl UserFilter {
                 "q must contain at most 100 bytes",
             ));
         }
+        if q.as_deref().is_some_and(|q| q.contains('\0')) {
+            errors.push(FieldError::new(
+                "q",
+                FieldErrorCode::InvalidFormat,
+                "q must not contain NUL",
+            ));
+        }
         if role
             .as_deref()
             .is_some_and(|value| !ROLE_KEYS.contains(&value))
@@ -122,8 +129,8 @@ impl IdentityService {
         meta: &RequestMeta,
     ) -> Result<IssuedTokens> {
         let key = email.trim().to_lowercase();
-        if key.len() > 254 {
-            // 超长邮箱不可能对应账户，不进入锁定表，避免超长键占用内存。
+        if key.len() > 254 || key.contains('\0') {
+            // 超长邮箱或含空字符的邮箱不可能对应数据库中的账户。
             self.repository
                 .record_login_failure(None, LoginFailure::InvalidCredentials, meta)
                 .await?;
@@ -174,54 +181,40 @@ impl IdentityService {
         meta: &RequestMeta,
     ) -> Result<LoginAttempt> {
         let record = self.repository.find_login(email).await?;
-        let (account, password_hash) = record
-            .map(|record| ((record.id, record.active), record.password_hash))
-            .unzip();
+        let user_id = record.as_ref().map(|r| r.id);
         let valid = password.len() <= 1024
             && self
                 .credentials
-                .verify_password(password, password_hash)
+                .verify_password(password, record.as_ref().map(|r| r.password_hash.clone()))
                 .await?;
-        let user_id = match account {
-            None => {
-                return Ok(LoginAttempt::Failed {
-                    user_id: None,
-                    reason: LoginFailure::InvalidCredentials,
-                });
-            }
-            Some((id, _)) if !valid => {
-                return Ok(LoginAttempt::Failed {
-                    user_id: Some(id),
-                    reason: LoginFailure::InvalidCredentials,
-                });
-            }
-            Some((id, false)) => {
-                return Ok(LoginAttempt::Failed {
-                    user_id: Some(id),
-                    reason: LoginFailure::AccountDisabled,
-                });
-            }
-            Some((id, true)) => id,
+        let Some(account) = record.filter(|_| valid) else {
+            return Ok(LoginAttempt::Failed {
+                user_id,
+                reason: LoginFailure::InvalidCredentials,
+            });
         };
+        let user_id = account.id;
+        if !account.active {
+            return Ok(LoginAttempt::Failed {
+                user_id: Some(user_id),
+                reason: LoginFailure::AccountDisabled,
+            });
+        }
         let session_id = ids::new_id();
         let tokens = self.tokens.issue(user_id, session_id)?;
         let hash = self.credentials.token_hash(&tokens.refresh_token);
         let session = NewSession {
             id: session_id,
             user_id,
+            verified_hash: &account.password_hash,
             token_hash: &hash,
             expires_at: tokens.refresh_expires_at,
         };
-        match self.repository.create_session(&session, meta).await {
-            Ok(()) => {}
-            // 校验密码后账户被并发停用。
-            Err(AppError::InvalidCredentials) => {
-                return Ok(LoginAttempt::Failed {
-                    user_id: Some(user_id),
-                    reason: LoginFailure::AccountDisabled,
-                });
-            }
-            Err(error) => return Err(error),
+        if let Some(reason) = self.repository.create_session(&session, meta).await? {
+            return Ok(LoginAttempt::Failed {
+                user_id: Some(user_id),
+                reason,
+            });
         }
         Ok(LoginAttempt::Success(Box::new(tokens)))
     }
@@ -300,14 +293,19 @@ impl IdentityService {
         // 账户哈希缺失时 verify_password 仍执行虚拟校验并返回 false。
         if !self
             .credentials
-            .verify_password(current_password, stored)
+            .verify_password(current_password, stored.clone())
             .await?
         {
             return Err(current_password_invalid());
         }
         let password_hash = self.credentials.hash_password(new_password).await?;
         self.repository
-            .change_password(principal, password_hash, meta)
+            .change_password(
+                principal,
+                stored.as_deref().ok_or_else(current_password_invalid)?,
+                password_hash,
+                meta,
+            )
             .await
     }
 
@@ -396,10 +394,10 @@ impl IdentityService {
     ) -> Result<User> {
         let email = email.trim().to_lowercase();
         if email.len() > 254
-            || !email.contains('@')
+            || email.matches('@').count() != 1
             || email.starts_with('@')
             || email.ends_with('@')
-            || email.chars().any(char::is_whitespace)
+            || email.chars().any(|c| c.is_whitespace() || c.is_control())
         {
             return Err(AppError::invalid(
                 "email",
@@ -471,6 +469,22 @@ impl IdentityService {
             .await
     }
 
+    #[tracing::instrument(name = "identity.delete_user", skip_all)]
+    pub async fn delete_user(
+        &self,
+        principal: &Principal,
+        id: Uuid,
+        meta: &RequestMeta,
+    ) -> Result<()> {
+        principal.require("users.manage")?;
+        if principal.user.id == id {
+            return Err(AppError::Forbidden);
+        }
+        self.repository
+            .delete_user(principal.user.id, id, meta)
+            .await
+    }
+
     #[tracing::instrument(name = "identity.roles", skip_all)]
     pub async fn roles(&self, principal: &Principal) -> Result<Vec<Role>> {
         principal.require("roles.read")?;
@@ -525,6 +539,13 @@ fn validate_name(name: &str) -> Result<()> {
             "display_name",
             FieldErrorCode::OutOfRange,
             "display_name must contain 1 to 100 bytes",
+        ));
+    }
+    if name.contains('\0') {
+        return Err(AppError::invalid(
+            "display_name",
+            FieldErrorCode::InvalidFormat,
+            "display_name must not contain NUL",
         ));
     }
     Ok(())

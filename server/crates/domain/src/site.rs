@@ -1,117 +1,103 @@
-//! 站点发布：发布任务状态、构建快照与产物清单。快照结构见 `docs/contracts/site-snapshot.md`。
+//! 公开内容版本与供 SSR 使用的数据。结构见 `docs/contracts/site-snapshot.md`。
 
-use crate::content::{Heading, UserRef};
+use crate::content::Heading;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// 构建器支持的快照结构版本。
+/// 公开快照结构版本。
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
-/// 发布任务状态。
+/// 公开内容版本号。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PublishJobStatus {
-    /// 等待 Worker 领取。
-    Queued,
-    /// Worker 正在导出、构建或上传。
-    Building,
-    /// 当前线上版本。
-    Active,
-    /// 构建失败且已用尽自动重试；仍为最新目标时可由管理员重试。
-    Failed,
-    /// 上线前已有更新的目标，不再构建。
-    Superseded,
-    /// 曾经上线，已被更新的版本取代。
-    Retired,
-}
-
-impl PublishJobStatus {
-    pub const ALL: [Self; 6] = [
-        Self::Queued,
-        Self::Building,
-        Self::Active,
-        Self::Failed,
-        Self::Superseded,
-        Self::Retired,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Building => "building",
-            Self::Active => "active",
-            Self::Failed => "failed",
-            Self::Superseded => "superseded",
-            Self::Retired => "retired",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|status| status.as_str() == value)
-    }
-}
-
-/// 发布任务。
-#[derive(Clone, Debug, Serialize)]
-pub struct PublishJob {
-    pub id: Uuid,
+pub struct SiteVersion {
     pub generation: i64,
-    pub status: PublishJobStatus,
-    /// 触发来源，如 `post.publish`、`post.unpublish`、`taxonomy.update`、`manual`、`bootstrap`。
-    pub trigger_type: String,
-    pub requested_by: Option<UserRef>,
-    /// 已开始的构建次数（含自动重试）。
-    pub attempts: i32,
-    /// 最近一次失败的原因；成功或尚未失败时为 None。
-    pub error_message: Option<String>,
-    #[serde(serialize_with = "silva_shared::time::serialize_option")]
-    pub started_at: Option<DateTime<Utc>>,
-    #[serde(serialize_with = "silva_shared::time::serialize_option")]
-    pub finished_at: Option<DateTime<Utc>>,
-    #[serde(serialize_with = "silva_shared::time::serialize")]
-    pub created_at: DateTime<Utc>,
 }
 
-/// 发布任务列表筛选。
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PublishJobFilter {
-    pub status: Option<PublishJobStatus>,
-    pub generation: Option<i64>,
-    /// 只返回该账户触发的任务；只有 `jobs.read_own` 时由用例强制设为当前账户。
-    pub requested_by: Option<Uuid>,
-}
-
-/// 登记站点目标的结果：新的发布任务及其 generation。
+/// 内容上线或撤下事务已提交的结果。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct SiteTarget {
-    pub publish_job_id: Uuid,
-    pub desired_generation: i64,
-}
-
-/// 文章上线或撤下被接受后的结果；不代表已经上线。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub struct PublicationAccepted {
-    pub publish_job_id: Uuid,
-    pub desired_generation: i64,
+pub struct PublicationResult {
+    pub generation: i64,
     pub publication_version: i64,
 }
 
-/// 站点构建快照，只含公开投影。
+/// 供公开接口与页面共用的已发布数据。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SiteSnapshot {
     pub schema_version: u32,
     pub generation: i64,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub generated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub series: Vec<SnapshotSeries>,
     pub posts: Vec<SnapshotPost>,
     pub categories: Vec<SnapshotCategory>,
     pub tags: Vec<SnapshotTag>,
     pub profile: Option<SnapshotProfile>,
     pub ai_trending: SnapshotTrending,
     pub media: Vec<SnapshotMedia>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotSeries {
+    pub id: Uuid,
+    pub slug: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub category: Option<SnapshotCategory>,
+    pub completion_status: crate::series::CompletionStatus,
+    pub featured: bool,
+    pub cover: Option<SnapshotImage>,
+    pub seo_title: Option<String>,
+    pub seo_description: Option<String>,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
+    pub published_at: DateTime<Utc>,
+    #[serde(serialize_with = "silva_shared::time::serialize")]
+    pub updated_at: DateTime<Utc>,
+    pub items: Vec<SnapshotSeriesItem>,
+    pub sections: Vec<SnapshotSection>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotSection {
+    pub title: String,
+    pub description: Option<String>,
+    pub items: Vec<SnapshotSeriesItem>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotSeriesItem {
+    pub post_slug: String,
+    pub display_title: Option<String>,
+}
+
+impl SiteSnapshot {
+    pub fn validate_series(&self) -> Result<(), String> {
+        use std::collections::HashSet;
+        let posts: HashSet<_> = self.posts.iter().map(|p| p.slug.as_str()).collect();
+        let media: HashSet<_> = self.media.iter().map(|m| m.id).collect();
+        let mut ids = HashSet::new();
+        let mut slugs = HashSet::new();
+        let mut members = HashSet::new();
+        for s in &self.series {
+            if !ids.insert(s.id)
+                || !slugs.insert(&s.slug)
+                || (s.items.is_empty() && s.sections.is_empty())
+                || s.sections.iter().any(|group| group.items.is_empty())
+                || s.cover
+                    .as_ref()
+                    .is_some_and(|cover| !media.contains(&cover.media_id))
+                || s.items
+                    .iter()
+                    .chain(s.sections.iter().flat_map(|group| &group.items))
+                    .any(|item| {
+                        !posts.contains(item.post_slug.as_str()) || !members.insert(&item.post_slug)
+                    })
+            {
+                return Err(format!("invalid series outline or reference: {}", s.id));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -209,43 +195,9 @@ pub struct SnapshotMedia {
     pub height: i32,
 }
 
-/// 构建产物清单，与产物一同上传。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArtifactManifest {
-    pub generation: i64,
-    pub attempt: i32,
-    pub snapshot_sha256: String,
-    pub files: Vec<ArtifactFile>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArtifactFile {
-    /// 相对产物根目录的路径，使用 `/` 分隔，不以 `/` 开头。
-    pub path: String,
-    pub size: u64,
-    pub sha256: String,
-    pub content_type: String,
-}
-
-/// 一次构建的对象存储位置。
-pub fn attempt_prefix(generation: i64, attempt: i32) -> String {
-    format!("site/{generation}/{attempt}/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn job_status_round_trips() {
-        for status in PublishJobStatus::ALL {
-            assert_eq!(PublishJobStatus::parse(status.as_str()), Some(status));
-            assert_eq!(
-                serde_json::to_value(status).unwrap(),
-                serde_json::json!(status.as_str())
-            );
-        }
-    }
 
     #[test]
     fn snapshot_round_trips_with_beijing_offset() {
@@ -253,6 +205,7 @@ mod tests {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             generation: 3,
             generated_at: "2026-11-24T08:00:00Z".parse().unwrap(),
+            series: vec![],
             posts: vec![],
             categories: vec![],
             tags: vec![],
@@ -266,8 +219,16 @@ mod tests {
             json["ai_trending"],
             serde_json::json!({"data_date": null, "repositories": []})
         );
+        assert_eq!(json["series"], serde_json::json!([]));
+        let mut legacy = json.clone();
+        legacy.as_object_mut().unwrap().remove("series");
+        assert_eq!(
+            serde_json::from_value::<SiteSnapshot>(legacy.clone()).unwrap(),
+            snapshot
+        );
+        legacy["series"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<SiteSnapshot>(legacy).is_err());
         let parsed: SiteSnapshot = serde_json::from_value(json).unwrap();
         assert_eq!(parsed, snapshot);
-        assert_eq!(attempt_prefix(3, 2), "site/3/2/");
     }
 }

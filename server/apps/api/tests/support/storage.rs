@@ -52,10 +52,17 @@ pub async fn post_image(
     (status, headers, serde_json::from_slice(&body).unwrap())
 }
 
+/// 暂停一次对象写入，以便其他事务在请求期间检查和回收对象。
+pub struct WritePause {
+    pub entered: tokio::sync::oneshot::Sender<String>,
+    pub resume: tokio::sync::oneshot::Receiver<()>,
+}
+
 /// 测试存储只在完整接收对象后提交。
 #[derive(Default)]
 pub struct MemoryStorage {
     pub objects: Mutex<HashMap<String, Vec<u8>>>,
+    pub pause_next_put: Mutex<Option<WritePause>>,
     /// 删除时总是失败的键，用于模拟存储故障。
     pub failing_deletes: Mutex<Vec<String>>,
 }
@@ -108,6 +115,11 @@ impl ObjectStorage for MemoryStorage {
         bytes: Vec<u8>,
         _content_type: &str,
     ) -> AppResult<PutOutcome> {
+        let pause = self.pause_next_put.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause.entered.send(key.to_owned()).unwrap();
+            pause.resume.await.unwrap();
+        }
         let mut objects = self.objects.lock().unwrap();
         if objects.contains_key(key) {
             return Ok(PutOutcome::AlreadyExists);

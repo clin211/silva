@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+percent-encoding.workspace = true
 futures-util.workspace = true
 silva-shared.workspace = true
 silva-domain.workspace = true

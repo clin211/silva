@@ -1,6 +1,6 @@
 # Silva 可观测性
 
-当前实现覆盖 API、数据库适配器、执行会话维护与媒体清理的 Worker，以及数据库中发布、采集和 Outbox 的队列快照。发布构建、外部来源采集和 Outbox 消费尚未实现；空队列不能作为这些业务链路可用的证据。
+当前实现覆盖 API、数据库适配器、执行会话维护与媒体清理的 Worker，以及同步内容写入、公开快照读取、采集队列。外部来源采集尚未实现；空队列不能作为这些业务链路可用的证据。
 
 ## 启动与入口
 
@@ -24,7 +24,7 @@ cargo run --locked -p silva-xtask -- fault-smoke
 cargo run --locked -p silva-xtask -- alert-receiver --bind 127.0.0.1:9094
 ```
 
-冒烟校验可通过 `SILVA_SMOKE_API`、`SILVA_SMOKE_PROMETHEUS`、`SILVA_SMOKE_GRAFANA` 覆盖默认地址；故障演练读取 `SILVA_SMOKE_API` 和 `SILVA_SMOKE_RECEIVER`（默认 `http://127.0.0.1:9094`），操作的仍是本仓库 Compose 定义的本地服务。
+Compose 的冒烟登录使用管理入口 8089，故障演练使用运维入口 8090。冒烟校验可通过 `SILVA_SMOKE_API`、`SILVA_SMOKE_PROMETHEUS`、`SILVA_SMOKE_GRAFANA` 覆盖默认地址；故障演练读取 `SILVA_SMOKE_API` 和 `SILVA_SMOKE_RECEIVER`（默认 `http://127.0.0.1:9094`），操作的仍是本仓库 Compose 定义的本地服务。
 
 | 入口 | 地址 | 用途 |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ cargo run --locked -p silva-xtask -- alert-receiver --bind 127.0.0.1:9094
 | Alertmanager | http://localhost:9093 | 当前告警、分组与静默 |
 | 本地通知记录 | http://localhost:9094/events | 最近 100 次告警及恢复通知，重启接收器后清空 |
 | OTLP/HTTP | http://localhost:4318 | 宿主机进程发送日志和链路 |
-| API 指标 | http://localhost:8088/metrics | Prometheus 文本指标 |
+| API 指标 | http://localhost:8090/metrics | Prometheus 文本指标 |
 
 Grafana 本地默认用户名 `admin`，密码 `silva-observability-local`；首次启动可用 `GRAFANA_ADMIN_PASSWORD` 覆盖。已有 Grafana 数据卷的密码通过 Grafana 管理功能修改，单独改变环境变量不会重置已有账户。脚本通过环境变量读取密码，不把密码作为命令参数。
 
@@ -41,7 +41,7 @@ Grafana 本地默认用户名 `admin`，密码 `silva-observability-local`；首
 
 日常排障从总览开始：确认 API 存活、数据库连接、Worker 最近成功时间、业务采集新鲜度及告警，再进入专项看板。顶部导航保留所选时间范围；点击 API 请求量、P95、P99 曲线数据点可选择「查看该路由日志」，携带路由模板与时间范围进入 Loki。其他指标面板可查看同时间范围的服务日志；数据库面板关联调用数据库的 API 日志，Worker 数据库问题从 Worker 日志排查。日志 `trace_id` 可跳转 Tempo 链路，链路可跳转关联日志。
 
-总览包含监控目标抓取状态、Collector 导出失败速率和队列使用率、通知投递失败速率。顶部卡片与表格查询所选时间范围终点的即时值；无业务流量时错误率和延迟可能无值，无数据不等于正常。Collector 某些失败计数器仅在发生失败后出现，无值时需结合抓取状态与其他导出指标排查。队列总览仅展示采集成功且一分钟内更新的快照，过期值不展示；发布、采集和 Outbox 消费仍未实现，空队列不代表链路就绪。
+总览包含监控目标抓取状态、Collector 导出失败速率和队列使用率、通知投递失败速率。顶部卡片与表格查询所选时间范围终点的即时值；无业务流量时错误率和延迟可能无值，无数据不等于正常。Collector 某些失败计数器仅在发生失败后出现，无值时需结合抓取状态与其他导出指标排查。队列总览仅展示采集成功且一分钟内更新的快照，过期值不展示；外部来源采集尚未实现，空队列不代表链路就绪。
 
 顶部「告警规则」在 Grafana 内查看 Prometheus 规则与状态；「告警静默」选择外部 `Alertmanager` 管理静默。规则仍由 `alerts.yaml` 管理，通知策略、接收器和模板仍由 `alertmanager.yaml` 管理，不另外创建 Grafana 告警规则。Prometheus、Alertmanager 原生页面用于底层诊断，本地通知记录用于检查 Webhook 投递。
 
@@ -89,8 +89,8 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 - 数据库操作延迟包含适配器调用中的连接等待、SQL 和事务，不冒充单条 SQL 耗时。获取连接指标的 `transaction` 包含 BEGIN 往返。PostgreSQL exporter 提供数据库自身状态。Linux 容器额外提供进程 CPU、RSS、文件描述符等指标；macOS 宿主机不提供 Linux 进程采集器。
 - Worker 指标包括执行结果、耗时、删除会话数量、执行周期和最近成功时间；监听可用不能替代任务成功心跳。
 - 业务队列每 15 秒读取一次数据库，单次最多 3 秒。`/metrics` 本身不进行数据库 I/O。失败时 `silva_business_metrics_up=0`，保留旧队列值与最后成功时间。读取队列前检查采集成功及时间新鲜度。
-- 发布 pending 为 desired generation 与 active generation 不同；等待年龄追溯 active 之后、desired 以内最早提交的任务，避免连续提交掩盖长时间未上线。超过五分钟时 `silva_publish_delayed=1`。激活目标后归零。
-- 采集积压只包含 queued/running；等待时间以 started_at 或 UTC slot_date 起点估算，尚非精确排队时间。Outbox 积压为未设置 processed_at 的事件。
+- 发布面板基于实际 HTTP 路由统计文章和系列上线与撤回的写入耗时及 5xx 比例；快照读取同时覆盖公开与 SSR 内网入口。
+- 采集积压只包含 queued/running；等待时间以 started_at 或 UTC slot_date 起点估算，尚非精确排队时间。
 
 主要指标包括：
 
@@ -99,9 +99,9 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 | HTTP | `silva_http_requests_total`、`silva_http_request_duration_seconds`、`silva_http_requests_in_flight` |
 | 数据库 | `silva_db_acquire_duration_seconds`、`silva_db_operation_duration_seconds`、`silva_db_errors_total`、`silva_db_pool_*` |
 | Worker | `silva_worker_runs_total`、`silva_worker_run_duration_seconds`、`silva_worker_last_success_timestamp_seconds`、`silva_worker_deleted_sessions_total`、`silva_worker_purged_media_total`、`silva_worker_task_failures_total{task}`（`sessions` 或 `media`，区分哪项维护失败） |
-| 业务状态 | `silva_business_metrics_up`、`silva_business_metrics_last_success_timestamp_seconds`、`silva_queue_pending`、`silva_queue_oldest_age_seconds`、`silva_publish_delayed` |
+| 业务状态 | `silva_business_metrics_up`、`silva_business_metrics_last_success_timestamp_seconds`、`silva_queue_pending`、`silva_queue_oldest_age_seconds` |
 
-新增发布、采集和 Outbox 消费者时，同步实现任务执行结果、重试耗尽、构建耗时、提交到激活耗时和来源新鲜度。API 生产任务时通过 `telemetry::inject_context()` 保存 W3C 上下文，Worker 使用 `set_parent()` 关联消费 span；长时间等待或多次消费可采用 span link。业务事件、任务 ID 和 generation 放在日志/span 属性中，不能放指标标签。当前未增加无消费者的任务追踪字段或虚构成功率。
+新增采集执行器时，同步实现任务执行结果、重试耗尽、采集耗时和来源新鲜度。API 生产任务时通过 `telemetry::inject_context()` 保存 W3C 上下文，Worker 使用 `set_parent()` 关联消费 span；长时间等待或多次消费可采用 span link。业务事件、任务 ID 和 generation 放在日志/span 属性中，不能放指标标签。当前未增加无消费者的任务追踪字段或虚构成功率。
 
 ## 配置
 
@@ -119,7 +119,7 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 
 ## 告警与排障
 
-规则在 `alerts.yaml`，行为测试在 `alerts.test.yaml`。当前 14 条规则覆盖抓取失败/目标消失、API 存活探测、业务 5xx 和 P95、数据库不可连接/获取超时、Worker 停滞/连续失败、业务指标陈旧、发布延迟、遥测导出失败/队列饱和、通知投递失败。
+规则在 `alerts.yaml`，行为测试在 `alerts.test.yaml`。当前规则覆盖抓取失败/目标消失、API 存活探测、业务 5xx 和 P95、数据库不可连接/获取超时、Worker 停滞/连续失败、业务指标陈旧、发布写入失败或变慢、快照读取失败、遥测导出失败/队列饱和、通知投递失败。
 
 错误率和延迟告警要求五分钟内至少 100 个业务请求，持续五分钟超标才触发。Worker 停滞从进程启动或上次成功执行起计算，超过三个配置周期并持续一分钟触发。各阈值是初始配置，需按真实流量调整。
 
@@ -132,7 +132,8 @@ Prometheus 保留 15 天、最多 2GB 的时间序列块；Loki 和 Tempo 配置
 | `SilvaDatabaseAcquireTimeout` | 连接池 → 长事务/慢操作 → 数据库连接上限 | 五分钟没有新增超时 |
 | `SilvaWorkerStalled` / `SilvaWorkerFailures` | Worker 看板 → Worker 日志 → 数据库可用性 | 心跳恢复，错误窗口清空 |
 | `SilvaBusinessMetricsStale` | 先停止使用队列旧值判断业务 → API 采集日志 → 数据库 | 采集成功且更新时间在一分钟内 |
-| `SilvaPublishDelayed` | 检查 desired/active generation → 发布任务与租约 | 目标激活；当前里程碑尚无发布消费者 |
+| `SilvaPublicationErrors` / `SilvaPublicationSlow` | 按发布请求的 trace ID 检查文章或系列事务、站点锁等待与连接池 | 五分钟写入 5xx 比例回到 5% 以内，P95 回到一秒以内 |
+| `SilvaSnapshotErrors` | 查看两个快照入口的 5xx 日志，检查数据库读取、公开投影及系列校验 | 五分钟内无新增读取 5xx |
 | `SilvaTelemetryExportFailed` / `SilvaTelemetryQueueFull` | Collector 日志 → Loki/Tempo 状态 → 存储和队列 | 导出失败速率归零，队列低于 80% |
 | `SilvaNotificationFailed` | Alertmanager 日志 → 本地接收器 `/health` | 通知成功投递 |
 

@@ -10,7 +10,7 @@ use pulldown_cmark::{CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, 
 use silva_application::ports::{ImageSize, MarkdownRenderer, RenderedMarkdown};
 use silva_domain::content::Heading;
 use silva_shared::{
-    error::{AppError, FieldError, FieldErrorCode, Result},
+    error::{AppError, FieldErrorCode, Result},
     ids::EntityId,
 };
 use std::{
@@ -40,8 +40,9 @@ static SANITIZER: LazyLock<Builder<'static>> = LazyLock::new(|| {
         .add_tag_attributes("span", ["class", "style"])
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") => value.starts_with(PUBLIC_MEDIA_PATH).then(|| value.into()),
-            ("span", "class") => matches!(value, "silva-img-wrap" | "silva-img-caption")
-                .then(|| value.into()),
+            ("span", "class") => {
+                matches!(value, "silva-img-wrap" | "silva-img-caption").then(|| value.into())
+            }
             ("span", "style") => parse_safe_color_style(value).map(Into::into),
             ("code", "class") => {
                 let language = value.strip_prefix("language-")?;
@@ -67,26 +68,22 @@ pub struct CommonMarkRenderer;
 impl MarkdownRenderer for CommonMarkRenderer {
     fn media_references(&self, field: &'static str, markdown: &str) -> Result<Vec<Uuid>> {
         let mut ids = Vec::new();
-        let mut errors = Vec::new();
+        let mut seen = HashSet::new();
         for event in Parser::new_ext(markdown, options()) {
             if let Event::Start(Tag::Image { dest_url, .. }) = event {
-                match parse_media_url(&dest_url) {
-                    Some(id) if !ids.contains(&id) => ids.push(id),
-                    Some(_) => {}
-                    None => errors.push(FieldError::new(
+                let id = parse_media_url(&dest_url).ok_or_else(|| {
+                    AppError::invalid(
                         field,
                         FieldErrorCode::InvalidValue,
                         "images must reference uploaded media as media:<id>",
-                    )),
+                    )
+                })?;
+                if seen.insert(id) {
+                    ids.push(id);
                 }
             }
         }
-        if errors.is_empty() {
-            Ok(ids)
-        } else {
-            errors.truncate(1);
-            Err(AppError::Validation(errors))
-        }
+        Ok(ids)
     }
 
     fn render(&self, markdown: &str, media: &HashMap<Uuid, ImageSize>) -> RenderedMarkdown {
@@ -96,8 +93,6 @@ impl MarkdownRenderer for CommonMarkRenderer {
         let mut parser = Parser::new_ext(markdown, options());
         while let Some(event) = parser.next() {
             match event {
-                // 原始 HTML 不执行，按文本显示。
-                Event::Html(raw) | Event::InlineHtml(raw) => events.push(Event::Text(raw)),
                 Event::Start(Tag::Heading {
                     level,
                     classes,
@@ -121,44 +116,13 @@ impl MarkdownRenderer for CommonMarkRenderer {
                         classes,
                         attrs,
                     }));
-                    events.extend(inner.into_iter().map(escape_raw_html));
+                    let mut inner = inner.into_iter();
+                    while let Some(event) = inner.next() {
+                        events.push(render_inline(event, &mut inner, media));
+                    }
                     events.push(Event::End(TagEnd::Heading(level)));
                 }
-                Event::Start(Tag::Image {
-                    dest_url, title, ..
-                }) => {
-                    let alt = plain_text(&collect_until(&mut parser, |end| {
-                        matches!(end, TagEnd::Image)
-                    }));
-                    let trimmed_alt = alt.trim();
-                    let alt_color = parse_alt_color_title(&title);
-                    let image = parse_media_url(&dest_url).and_then(|id| {
-                        media.get(&id).map(|size| {
-                            let safe_alt = escape_attribute(trimmed_alt);
-                            let img_tag = format!(
-                                r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="{}" height="{}" alt="{safe_alt}" loading="lazy" decoding="async">"#,
-                                size.width, size.height,
-                            );
-                            if trimmed_alt.is_empty() {
-                                img_tag
-                            } else {
-                                let style_attr = alt_color
-                                    .as_deref()
-                                    .map(|hex| format!(r#" style="color:{hex}""#))
-                                    .unwrap_or_default();
-                                format!(
-                                    r#"<span class="silva-img-wrap">{img_tag}<span class="silva-img-caption"{style_attr}>{safe_alt}</span></span>"#
-                                )
-                            }
-                        })
-                    });
-                    // 未知媒体只保留说明文字；保存前已校验引用，这里只是兜底。
-                    events.push(match image {
-                        Some(tag) => Event::InlineHtml(CowStr::from(tag)),
-                        None => Event::Text(CowStr::from(alt)),
-                    });
-                }
-                other => events.push(other),
+                other => events.push(render_inline(other, &mut parser, media)),
             }
         }
         let mut unsafe_html = String::with_capacity(markdown.len() * 3 / 2);
@@ -171,7 +135,10 @@ impl MarkdownRenderer for CommonMarkRenderer {
 }
 
 /// 收集到匹配的结束标签为止（不含结束标签）。
-fn collect_until<'a>(parser: &mut Parser<'a>, is_end: impl Fn(&TagEnd) -> bool) -> Vec<Event<'a>> {
+fn collect_until<'a>(
+    parser: &mut impl Iterator<Item = Event<'a>>,
+    is_end: impl Fn(&TagEnd) -> bool,
+) -> Vec<Event<'a>> {
     let mut depth = 0usize;
     let mut events = Vec::new();
     for event in parser.by_ref() {
@@ -186,8 +153,38 @@ fn collect_until<'a>(parser: &mut Parser<'a>, is_end: impl Fn(&TagEnd) -> bool) 
     events
 }
 
-fn escape_raw_html(event: Event<'_>) -> Event<'_> {
+fn render_inline<'a>(
+    event: Event<'a>,
+    parser: &mut impl Iterator<Item = Event<'a>>,
+    media: &HashMap<Uuid, ImageSize>,
+) -> Event<'a> {
     match event {
+        Event::Start(Tag::Image {
+            dest_url, title, ..
+        }) => {
+            let alt = plain_text(&collect_until(parser, |end| matches!(end, TagEnd::Image)));
+            let trimmed_alt = alt.trim();
+            let Some(id) = parse_media_url(&dest_url) else {
+                return Event::Text(alt.into());
+            };
+            let Some(size) = media.get(&id) else {
+                return Event::Text(alt.into());
+            };
+            let safe_alt = escape_attribute(trimmed_alt);
+            let img_tag = format!(
+                r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="{}" height="{}" alt="{safe_alt}" loading="lazy" decoding="async">"#,
+                size.width, size.height,
+            );
+            if trimmed_alt.is_empty() {
+                return Event::InlineHtml(img_tag.into());
+            }
+            let style_attr = parse_alt_color_title(&title)
+                .map(|hex| format!(r#" style="color:{hex}""#))
+                .unwrap_or_default();
+            Event::InlineHtml(format!(
+                r#"<span class="silva-img-wrap">{img_tag}<span class="silva-img-caption"{style_attr}>{safe_alt}</span></span>"#
+            ).into())
+        }
         Event::Html(raw) | Event::InlineHtml(raw) => Event::Text(raw),
         other => other,
     }
@@ -274,7 +271,12 @@ fn parse_alt_color_title(title: &str) -> Option<String> {
 }
 
 fn parse_safe_color_style(value: &str) -> Option<String> {
-    let raw = value.trim().strip_prefix("color:")?.trim().trim_end_matches(';').trim();
+    let raw = value
+        .trim()
+        .strip_prefix("color:")?
+        .trim()
+        .trim_end_matches(';')
+        .trim();
     is_hex_color(raw).then(|| format!("color:{}", raw.to_ascii_lowercase()))
 }
 
@@ -380,6 +382,13 @@ mod tests {
             r#"<img src="{PUBLIC_MEDIA_PATH}{id}" width="1600" height="900" alt="封面 &quot;图&quot;""#
         )));
         assert!(html.contains(r#"<span class="silva-img-caption">封面 "图"</span>"#));
+        let heading = CommonMarkRenderer.render(&format!("## 图示 ![说明](media:{id})"), &media);
+        assert!(
+            heading
+                .html
+                .contains(&format!(r#"src="{PUBLIC_MEDIA_PATH}{id}""#))
+        );
+        assert_eq!(heading.headings[0].text, "图示 说明");
         let colored_html = CommonMarkRenderer
             .render(
                 &format!(r#"![绿色说明](media:{id} "alt-color:#137A4D")"#),
@@ -387,8 +396,9 @@ mod tests {
             )
             .html;
         assert!(
-            colored_html
-                .contains(r#"<span class="silva-img-caption" style="color:#137a4d">绿色说明</span>"#)
+            colored_html.contains(
+                r#"<span class="silva-img-caption" style="color:#137a4d">绿色说明</span>"#
+            )
         );
         let empty_alt_html = CommonMarkRenderer
             .render(&format!("![](media:{id})"), &media)

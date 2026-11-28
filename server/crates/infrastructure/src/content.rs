@@ -1,8 +1,8 @@
-//! 文章、修订与审核的 PostgreSQL 仓储。修订只追加：保存总是插入新行，文章只移动指针。
+//! 文章编辑与公开修订的 PostgreSQL 仓储。
 
 use crate::{
     persistence::{acquire, audit_resource, begin, db},
-    publishing::enqueue_site_publish,
+    public_site::advance_generation,
 };
 use async_trait::async_trait;
 use serde_json::json;
@@ -12,11 +12,11 @@ use silva_application::ports::{
 };
 use silva_domain::{
     content::{
-        Heading, Post, PostFilter, PostSummary, Publication, Review, ReviewDecision, ReviewStatus,
-        ReviewSummary, Revision, RevisionContent, RevisionSummary, TaxonomyRef, UserRef,
+        Heading, Post, PostCategoryCount, PostCategoryCounts, PostFilter, PostSort, PostSummary,
+        Publication, Revision, RevisionContent, RevisionSummary, TaxonomyRef, UserRef,
     },
     media::MediaStatus,
-    site::PublicationAccepted,
+    site::PublicationResult,
 };
 use silva_shared::{
     error::{AppError, Conflict, FieldErrorCode, Result},
@@ -51,36 +51,15 @@ fn user(id: Option<Uuid>, name: Option<String>) -> Option<UserRef> {
     })
 }
 
-fn review_summary(
-    row: &PgRow,
-    id: &str,
-    status: &str,
-) -> std::result::Result<Option<ReviewSummary>, sqlx::Error> {
-    let id: Option<Uuid> = row.try_get(id)?;
-    let status: Option<String> = row.try_get(status)?;
-    Ok(match (id, status) {
-        (Some(id), Some(status)) => Some(ReviewSummary {
-            id,
-            status: ReviewStatus::parse(&status).ok_or_else(|| {
-                sqlx::Error::Decode(
-                    format!("unexpected post_reviews.status value: {status}").into(),
-                )
-            })?,
-        }),
-        _ => None,
-    })
-}
-
 const REVISION_SELECT: &str = "SELECT r.id, r.post_id, r.revision_no, r.title, r.excerpt, r.markdown_body, r.rendered_html, \
     r.rendered_headings, r.cover_media_id, r.is_featured, r.seo_title, r.seo_description, r.created_by, \
-    cu.display_name AS created_by_name, r.created_at, rv.id AS review_id, rv.status AS review_status, \
+    cu.display_name AS created_by_name, r.created_at, \
     COALESCE((SELECT json_agg(json_build_object('id', c.id, 'slug', c.slug, 'name', c.name) ORDER BY c.name, c.slug) \
       FROM post_revision_categories rc JOIN categories c ON c.id=rc.category_id WHERE rc.revision_id=r.id), '[]') AS categories, \
     COALESCE((SELECT json_agg(json_build_object('id', t.id, 'slug', t.slug, 'name', t.name) ORDER BY t.name, t.slug) \
       FROM post_revision_tags rt JOIN tags t ON t.id=rt.tag_id WHERE rt.revision_id=r.id), '[]') AS tags, \
     ARRAY(SELECT pm.media_id FROM post_revision_media pm WHERE pm.revision_id=r.id ORDER BY pm.media_id) AS media_ids \
-    FROM post_revisions r LEFT JOIN users cu ON cu.id=r.created_by \
-    LEFT JOIN post_reviews rv ON rv.post_id=r.post_id AND rv.revision_id=r.id";
+    FROM post_revisions r LEFT JOIN users cu ON cu.id=r.created_by";
 
 fn read_revision(row: &PgRow) -> std::result::Result<Revision, sqlx::Error> {
     let refs = |rows: Vec<TaxonomyRow>| {
@@ -113,7 +92,6 @@ fn read_revision(row: &PgRow) -> std::result::Result<Revision, sqlx::Error> {
         seo_title: row.try_get("seo_title")?,
         seo_description: row.try_get("seo_description")?,
         created_by: user(row.try_get("created_by")?, row.try_get("created_by_name")?),
-        review: review_summary(row, "review_id", "review_status")?,
         created_at: row.try_get("created_at")?,
     })
 }
@@ -135,18 +113,23 @@ async fn revision(
         .map_err(db)
 }
 
-const POST_SELECT: &str = "SELECT p.id, p.slug, p.slug_locked, p.author_id, au.display_name AS author_name, \
-    p.current_revision_id, p.desired_published_revision_id, p.desired_published_at, p.publication_version, \
-    p.first_published_at, p.created_at, p.updated_at, s.desired_generation, s.active_generation, \
-    (SELECT g.revision_id FROM site_generation_posts g WHERE g.generation=s.active_generation AND g.post_id=p.id) AS live_revision_id \
-    FROM posts p LEFT JOIN users au ON au.id=p.author_id CROSS JOIN site_state s";
+const MEMBERSHIP: &str = "(SELECT jsonb_build_object('id',ss.id,'slug',ss.slug,'title',ss.title,
+    'section_title',sec.title,'position',i.position) FROM series_items i JOIN series ss ON ss.id=i.series_id
+    LEFT JOIN series_sections sec ON sec.id=i.section_id WHERE i.post_id=p.id)";
+
+const POST_SELECT: &str = "p.id, p.slug, (p.first_published_at IS NOT NULL) AS slug_locked, p.author_id, au.display_name AS author_name, \
+    p.current_revision_id, pub.id AS published_revision_id, pub.published_at, p.publication_version, \
+    p.first_published_at, p.created_at, p.updated_at \
+    FROM posts p LEFT JOIN users au ON au.id=p.author_id LEFT JOIN published_posts pub ON pub.post_id=p.id";
 
 async fn post(connection: &mut PgConnection, id: Uuid) -> Result<Option<Post>> {
-    let Some(row) = sqlx::query(&format!("{POST_SELECT} WHERE p.id=$1"))
-        .bind(id)
-        .fetch_optional(&mut *connection)
-        .await
-        .map_err(db)?
+    let Some(row) = sqlx::query(&format!(
+        "SELECT {MEMBERSHIP} AS series,{POST_SELECT} WHERE p.id=$1"
+    ))
+    .bind(id)
+    .fetch_optional(&mut *connection)
+    .await
+    .map_err(db)?
     else {
         return Ok(None);
     };
@@ -156,6 +139,7 @@ async fn post(connection: &mut PgConnection, id: Uuid) -> Result<Option<Post>> {
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("current revision is missing")))?;
     let read = || -> std::result::Result<Post, sqlx::Error> {
         Ok(Post {
+            series: row.try_get::<Option<Json<_>>, _>("series")?.map(|j| j.0),
             id,
             slug: row.try_get("slug")?,
             slug_locked: row.try_get("slug_locked")?,
@@ -163,13 +147,10 @@ async fn post(connection: &mut PgConnection, id: Uuid) -> Result<Option<Post>> {
             current_revision_id,
             current_revision: current,
             publication: Publication {
-                desired_published_revision_id: row.try_get("desired_published_revision_id")?,
-                desired_published_at: row.try_get("desired_published_at")?,
-                live_revision_id: row.try_get("live_revision_id")?,
+                published_revision_id: row.try_get("published_revision_id")?,
+                published_at: row.try_get("published_at")?,
                 publication_version: row.try_get("publication_version")?,
                 first_published_at: row.try_get("first_published_at")?,
-                desired_generation: row.try_get("desired_generation")?,
-                active_generation: row.try_get("active_generation")?,
             },
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -301,70 +282,38 @@ async fn audit(
     .await
 }
 
-const REVIEW_SELECT: &str = "SELECT rv.id, rv.post_id, rv.revision_id, r.revision_no, rv.status, rv.comment, \
-    rv.submitted_by, su.display_name AS submitted_by_name, rv.reviewer_id, ru.display_name AS reviewer_name, \
-    rv.reviewed_at, rv.created_at FROM post_reviews rv \
-    JOIN post_revisions r ON r.id=rv.revision_id \
-    LEFT JOIN users su ON su.id=rv.submitted_by LEFT JOIN users ru ON ru.id=rv.reviewer_id";
-
-fn read_review(row: &PgRow) -> std::result::Result<Review, sqlx::Error> {
-    let status: String = row.try_get("status")?;
-    Ok(Review {
-        id: row.try_get("id")?,
-        post_id: row.try_get("post_id")?,
-        revision_id: row.try_get("revision_id")?,
-        revision_no: row.try_get("revision_no")?,
-        status: ReviewStatus::parse(&status).ok_or_else(|| {
-            sqlx::Error::Decode(format!("unexpected post_reviews.status value: {status}").into())
-        })?,
-        comment: row.try_get("comment")?,
-        submitted_by: user(
-            row.try_get("submitted_by")?,
-            row.try_get("submitted_by_name")?,
-        ),
-        reviewer: user(row.try_get("reviewer_id")?, row.try_get("reviewer_name")?),
-        reviewed_at: row.try_get("reviewed_at")?,
-        created_at: row.try_get("created_at")?,
-    })
-}
-
-async fn review(connection: &mut PgConnection, post_id: Uuid, id: Uuid) -> Result<Option<Review>> {
-    sqlx::query(&format!("{REVIEW_SELECT} WHERE rv.post_id=$1 AND rv.id=$2"))
-        .bind(post_id)
-        .bind(id)
-        .fetch_optional(connection)
-        .await
-        .map_err(db)?
-        .as_ref()
-        .map(read_review)
-        .transpose()
-        .map_err(db)
-}
-
-/// 文章列表的筛选条件；参数依次为关键字模式、作者、分类、标签、审核状态、是否有发布目标。
-const POST_FILTER: &str = "WHERE ($1::text IS NULL OR r.title ILIKE $1 ESCAPE '\\') \
+/// 文章列表的筛选条件；参数依次为关键字模式、作者、分类、标签、是否有公开修订、是否未分类。
+const POST_FILTER: &str = "WHERE ($1::text IS NULL OR r.title ILIKE $1 ESCAPE '\\' OR p.slug ILIKE $1 ESCAPE '\\') \
     AND ($2::uuid IS NULL OR p.author_id=$2) \
     AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM post_revision_categories x WHERE x.revision_id=r.id AND x.category_id=$3)) \
     AND ($4::uuid IS NULL OR EXISTS (SELECT 1 FROM post_revision_tags x WHERE x.revision_id=r.id AND x.tag_id=$4)) \
-    AND ($5::text IS NULL OR rv.status=$5) \
-    AND ($6::boolean IS NULL OR (p.desired_published_revision_id IS NOT NULL)=$6)";
+    AND ($5::boolean IS NULL OR (pub.id IS NOT NULL)=$5) \
+    AND ($6::boolean IS NULL OR (NOT EXISTS (SELECT 1 FROM post_revision_categories x WHERE x.revision_id=r.id)) = $6) AND ($7::uuid IS NULL OR si.series_id=$7) AND ($8::bool IS NULL OR (si.series_id IS NOT NULL)=$8)";
 
-const POST_LIST_FROM: &str = "FROM posts p JOIN post_revisions r ON r.id=p.current_revision_id \
-    LEFT JOIN post_reviews rv ON rv.post_id=p.id AND rv.revision_id=r.id \
-    LEFT JOIN users au ON au.id=p.author_id CROSS JOIN site_state s";
+const POST_LIST_FROM: &str = "FROM posts p LEFT JOIN series_items si ON si.post_id=p.id JOIN post_revisions r ON r.id=p.current_revision_id \
+    LEFT JOIN users au ON au.id=p.author_id LEFT JOIN published_posts pub ON pub.post_id=p.id";
 
 fn read_summary(row: &PgRow) -> std::result::Result<PostSummary, sqlx::Error> {
+    let Json(categories): Json<Vec<TaxonomyRow>> = row.try_get("categories")?;
+    let categories = categories
+        .into_iter()
+        .map(|row| TaxonomyRef {
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+        })
+        .collect();
     Ok(PostSummary {
+        series: row.try_get::<Option<Json<_>>, _>("series")?.map(|j| j.0),
         id: row.try_get("id")?,
         slug: row.try_get("slug")?,
         slug_locked: row.try_get("slug_locked")?,
         title: row.try_get("title")?,
+        categories,
         author: user(row.try_get("author_id")?, row.try_get("author_name")?),
         current_revision_id: row.try_get("current_revision_id")?,
         current_revision_no: row.try_get("revision_no")?,
-        current_review: review_summary(row, "review_id", "review_status")?,
-        desired_published_revision_id: row.try_get("desired_published_revision_id")?,
-        live_revision_id: row.try_get("live_revision_id")?,
+        published_revision_id: row.try_get("published_revision_id")?,
         publication_version: row.try_get("publication_version")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
@@ -384,10 +333,10 @@ fn contains_pattern(keyword: &str) -> String {
     pattern
 }
 
-/// 锁定文章并返回 (当前编辑版本, 期望公开版本, 发布版本号)；文章不存在返回 `NotFound`。
-async fn lock_post(connection: &mut PgConnection, id: Uuid) -> Result<(Uuid, Option<Uuid>, i64)> {
+/// 锁定文章并返回 (当前编辑版本, 发布版本号)；文章不存在返回 `NotFound`。
+async fn lock_post(connection: &mut PgConnection, id: Uuid) -> Result<(Uuid, i64)> {
     sqlx::query_as(
-        "SELECT current_revision_id, desired_published_revision_id, publication_version FROM posts WHERE id=$1 FOR UPDATE",
+        "SELECT current_revision_id, publication_version FROM posts WHERE id=$1 FOR UPDATE",
     )
     .bind(id)
     .fetch_optional(connection)
@@ -494,6 +443,58 @@ impl ContentRepository for PgContentRepository {
         Ok(created)
     }
 
+    #[tracing::instrument(name = "db.content_delete_post", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn delete_post(
+        &self,
+        post_id: Uuid,
+        expected_revision_id: Uuid,
+        expected_version: i64,
+        actor: &ContentActor<'_>,
+    ) -> Result<()> {
+        let _timer = METRICS.db_operation("content_delete_post");
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        let (current, version) = lock_post(&mut tx, post_id).await?;
+        if current != expected_revision_id {
+            return Err(AppError::Conflict(Conflict::RevisionConflict));
+        }
+        if version != expected_version {
+            return Err(AppError::Conflict(Conflict::PublicationConflict));
+        }
+        let published: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT FROM published_posts WHERE post_id=$1)")
+                .bind(post_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+        if published {
+            return Err(AppError::Conflict(Conflict::PostInUse));
+        }
+        let in_series: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series_items WHERE post_id=$1)")
+                .bind(post_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db)?;
+        if in_series {
+            return Err(AppError::Conflict(Conflict::PostAlreadyInSeries));
+        }
+        sqlx::query("DELETE FROM posts WHERE id=$1")
+            .bind(post_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        audit(
+            &mut tx,
+            actor,
+            "post.delete",
+            "post",
+            post_id,
+            json!({"revision_id": current}),
+        )
+        .await?;
+        tx.commit().await.map_err(db)
+    }
+
     #[tracing::instrument(name = "db.content_post_access", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn post_access(&self, id: Uuid) -> Result<Option<PostAccess>> {
         let _timer = METRICS.db_operation("content_post_access");
@@ -513,7 +514,14 @@ impl ContentRepository for PgContentRepository {
     #[tracing::instrument(name = "db.content_post", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn post(&self, id: Uuid) -> Result<Option<Post>> {
         let _timer = METRICS.db_operation("content_post");
-        post(&mut *acquire(&self.pool).await.map_err(db)?, id).await
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        let result = post(&mut tx, id).await?;
+        tx.commit().await.map_err(db)?;
+        Ok(result)
     }
 
     #[tracing::instrument(name = "db.content_list_posts", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
@@ -524,7 +532,12 @@ impl ContentRepository for PgContentRepository {
     ) -> Result<Page<PostSummary>> {
         let _timer = METRICS.db_operation("content_list_posts");
         let pattern = filter.q.as_deref().map(contains_pattern);
-        let status = filter.review_status.map(ReviewStatus::as_str);
+        let order = match filter.sort {
+            PostSort::UpdatedDesc => "p.updated_at DESC, p.id DESC",
+            PostSort::CreatedDesc => "p.created_at DESC, p.id DESC",
+            PostSort::TitleAsc => "r.title ASC, p.id ASC",
+            PostSort::TitleDesc => "r.title DESC, p.id DESC",
+        };
         let mut tx = begin(&self.pool).await.map_err(db)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             .execute(&mut *tx)
@@ -535,24 +548,29 @@ impl ContentRepository for PgContentRepository {
             .bind(filter.author_id)
             .bind(filter.category_id)
             .bind(filter.tag_id)
-            .bind(status)
             .bind(filter.published)
+            .bind(filter.uncategorized)
+            .bind(filter.series.series_id)
+            .bind(filter.series.in_series)
             .fetch_one(&mut *tx)
             .await
             .map_err(db)?;
         let rows = sqlx::query(&format!(
-            "SELECT p.id, p.slug, p.slug_locked, r.title, p.author_id, au.display_name AS author_name, \
-             p.current_revision_id, r.revision_no, rv.id AS review_id, rv.status AS review_status, \
-             p.desired_published_revision_id, p.publication_version, p.created_at, p.updated_at, \
-             (SELECT g.revision_id FROM site_generation_posts g WHERE g.generation=s.active_generation AND g.post_id=p.id) AS live_revision_id \
-             {POST_LIST_FROM} {POST_FILTER} ORDER BY p.updated_at DESC, p.id DESC LIMIT $7 OFFSET $8"
+            "SELECT {MEMBERSHIP} AS series,p.id, p.slug, (p.first_published_at IS NOT NULL) AS slug_locked, r.title, p.author_id, au.display_name AS author_name, \
+             p.current_revision_id, r.revision_no, \
+             pub.id AS published_revision_id, p.publication_version, p.created_at, p.updated_at, \
+             COALESCE((SELECT json_agg(json_build_object('id', c.id, 'slug', c.slug, 'name', c.name) ORDER BY c.name, c.slug) \
+               FROM post_revision_categories rc JOIN categories c ON c.id=rc.category_id WHERE rc.revision_id=r.id), '[]') AS categories \
+             {POST_LIST_FROM} {POST_FILTER} ORDER BY {order} LIMIT $9 OFFSET $10"
         ))
         .bind(&pattern)
         .bind(filter.author_id)
         .bind(filter.category_id)
         .bind(filter.tag_id)
-        .bind(status)
         .bind(filter.published)
+        .bind(filter.uncategorized)
+        .bind(filter.series.series_id)
+        .bind(filter.series.in_series)
         .bind(i64::from(page.per_page))
         .bind(page.offset())
         .fetch_all(&mut *tx)
@@ -570,6 +588,66 @@ impl ContentRepository for PgContentRepository {
         })
     }
 
+    #[tracing::instrument(name = "db.content_post_category_counts", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
+    async fn post_category_counts(
+        &self,
+        author_id: Option<Uuid>,
+        series: silva_domain::content::SeriesFilter,
+    ) -> Result<PostCategoryCounts> {
+        let _timer = METRICS.db_operation("content_post_category_counts");
+        let mut tx = begin(&self.pool).await.map_err(db)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        const ELIGIBLE: &str = "WITH eligible AS (SELECT p.current_revision_id FROM posts p LEFT JOIN series_items i ON i.post_id=p.id
+            WHERE ($1::uuid IS NULL OR p.author_id=$1) AND ($2::uuid IS NULL OR i.series_id=$2)
+            AND ($3::bool IS NULL OR (i.series_id IS NOT NULL)=$3))";
+        let (total, uncategorized): (i64, i64) = sqlx::query_as(&format!(
+            "{ELIGIBLE} SELECT count(*) AS total, \
+             count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM post_revision_categories rc WHERE rc.revision_id=p.current_revision_id)) AS uncategorized \
+             FROM eligible p"
+        ))
+        .bind(author_id)
+        .bind(series.series_id)
+        .bind(series.in_series)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
+        let rows = sqlx::query(&format!(
+            "{ELIGIBLE} SELECT c.id, c.slug, c.name, c.description, \
+             (SELECT count(*) FROM eligible p JOIN post_revision_categories rc ON rc.revision_id=p.current_revision_id \
+              WHERE rc.category_id=c.id) AS post_count \
+             FROM categories c \
+             ORDER BY c.name, c.slug, c.id",
+        ))
+        .bind(author_id)
+        .bind(series.series_id)
+        .bind(series.in_series)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db)?;
+        let categories = rows
+            .iter()
+            .map(|row| {
+                Ok(PostCategoryCount {
+                    id: row.try_get("id")?,
+                    slug: row.try_get("slug")?,
+                    name: row.try_get("name")?,
+                    description: row.try_get("description")?,
+                    post_count: row.try_get("post_count")?,
+                })
+            })
+            .collect::<std::result::Result<Vec<_>, sqlx::Error>>()
+            .map_err(db)?;
+        tx.commit().await.map_err(db)?;
+        Ok(PostCategoryCounts {
+            total,
+            uncategorized,
+            categories,
+        })
+    }
+
     #[tracing::instrument(name = "db.content_create_revision", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn create_revision(
         &self,
@@ -580,7 +658,7 @@ impl ContentRepository for PgContentRepository {
     ) -> Result<SavedRevision> {
         let _timer = METRICS.db_operation("content_create_revision");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let (current, _, _) = lock_post(&mut tx, post_id).await?;
+        let (current, _) = lock_post(&mut tx, post_id).await?;
         if current != expected_revision_id {
             return Err(AppError::Conflict(Conflict::RevisionConflict));
         }
@@ -594,12 +672,13 @@ impl ContentRepository for PgContentRepository {
             tx.commit().await.map_err(db)?;
             return Ok(SavedRevision::Unchanged(unchanged));
         }
-        let revision_no: i32 =
-            sqlx::query_scalar("SELECT max(revision_no) + 1 FROM post_revisions WHERE post_id=$1")
-                .bind(post_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(db)?;
+        let revision_no: i32 = sqlx::query_scalar(
+            "DELETE FROM post_revisions WHERE post_id=$1 RETURNING revision_no + 1",
+        )
+        .bind(post_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(db)?;
         insert_revision(&mut tx, post_id, revision_no, &new).await?;
         sqlx::query("UPDATE posts SET current_revision_id=$2 WHERE id=$1")
             .bind(post_id)
@@ -632,13 +711,14 @@ impl ContentRepository for PgContentRepository {
     ) -> Result<Post> {
         let _timer = METRICS.db_operation("content_update_slug");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let locked: bool =
-            sqlx::query_scalar("SELECT slug_locked FROM posts WHERE id=$1 FOR UPDATE")
-                .bind(post_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(db)?
-                .ok_or(AppError::NotFound)?;
+        let locked: bool = sqlx::query_scalar(
+            "SELECT first_published_at IS NOT NULL FROM posts WHERE id=$1 FOR UPDATE",
+        )
+        .bind(post_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db)?
+        .ok_or(AppError::NotFound)?;
         if locked {
             return Err(AppError::Conflict(Conflict::SlugLocked));
         }
@@ -676,10 +756,8 @@ impl ContentRepository for PgContentRepository {
             .await
             .map_err(db)?;
         let rows = sqlx::query(
-            "SELECT r.id, r.revision_no, r.title, r.created_by, cu.display_name AS created_by_name, r.created_at, \
-             rv.id AS review_id, rv.status AS review_status FROM post_revisions r \
+            "SELECT r.id, r.revision_no, r.title, r.created_by, cu.display_name AS created_by_name, r.created_at FROM post_revisions r \
              LEFT JOIN users cu ON cu.id=r.created_by \
-             LEFT JOIN post_reviews rv ON rv.post_id=r.post_id AND rv.revision_id=r.id \
              WHERE r.post_id=$1 ORDER BY r.revision_no DESC LIMIT $2 OFFSET $3",
         )
         .bind(post_id)
@@ -696,7 +774,6 @@ impl ContentRepository for PgContentRepository {
                     revision_no: row.try_get("revision_no")?,
                     title: row.try_get("title")?,
                     created_by: user(row.try_get("created_by")?, row.try_get("created_by_name")?),
-                    review: review_summary(row, "review_id", "review_status")?,
                     created_at: row.try_get("created_at")?,
                 })
             })
@@ -720,142 +797,6 @@ impl ContentRepository for PgContentRepository {
         .await
     }
 
-    #[tracing::instrument(name = "db.content_create_review", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn create_review(
-        &self,
-        post_id: Uuid,
-        revision_id: Uuid,
-        actor: &ContentActor<'_>,
-    ) -> Result<Review> {
-        let _timer = METRICS.db_operation("content_create_review");
-        let mut tx = begin(&self.pool).await.map_err(db)?;
-        let id = silva_shared::ids::new_id();
-        sqlx::query(
-            "INSERT INTO post_reviews (id, post_id, revision_id, status, submitted_by) VALUES ($1,$2,$3,'pending',$4)",
-        )
-        .bind(id)
-        .bind(post_id)
-        .bind(revision_id)
-        .bind(actor.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| match &error {
-            sqlx::Error::Database(database) if database.is_unique_violation() => {
-                AppError::Conflict(Conflict::ReviewAlreadySubmitted)
-            }
-            _ => db(error),
-        })?;
-        audit(
-            &mut tx,
-            actor,
-            "post.review_submit",
-            "post",
-            post_id,
-            json!({"review_id": id, "revision_id": revision_id}),
-        )
-        .await?;
-        let created = review(&mut tx, post_id, id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        tx.commit().await.map_err(db)?;
-        Ok(created)
-    }
-
-    #[tracing::instrument(name = "db.content_decide_review", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn decide_review(
-        &self,
-        post_id: Uuid,
-        review_id: Uuid,
-        decision: ReviewDecision,
-        comment: Option<String>,
-        actor: &ContentActor<'_>,
-    ) -> Result<Review> {
-        let _timer = METRICS.db_operation("content_decide_review");
-        let mut tx = begin(&self.pool).await.map_err(db)?;
-        let status: String = sqlx::query_scalar(
-            "SELECT status FROM post_reviews WHERE id=$1 AND post_id=$2 FOR UPDATE",
-        )
-        .bind(review_id)
-        .bind(post_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?
-        .ok_or(AppError::NotFound)?;
-        if status != ReviewStatus::Pending.as_str() {
-            return Err(AppError::Conflict(Conflict::ReviewNotPending));
-        }
-        let decided = decision.status().as_str();
-        sqlx::query(
-            "UPDATE post_reviews SET status=$2, comment=$3, reviewer_id=$4, reviewed_at=now() WHERE id=$1",
-        )
-        .bind(review_id)
-        .bind(decided)
-        .bind(&comment)
-        .bind(actor.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
-        audit(
-            &mut tx,
-            actor,
-            "post.review_decide",
-            "post",
-            post_id,
-            json!({"review_id": review_id, "decision": decided}),
-        )
-        .await?;
-        let decided = review(&mut tx, post_id, review_id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        tx.commit().await.map_err(db)?;
-        Ok(decided)
-    }
-
-    #[tracing::instrument(name = "db.content_reviews", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn reviews(&self, post_id: Uuid, page: &PageRequest) -> Result<Page<Review>> {
-        let _timer = METRICS.db_operation("content_reviews");
-        let mut tx = begin(&self.pool).await.map_err(db)?;
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            .execute(&mut *tx)
-            .await
-            .map_err(db)?;
-        let total = sqlx::query_scalar("SELECT count(*) FROM post_reviews WHERE post_id=$1")
-            .bind(post_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(db)?;
-        let rows = sqlx::query(&format!(
-            "{REVIEW_SELECT} WHERE rv.post_id=$1 ORDER BY rv.created_at DESC, rv.id DESC LIMIT $2 OFFSET $3"
-        ))
-        .bind(post_id)
-        .bind(i64::from(page.per_page))
-        .bind(page.offset())
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(db)?;
-        let items = rows
-            .iter()
-            .map(read_review)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(db)?;
-        tx.commit().await.map_err(db)?;
-        Ok(Page {
-            items,
-            pagination: page.metadata(total),
-        })
-    }
-
-    #[tracing::instrument(name = "db.content_review", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn review(&self, post_id: Uuid, review_id: Uuid) -> Result<Option<Review>> {
-        let _timer = METRICS.db_operation("content_review");
-        review(
-            &mut *acquire(&self.pool).await.map_err(db)?,
-            post_id,
-            review_id,
-        )
-        .await
-    }
-
     #[tracing::instrument(name = "db.content_publish", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn publish(
         &self,
@@ -863,35 +804,32 @@ impl ContentRepository for PgContentRepository {
         revision_id: Uuid,
         expected_version: i64,
         actor: &ContentActor<'_>,
-    ) -> Result<PublicationAccepted> {
+    ) -> Result<PublicationResult> {
         let _timer = METRICS.db_operation("content_publish");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let (_, _, version) = lock_post(&mut tx, post_id).await?;
+        let (current, version) = lock_post(&mut tx, post_id).await?;
         if version != expected_version {
             return Err(AppError::Conflict(Conflict::PublicationConflict));
         }
-        let approved: Option<bool> = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM post_reviews WHERE post_id=$1 AND revision_id=$2 AND status='approved') \
-             FROM post_revisions WHERE post_id=$1 AND id=$2",
-        )
-        .bind(post_id)
-        .bind(revision_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?;
-        match approved {
-            None => return Err(AppError::NotFound),
-            Some(false) => return Err(AppError::Conflict(Conflict::RevisionNotApproved)),
-            Some(true) => {}
+        if current != revision_id {
+            return Err(AppError::invalid(
+                "revision_id",
+                FieldErrorCode::InvalidValue,
+                "the revision is not the current revision of this post",
+            ));
         }
-        let target = enqueue_site_publish(&mut tx, "post.publish", Some(actor.user_id)).await?;
+        sqlx::query("SELECT save_post_publication($1,$2)")
+            .bind(post_id)
+            .bind(revision_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        let target = advance_generation(&mut tx).await?;
         let publication_version: i64 = sqlx::query_scalar(
-            "UPDATE posts SET desired_published_revision_id=$2, desired_published_at=now(), \
-             first_published_at=COALESCE(first_published_at, now()), slug_locked=true, \
+            "UPDATE posts SET first_published_at=COALESCE(first_published_at, now()), \
              publication_version=publication_version + 1 WHERE id=$1 RETURNING publication_version",
         )
         .bind(post_id)
-        .bind(revision_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(db)?;
@@ -901,13 +839,12 @@ impl ContentRepository for PgContentRepository {
             "post.publish",
             "post",
             post_id,
-            json!({"revision_id": revision_id, "generation": target.desired_generation}),
+            json!({"revision_id": revision_id, "generation": target.generation}),
         )
         .await?;
         tx.commit().await.map_err(db)?;
-        Ok(PublicationAccepted {
-            publish_job_id: target.publish_job_id,
-            desired_generation: target.desired_generation,
+        Ok(PublicationResult {
+            generation: target.generation,
             publication_version,
         })
     }
@@ -918,20 +855,24 @@ impl ContentRepository for PgContentRepository {
         post_id: Uuid,
         expected_version: i64,
         actor: &ContentActor<'_>,
-    ) -> Result<PublicationAccepted> {
+    ) -> Result<PublicationResult> {
         let _timer = METRICS.db_operation("content_unpublish");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let (_, desired, version) = lock_post(&mut tx, post_id).await?;
+        let (_, version) = lock_post(&mut tx, post_id).await?;
         if version != expected_version {
             return Err(AppError::Conflict(Conflict::PublicationConflict));
         }
-        if desired.is_none() {
+        let deleted = sqlx::query("DELETE FROM published_posts WHERE post_id=$1")
+            .bind(post_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db)?;
+        if deleted.rows_affected() == 0 {
             return Err(AppError::Conflict(Conflict::AlreadyUnpublished));
         }
-        let target = enqueue_site_publish(&mut tx, "post.unpublish", Some(actor.user_id)).await?;
+        let target = advance_generation(&mut tx).await?;
         let publication_version: i64 = sqlx::query_scalar(
-            "UPDATE posts SET desired_published_revision_id=NULL, desired_published_at=NULL, \
-             publication_version=publication_version + 1 WHERE id=$1 RETURNING publication_version",
+            "UPDATE posts SET publication_version=publication_version + 1 WHERE id=$1 RETURNING publication_version",
         )
         .bind(post_id)
         .fetch_one(&mut *tx)
@@ -943,13 +884,12 @@ impl ContentRepository for PgContentRepository {
             "post.unpublish",
             "post",
             post_id,
-            json!({"generation": target.desired_generation}),
+            json!({"generation": target.generation}),
         )
         .await?;
         tx.commit().await.map_err(db)?;
-        Ok(PublicationAccepted {
-            publish_job_id: target.publish_job_id,
-            desired_generation: target.desired_generation,
+        Ok(PublicationResult {
+            generation: target.generation,
             publication_version,
         })
     }

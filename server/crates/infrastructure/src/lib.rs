@@ -6,19 +6,13 @@ pub mod media;
 pub mod object_storage;
 pub mod persistence;
 pub mod profile;
-pub mod publishing;
-pub mod site_builder;
+mod public_site;
 pub mod taxonomy;
 pub mod tokens;
 
 use silva_application::{
-    content::ContentService,
-    identity::IdentityService,
-    media::MediaService,
-    ports::{ObjectStorage, SiteBuilder},
-    public_site::PublicSiteService,
-    publishing::{PublishSettings, PublishingService},
-    taxonomy::TaxonomyService,
+    content::ContentService, identity::IdentityService, media::MediaService, ports::ObjectStorage,
+    public_site::PublicSiteService, taxonomy::TaxonomyService,
 };
 use silva_shared::config::Config;
 use std::sync::Arc;
@@ -74,39 +68,18 @@ pub fn taxonomy_service(pool: sqlx::PgPool) -> TaxonomyService {
     TaxonomyService::new(Arc::new(taxonomy::PgTaxonomyRepository::new(pool)))
 }
 
-/// 按配置创建站点构建器；未配置 `SILVA_SITE_BUILDER_DIR` 时返回 None。
-pub fn site_builder(config: &Config) -> Option<Arc<dyn SiteBuilder>> {
-    config.site_build.as_ref().map(|build| {
-        Arc::new(site_builder::AstroSiteBuilder {
-            website_dir: build.website_dir.clone(),
-            command: build.command.clone(),
-            site_url: build.site_url.clone(),
-            timeout: build.timeout,
-        }) as Arc<dyn SiteBuilder>
-    })
-}
-
-/// 组装发布用例；存储与构建器由调用方提供，测试可注入替身。
-pub fn publishing_service(
-    pool: sqlx::PgPool,
-    storage: Option<Arc<dyn ObjectStorage>>,
-    builder: Option<Arc<dyn SiteBuilder>>,
-) -> PublishingService {
-    PublishingService::new(
-        Arc::new(publishing::PgPublishingRepository::new(pool)),
-        storage,
-        builder,
-        Arc::new(markdown::CommonMarkRenderer),
-        PublishSettings::default(),
-    )
-}
-
 pub fn public_site_service(
     pool: sqlx::PgPool,
     storage: Option<Arc<dyn ObjectStorage>>,
 ) -> PublicSiteService {
     PublicSiteService::new(
-        Arc::new(publishing::PgPublishingRepository::new(pool)),
+        Arc::new(public_site::PgPublicSiteRepository::new(pool)),
         storage,
+        Arc::new(markdown::CommonMarkRenderer),
     )
+}
+mod series;
+
+pub fn series_service(pool: sqlx::PgPool) -> silva_application::series::SeriesService {
+    silva_application::series::SeriesService::new(Arc::new(series::PgSeriesRepository(pool)))
 }

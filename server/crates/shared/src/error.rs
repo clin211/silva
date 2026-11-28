@@ -30,9 +30,6 @@ pub enum AppError {
     /// 对象存储未配置，媒体相关操作暂不可用。
     #[error("Object storage is not configured")]
     StorageUnavailable,
-    /// 站点尚无任何线上版本，公开接口不能假装数据为空。
-    #[error("The site has not been published yet")]
-    SiteNotReady,
     #[error("Infrastructure failure: {0}")]
     Internal(#[from] anyhow::Error),
 }
@@ -69,20 +66,18 @@ pub enum Conflict {
     SlugLocked,
     /// 提交的 `expected_revision_id` 不是文章当前编辑版本。
     RevisionConflict,
-    /// 该修订已经提交过审核。
-    ReviewAlreadySubmitted,
-    /// 审核记录不是待审核状态。
-    ReviewNotPending,
     /// 提交的 `expected_publication_version` 不是文章当前发布版本号。
     PublicationConflict,
-    /// 修订没有获得批准，不能发布。
-    RevisionNotApproved,
     /// 文章没有发布目标，无需撤下。
     AlreadyUnpublished,
     /// 分类或标签仍被文章修订引用，不能删除。
+    SeriesEditConflict,
+    SeriesInUse,
+    /// 文章仍有发布目标或仍在线上。
+    PostInUse,
+    PostAlreadyInSeries,
+    AlreadyPublished,
     TaxonomyInUse,
-    /// 发布任务不是仍为最新目标的失败任务，不能重试。
-    PublishJobNotRetryable,
     /// 线上站点版本已与客户端期望的 `X-Expected-Generation` 不同。
     SiteGenerationChanged,
 }
@@ -97,15 +92,16 @@ impl Conflict {
             Self::MediaNotReady => "Media has not passed verification",
             Self::MediaInUse => "Media is still referenced",
             Self::SlugInUse => "Slug is already in use",
-            Self::SlugLocked => "Slug is locked after the post was first published",
+            Self::SlugLocked => "Slug is locked after first publication",
             Self::RevisionConflict => "The post has a newer revision; reload before saving",
-            Self::ReviewAlreadySubmitted => "This revision has already been submitted for review",
-            Self::ReviewNotPending => "The review has already been decided",
             Self::PublicationConflict => "The publication state has changed; reload and retry",
-            Self::RevisionNotApproved => "The revision has not been approved",
-            Self::AlreadyUnpublished => "The post has no publication target",
-            Self::TaxonomyInUse => "The category or tag is referenced by post revisions",
-            Self::PublishJobNotRetryable => "Only the latest failed publish job can be retried",
+            Self::AlreadyUnpublished => "There is no publication target",
+            Self::SeriesEditConflict => "The series has changed; reload before saving",
+            Self::PostInUse => "The post is published",
+            Self::SeriesInUse => "The series is published",
+            Self::PostAlreadyInSeries => "The post already belongs to a series",
+            Self::AlreadyPublished => "The series is already published",
+            Self::TaxonomyInUse => "The category or tag is still referenced",
             Self::SiteGenerationChanged => "The live site generation has changed",
         }
     }

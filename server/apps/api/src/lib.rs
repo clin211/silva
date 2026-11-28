@@ -4,8 +4,8 @@ mod http;
 mod media;
 mod metrics;
 mod public;
-mod publishing;
 mod response;
+mod series;
 mod taxonomy;
 pub use error::ErrorCode;
 pub use metrics::sample_metrics;
@@ -21,11 +21,11 @@ use axum::{
 use silva_application::{
     content::ContentService, identity::IdentityService, login_lockout::LoginLockout,
     media::MediaService, ports::ObjectStorage, profile::ProfileService,
-    public_site::PublicSiteService, publishing::PublishingService, taxonomy::TaxonomyService,
+    public_site::PublicSiteService, taxonomy::TaxonomyService,
 };
 use silva_infrastructure::{
     TokenSettings, content_service, identity_service, media_service, object_storage,
-    profile_service, public_site_service, publishing_service, taxonomy_service,
+    profile_service, public_site_service, taxonomy_service,
 };
 use silva_shared::config::Config;
 use sqlx::PgPool;
@@ -42,8 +42,8 @@ pub(crate) struct AppState {
     pub media: Arc<MediaService>,
     pub content: Arc<ContentService>,
     pub profile: Arc<ProfileService>,
+    pub series: Arc<silva_application::series::SeriesService>,
     pub taxonomy: Arc<TaxonomyService>,
-    pub publishing: Arc<PublishingService>,
     pub public_site: Arc<PublicSiteService>,
     pub metrics: &'static silva_shared::metrics::Metrics,
     pub limiter: Arc<http::RateLimiter>,
@@ -70,8 +70,6 @@ pub async fn build_router_with_storage(
     let media = Arc::new(media_service(pool.clone(), storage.clone(), &config));
     let content = Arc::new(content_service(pool.clone()));
     let taxonomy = Arc::new(taxonomy_service(pool.clone()));
-    // API 不构建站点，只查询与登记发布任务。
-    let publishing = Arc::new(publishing_service(pool.clone(), None, None));
     let public_site = Arc::new(public_site_service(pool.clone(), storage));
     let tokens = TokenSettings {
         secret: config.resolve_jwt_secret()?,
@@ -88,18 +86,23 @@ pub async fn build_router_with_storage(
     );
     let state = AppState {
         config: Arc::new(config),
+        series: Arc::new(silva_infrastructure::series_service(pool.clone())),
         profile: Arc::new(profile_service(pool.clone())),
         pool,
         identity,
         media,
         content,
         taxonomy,
-        publishing,
         public_site,
         metrics: &silva_shared::metrics::METRICS,
         limiter: Arc::default(),
     };
-    Ok(Router::new()
+    let router = if state.config.trust_proxy_ip_header {
+        Router::new().route("/internal/site-snapshot", get(public::snapshot))
+    } else {
+        Router::new()
+    };
+    Ok(router
         .route("/health/live", get(http::live))
         .route("/metrics", get(metrics::endpoint))
         // 登录即创建会话；注销删除当前会话。
@@ -120,7 +123,9 @@ pub async fn build_router_with_storage(
         )
         .route(
             "/api/v1/admin/users/{id}",
-            get(http::user).patch(http::update_user),
+            get(http::user)
+                .patch(http::update_user)
+                .delete(http::delete_user),
         )
         .route("/api/v1/admin/roles", get(http::roles))
         .route("/api/v1/admin/audit-logs", get(http::audit_logs))
@@ -138,8 +143,14 @@ pub async fn build_router_with_storage(
                 .post(content::create_post.layer(DefaultBodyLimit::max(CONTENT_BODY_LIMIT))),
         )
         .route(
+            "/api/v1/admin/posts/category-counts",
+            get(content::post_category_counts),
+        )
+        .route(
             "/api/v1/admin/posts/{id}",
-            get(content::get_post).patch(content::update_post),
+            get(content::get_post)
+                .patch(content::update_post)
+                .delete(content::delete_post),
         )
         .route(
             "/api/v1/admin/posts/{id}/revisions",
@@ -151,17 +162,29 @@ pub async fn build_router_with_storage(
             get(content::get_revision),
         )
         .route(
-            "/api/v1/admin/posts/{id}/reviews",
-            get(content::list_reviews).post(content::create_review),
-        )
-        .route(
-            "/api/v1/admin/posts/{id}/reviews/{review_id}",
-            get(content::get_review).patch(content::decide_review),
-        )
-        // 上线目标是文章下的单例资源：PUT 设置、DELETE 撤下。
-        .route(
             "/api/v1/admin/posts/{id}/publication",
             put(content::publish).delete(content::unpublish),
+        )
+        .route(
+            "/api/v1/admin/series",
+            get(series::list).post(series::create),
+        )
+        .route(
+            "/api/v1/admin/series/{id}",
+            get(series::get).patch(series::patch).delete(series::delete),
+        )
+        .route(
+            "/api/v1/admin/series/{id}/publication",
+            put(series::publish).delete(series::unpublish),
+        )
+        .route(
+            "/api/v1/admin/series/{id}/outline",
+            put(series::outline.layer(DefaultBodyLimit::max(CONTENT_BODY_LIMIT))),
+        )
+        .route("/api/v1/admin/series/{id}/items", post(series::append))
+        .route(
+            "/api/v1/admin/series/{id}/items/{post_id}",
+            delete(series::remove),
         )
         .route(
             "/api/v1/admin/categories",
@@ -183,19 +206,8 @@ pub async fn build_router_with_storage(
                 .patch(taxonomy::update_tag)
                 .delete(taxonomy::delete_tag),
         )
-        .route(
-            "/api/v1/admin/publishing/jobs",
-            get(publishing::list_jobs).post(publishing::create_job),
-        )
-        .route(
-            "/api/v1/admin/publishing/jobs/{id}",
-            get(publishing::get_job),
-        )
-        .route(
-            "/api/v1/admin/publishing/jobs/{id}/attempts",
-            post(publishing::create_attempt),
-        )
         .route("/api/v1/public/site", get(public::site))
+        .route("/api/v1/public/site-snapshot", get(public::snapshot))
         .route("/api/v1/public/posts", get(public::posts))
         .route("/api/v1/public/posts/{slug}", get(public::post))
         .route("/api/v1/public/categories", get(public::categories))
@@ -211,8 +223,7 @@ pub async fn build_router_with_storage(
             get(public::ai_repository),
         )
         .route("/api/v1/public/media/{id}", get(public::media))
-        // 开启 SILVA_SITE_SERVE 时，其余 GET/HEAD 路径由线上静态站点响应；否则返回 404。
-        .fallback(public::static_site)
+        .fallback(|| async { error::ApiError::from(silva_shared::error::AppError::NotFound) })
         .method_not_allowed_fallback(http::method_not_allowed)
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), http::context))

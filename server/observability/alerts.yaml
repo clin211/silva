@@ -100,14 +100,31 @@ groups:
           description: "队列面板可能显示旧值；检查数据库与采集日志。成功采集后恢复。"
           dashboard: http://localhost:3001/d/silva-business
           runbook: server/observability/README.md
-      - alert: SilvaPublishDelayed
-        expr: (silva_publish_delayed{job="silva-api"} > 0) and on(job,instance) (silva_business_metrics_up{job="silva-api"} == 1) and on(job,instance) (time() - silva_business_metrics_last_success_timestamp_seconds{job="silva-api"} < 60)
+      - alert: SilvaPublicationErrors
+        expr: sum(rate(silva_http_requests_total{job="silva-api",route=~"/api/v1/admin/(posts|series)/[^/]+/publication",method=~"PUT|DELETE",status=~"5.."}[5m])) / sum(rate(silva_http_requests_total{job="silva-api",route=~"/api/v1/admin/(posts|series)/[^/]+/publication",method=~"PUT|DELETE"}[5m])) > 0.05
         for: 1m
         labels:
           severity: warning
         annotations:
-          summary: 存在超过五分钟未上线的发布变更
-          description: "检查 desired/active generation 与发布任务；当前里程碑尚未实现发布消费者。目标激活后恢复。"
+          summary: 同步发布写请求的 5xx 比例超过 5%
+          dashboard: http://localhost:3001/d/silva-business
+          runbook: server/observability/README.md
+      - alert: SilvaPublicationSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(silva_http_request_duration_seconds_bucket{job="silva-api",route=~"/api/v1/admin/(posts|series)/[^/]+/publication",method=~"PUT|DELETE"}[5m]))) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 同步发布写请求 P95 超过一秒
+          dashboard: http://localhost:3001/d/silva-business
+          runbook: server/observability/README.md
+      - alert: SilvaSnapshotErrors
+        expr: sum(increase(silva_http_requests_total{job="silva-api",route=~"/(api/v1/public|internal)/site-snapshot",method="GET",status=~"5.."}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 公开或内部 SSR 快照读取出现服务端错误
           dashboard: http://localhost:3001/d/silva-business
           runbook: server/observability/README.md
       - alert: SilvaTelemetryExportFailed

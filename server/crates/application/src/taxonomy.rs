@@ -1,5 +1,5 @@
 //! 分类与标签维护。读取对所有内容角色开放（编辑文章时需要选择），写入需要 `taxonomy.manage`。
-//! slug 创建后不能修改；名称与说明修改后，若条目已出现在期望公开的文章中，同时登记站点目标。
+//! slug 创建后不能修改；名称与说明修改后，若条目被公开内容引用，在同一事务中推进公开版本。
 
 use crate::{
     content::{POSTS_MANAGE, POSTS_READ_OWN},
@@ -8,7 +8,7 @@ use crate::{
 use silva_domain::{
     content::{TaxonomyInput, validate_slug},
     identity::Principal,
-    site::SiteTarget,
+    site::SiteVersion,
 };
 use silva_shared::{
     error::{AppError, FieldErrorCode, Result},
@@ -62,7 +62,7 @@ impl TaxonomyService {
         meta: &RequestMeta,
     ) -> Result<TaxonomyItem> {
         principal.require(TAXONOMY_MANAGE)?;
-        let input = check_kind(kind, input)?;
+        check_kind(kind, input.description.as_deref())?;
         let slug_error = validate_slug("slug", &slug).err();
         let input = match (input.normalize(), slug_error) {
             (Ok(input), None) => input,
@@ -79,7 +79,7 @@ impl TaxonomyService {
     }
 
     /// 部分更新名称与说明：字段为 None 时保持原值，说明传空白字符串时清除。
-    /// 返回更新后的条目，以及需要重新构建站点时登记的目标。
+    /// 返回更新后的条目，以及公开内容发生变化时的新版本。
     #[tracing::instrument(name = "taxonomy.update", skip_all)]
     pub async fn update(
         &self,
@@ -89,27 +89,11 @@ impl TaxonomyService {
         name: Option<String>,
         description: Option<String>,
         meta: &RequestMeta,
-    ) -> Result<(TaxonomyItem, Option<SiteTarget>)> {
+    ) -> Result<(TaxonomyItem, Option<SiteVersion>)> {
         principal.require(TAXONOMY_MANAGE)?;
-        let current = self
-            .repository
-            .find(kind, id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        let (current_name, current_description) = match current {
-            TaxonomyItem::Category(category) => (category.name, category.description),
-            TaxonomyItem::Tag(tag) => (tag.name, None),
-        };
-        let input = check_kind(
-            kind,
-            TaxonomyInput {
-                name: name.unwrap_or(current_name),
-                description: description.or(current_description),
-            },
-        )?
-        .normalize()?;
+        check_kind(kind, description.as_deref())?;
         self.repository
-            .update(kind, id, &input, &actor(principal, meta))
+            .update(kind, id, name, description, &actor(principal, meta))
             .await
     }
 
@@ -129,15 +113,15 @@ impl TaxonomyService {
 }
 
 /// 标签没有说明字段。
-fn check_kind(kind: TaxonomyKind, input: TaxonomyInput) -> Result<TaxonomyInput> {
-    if kind == TaxonomyKind::Tag && input.description.is_some() {
+fn check_kind(kind: TaxonomyKind, description: Option<&str>) -> Result<()> {
+    if kind == TaxonomyKind::Tag && description.is_some() {
         return Err(AppError::invalid(
             "description",
             FieldErrorCode::UnknownField,
             "tags have no description",
         ));
     }
-    Ok(input)
+    Ok(())
 }
 
 fn require_read(principal: &Principal) -> Result<()> {

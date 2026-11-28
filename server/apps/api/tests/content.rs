@@ -1,13 +1,13 @@
-//! 文章、审核与站点发布的验收测试：真实 PostgreSQL、内存对象存储。
+//! 内容同步上线的验收测试：真实 PostgreSQL、内存对象存储。
 //!
-//! 构建器默认按快照生成最小页面；设置 `SILVA_TEST_WEBSITE_DIR`（指向 `frontend/apps/website`，
-//! 需要本机 Node 与 pnpm）时改用真实的 Astro 构建。
+//! 使用真实公开接口验证事务提交后立即可见的版本。
 //! 通过 `cargo test -p silva-api --test content -- --ignored` 显式执行。
+#[path = "content/series.rs"]
+mod series;
 #[path = "support/storage.rs"]
 mod storage;
 mod support;
 
-use async_trait::async_trait;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -15,103 +15,23 @@ use axum::{
     http::{HeaderMap, Method, Request, StatusCode, header},
 };
 use serde_json::{Value, json};
-use silva_application::{
-    ports::{
-        BuiltFile, ContentActor, ContentRepository, NewRevision, RenderedMarkdown, RequestMeta,
-        SiteBuilder,
-    },
-    publishing::PublishOutcome,
+use silva_application::ports::{
+    ContentActor, ContentRepository, NewRevision, RenderedMarkdown, RequestMeta,
 };
 use silva_domain::content::RevisionContent;
 use silva_domain::site::SiteSnapshot;
 use silva_shared::{
     config::{Config, JwtSecret},
-    error::{AppError, Result as AppResult},
+    error::AppError,
     ids,
 };
 use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
-use std::{
-    io::Cursor,
-    net::SocketAddr,
-    str::FromStr,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{io::Cursor, net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
 use storage::MemoryStorage;
 use tower::ServiceExt;
 
 const PASSWORD: &str = "acceptance-password-2026";
 const JWT_SECRET: &[u8] = b"acceptance-jwt-secret-0123456789abcdef";
-
-/// 按快照生成最小站点的构建器，用于无 Node 环境；可切换为失败以验证重试。
-struct SnapshotPages;
-
-#[async_trait]
-impl SiteBuilder for SnapshotPages {
-    async fn build(&self, snapshot: &[u8], _: &str, generation: i64) -> AppResult<Vec<BuiltFile>> {
-        let snapshot: SiteSnapshot = serde_json::from_slice(snapshot).unwrap();
-        assert_eq!(snapshot.generation, generation);
-        let page = |path: String, body: String| BuiltFile {
-            path,
-            content_type: "text/html; charset=utf-8".into(),
-            bytes: format!("<meta name=\"silva:generation\" content=\"{generation}\">{body}")
-                .into_bytes(),
-        };
-        let mut files = vec![
-            page(
-                "index.html".into(),
-                format!("posts:{}", snapshot.posts.len()),
-            ),
-            page("404.html".into(), "not found".into()),
-            page(
-                "about/index.html".into(),
-                snapshot
-                    .profile
-                    .as_ref()
-                    .map(|p| p.display_name.clone())
-                    .unwrap_or_default(),
-            ),
-            BuiltFile {
-                path: "_astro/site.css".into(),
-                content_type: "text/css; charset=utf-8".into(),
-                bytes: b"body{}".to_vec(),
-            },
-        ];
-        for post in &snapshot.posts {
-            files.push(page(
-                format!("blog/{}/index.html", post.slug),
-                post.html.clone(),
-            ));
-        }
-        Ok(files)
-    }
-}
-
-/// 包装真实或替身构建器，`fail` 打开时直接失败。
-struct Switchable {
-    inner: Arc<dyn SiteBuilder>,
-    fail: AtomicBool,
-}
-
-#[async_trait]
-impl SiteBuilder for Switchable {
-    async fn build(
-        &self,
-        snapshot: &[u8],
-        sha256: &str,
-        generation: i64,
-    ) -> AppResult<Vec<BuiltFile>> {
-        if self.fail.load(Ordering::SeqCst) {
-            return Err(AppError::Internal(anyhow::anyhow!(
-                "simulated build failure"
-            )));
-        }
-        self.inner.build(snapshot, sha256, generation).await
-    }
-}
 
 struct Response {
     status: StatusCode,
@@ -121,10 +41,6 @@ struct Response {
 }
 
 impl Response {
-    fn text(&self) -> String {
-        String::from_utf8_lossy(&self.bytes).into_owned()
-    }
-
     fn generation(&self) -> Option<i64> {
         self.headers
             .get("x-site-generation")
@@ -240,7 +156,7 @@ async fn login(app: &Router, email: &str) -> String {
         .to_owned()
 }
 
-fn config(database_url: String, site_serve: bool) -> Config {
+fn config(database_url: String) -> Config {
     Config {
         database_url,
         bind: "127.0.0.1:0".parse().unwrap(),
@@ -250,15 +166,13 @@ fn config(database_url: String, site_serve: bool) -> Config {
         access_token_ttl: Duration::from_secs(900),
         refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
+        trust_proxy_ip_header: false,
         api_rate_per_minute: 10_000,
         login_rate_per_minute: 1000,
         login_lockout_threshold: 1000,
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
-        site_build: None,
-        publish_poll_interval: Duration::from_secs(5),
-        site_serve,
     }
 }
 
@@ -267,9 +181,9 @@ fn current_post_id(path: &str) -> uuid::Uuid {
     path.rsplit('/').next().unwrap().parse().unwrap()
 }
 
-fn png() -> Vec<u8> {
+fn png(width: u32) -> Vec<u8> {
     let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
-        32,
+        width,
         18,
         image::Rgb([10, 90, 160]),
     ));
@@ -279,8 +193,8 @@ fn png() -> Vec<u8> {
 }
 
 /// 上传封面并设置文章测试使用的替代文本。
-async fn ready_media(app: &Router, token: &str) -> String {
-    let bytes = png();
+async fn ready_media(app: &Router, token: &str, width: u32) -> String {
+    let bytes = png(width);
     let (status, _, created) =
         storage::post_image(app, token, "cover.png", "image/png", &bytes, bytes.len()).await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
@@ -299,7 +213,17 @@ async fn ready_media(app: &Router, token: &str) -> String {
 
 #[tokio::test]
 #[ignore = "需要通过 SILVA_TEST_DATABASE_URL 连接 PostgreSQL，且账户具备 CREATEDB 权限"]
-async fn content_review_publishing_and_public_site() {
+async fn content_publishing_and_public_site() {
+    acceptance(false).await;
+}
+
+#[tokio::test]
+#[ignore = "需要 PostgreSQL 验证系列编排、版本冲突及线上封面保护"]
+async fn series_editing_and_publication() {
+    acceptance(true).await;
+}
+
+async fn acceptance(test_series: bool) {
     let database_url = std::env::var("SILVA_TEST_DATABASE_URL")
         .expect("set SILVA_TEST_DATABASE_URL; real PostgreSQL tests never silently skip");
     let options = PgConnectOptions::from_str(&database_url).unwrap();
@@ -312,27 +236,78 @@ async fn content_review_publishing_and_public_site() {
     let pool = PgPool::connect_with(options.database(&database_name))
         .await
         .unwrap();
-    let schema = match silva_infrastructure::persistence::migrate(&pool).await {
-        Ok(()) => silva_infrastructure::persistence::check_schema(&pool).await,
-        Err(error) => Err(error),
-    };
-    let test_pool = pool.clone();
-    let result = match &schema {
-        Ok(()) => Some(tokio::spawn(async move { run(&test_pool, database_url).await }).await),
-        Err(_) => None,
-    };
+    use futures_util::FutureExt;
+    let result = std::panic::AssertUnwindSafe(async {
+        if test_series {
+            series::before_upgrade(&pool).await;
+        }
+        silva_infrastructure::persistence::migrate(&pool)
+            .await
+            .expect("数据库迁移失败");
+        silva_infrastructure::persistence::check_schema(&pool)
+            .await
+            .expect("数据库不变量验证失败");
+        run(&pool, database_url, test_series).await;
+    })
+    .catch_unwind()
+    .await;
     pool.close().await;
     sqlx::query(&format!("DROP DATABASE \"{database_name}\" WITH (FORCE)"))
         .execute(&mut admin)
         .await
         .unwrap();
-    schema.expect("migrations or schema invariants failed");
-    result
-        .unwrap()
-        .expect("content acceptance assertions failed");
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }
 
-async fn run(pool: &PgPool, database_url: String) {
+async fn gateway_public_reads(pool: &PgPool, mut config: Config, direct: &Router) {
+    let internal = "/internal/site-snapshot";
+    let public = "/api/v1/public/site-snapshot";
+    assert_eq!(
+        call(direct, Method::GET, internal, None, None, &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+
+    config.trust_proxy_ip_header = true;
+    config.api_rate_per_minute = 1;
+    let gateway = silva_api::build_router(config, pool.clone()).await.unwrap();
+    let first = [("x-real-ip", "203.0.113.2")];
+    let second = [("x-real-ip", "203.0.113.3")];
+    let snapshot = call(&gateway, Method::GET, public, None, None, &first).await;
+    assert_eq!(snapshot.status, StatusCode::OK);
+    assert_eq!(
+        call(&gateway, Method::GET, public, None, None, &first)
+            .await
+            .status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        call(&gateway, Method::GET, public, None, None, &second)
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let etag = snapshot.headers["etag"].to_str().unwrap();
+    // 即使这个客户端用尽公开 API 限额，私网 SSR 的条件读取仍然正常。
+    for _ in 0..2 {
+        let response = call(
+            &gateway,
+            Method::GET,
+            internal,
+            None,
+            None,
+            &[first[0], ("if-none-match", etag)],
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::NOT_MODIFIED);
+        assert_eq!(response.generation(), snapshot.generation());
+    }
+}
+
+async fn run(pool: &PgPool, database_url: String, test_series: bool) {
     let tokens = silva_infrastructure::TokenSettings {
         secret: JwtSecret::new(JWT_SECRET),
         access_ttl: Duration::from_secs(900),
@@ -359,43 +334,24 @@ async fn run(pool: &PgPool, database_url: String) {
     }
     let storage = Arc::new(MemoryStorage::default());
     let app = silva_api::build_router_with_storage(
-        config(database_url.clone(), false),
+        config(database_url.clone()),
         pool.clone(),
         Some(storage.clone()),
     )
     .await
     .unwrap();
-    let site_app = silva_api::build_router_with_storage(
-        config(database_url.clone(), true),
-        pool.clone(),
-        Some(storage.clone()),
-    )
-    .await
-    .unwrap();
-    let inner: Arc<dyn SiteBuilder> = match std::env::var("SILVA_TEST_WEBSITE_DIR") {
-        Ok(dir) => Arc::new(silva_infrastructure::site_builder::AstroSiteBuilder {
-            website_dir: dir.into(),
-            command: vec!["pnpm".into(), "run".into(), "build".into()],
-            site_url: "https://silva.example".into(),
-            timeout: Duration::from_secs(600),
-        }),
-        Err(_) => Arc::new(SnapshotPages),
-    };
-    let real_astro = std::env::var("SILVA_TEST_WEBSITE_DIR").is_ok();
-    let builder = Arc::new(Switchable {
-        inner,
-        fail: AtomicBool::new(false),
-    });
-    let worker = silva_infrastructure::publishing_service(
-        pool.clone(),
-        Some(storage.clone()),
-        Some(builder.clone()),
-    );
-
+    if !test_series {
+        gateway_public_reads(pool, config(database_url), &app).await;
+    }
     let admin = login(&app, "admin@example.test").await;
     let author = login(&app, "author@example.test").await;
     let other = login(&app, "other@example.test").await;
     let editor = login(&app, "editor@example.test").await;
+
+    if test_series {
+        series::run(pool, &app, &editor, &author).await;
+        return;
+    }
 
     // 分类与标签：编辑维护，作者只读；slug 唯一且格式受限。
     let category = api(
@@ -469,9 +425,57 @@ async fn run(pool: &PgPool, database_url: String) {
     let listed = get(&app, "/api/v1/admin/categories", &author).await;
     assert_eq!(listed.json["data"][0]["slug"], "backend");
 
+    // 一个事务正在修改名称时，另一个请求更新说明，两个字段都应保留。
+    let category_path = format!("/api/v1/admin/categories/{category_id}");
+    let mut rename = pool.begin().await.unwrap();
+    let blocker: i32 = sqlx::query_scalar(
+        "UPDATE categories SET name='临时名称' WHERE id=$1 RETURNING pg_backend_pid()",
+    )
+    .bind(category_id.parse::<uuid::Uuid>().unwrap())
+    .fetch_one(&mut *rename)
+    .await
+    .unwrap();
+    let edit_description = api(
+        &app,
+        Method::PATCH,
+        &category_path,
+        Some(json!({"description":"并发更新"})),
+        &editor,
+    );
+    let commit_rename = async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))"
+                ).bind(blocker).fetch_one(pool).await.unwrap();
+                if waiting { break; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("分类更新应等待行锁");
+        rename.commit().await.unwrap();
+    };
+    let (patched, ()) = tokio::join!(edit_description, commit_rename);
+    assert_eq!(patched.json["data"]["item"]["name"], "临时名称");
+    assert_eq!(patched.json["data"]["item"]["description"], "并发更新");
+    let restored = api(
+        &app,
+        Method::PATCH,
+        &category_path,
+        Some(json!({"name":"后端","description":"服务端实践"})),
+        &editor,
+    )
+    .await;
+    assert_eq!(restored.status, StatusCode::OK);
+
+    assert_error(
+        &get(&app, "/api/v1/public/posts/%FF", &author).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+
     // 创建文章：正文图片引用受控媒体，原始 HTML 被转义。
-    let cover = ready_media(&app, &author).await;
-    let others_media = ready_media(&app, &other).await;
+    let cover = ready_media(&app, &author, 32).await;
+    let others_media = ready_media(&app, &other, 32).await;
     let body = format!(
         "## 介绍\n\n正文 <script>alert(1)</script>\n\n![图](media:{cover})\n\n```rust\nfn main() {{}}\n```\n"
     );
@@ -508,7 +512,7 @@ async fn run(pool: &PgPool, database_url: String) {
     assert_eq!(revision["media_ids"], json!([cover]));
     assert_eq!(revision["categories"][0]["slug"], "backend");
     assert_eq!(post["publication"]["publication_version"], 0);
-    assert!(post["publication"]["live_revision_id"].is_null());
+    assert!(post["publication"]["published_revision_id"].is_null());
 
     assert_error(
         &api(
@@ -611,12 +615,15 @@ async fn run(pool: &PgPool, database_url: String) {
     .await;
     assert_eq!(unchanged.status, StatusCode::OK);
     assert_eq!(unchanged.json["data"]["id"], revision_two);
+    let mut stale_revision = revision_body(&revision_one, "旧版");
+    stale_revision["category_ids"] = json!([ids::new_id()]);
+
     assert_error(
         &api(
             &app,
             Method::POST,
             &format!("{posts_path}/revisions"),
-            Some(revision_body(&revision_one, "旧版")),
+            Some(stale_revision),
             &author,
         )
         .await,
@@ -627,7 +634,7 @@ async fn run(pool: &PgPool, database_url: String) {
         get(&app, &format!("{posts_path}/revisions"), &author)
             .await
             .json["meta"]["pagination"]["total"],
-        2
+        1
     );
     assert_eq!(
         get(
@@ -636,96 +643,16 @@ async fn run(pool: &PgPool, database_url: String) {
             &author
         )
         .await
-        .json["data"]["title"],
-        "用 Axum 构建服务"
+        .status,
+        StatusCode::NOT_FOUND
     );
-
-    // 审核：作者提交，不能自行决定；编辑拒绝后不能再次决定。
-    let review = api(
-        &app,
-        Method::POST,
-        &format!("{posts_path}/reviews"),
-        Some(json!({"revision_id": revision_two})),
-        &author,
-    )
-    .await;
-    assert_eq!(review.status, StatusCode::CREATED, "{}", review.json);
-    let review_path = format!(
-        "{posts_path}/reviews/{}",
-        review.json["data"]["id"].as_str().unwrap()
+    assert_eq!(
+        get(&app, &format!("{posts_path}/reviews"), &author)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
     );
-    assert_error(
-        &api(
-            &app,
-            Method::POST,
-            &format!("{posts_path}/reviews"),
-            Some(json!({"revision_id": revision_two})),
-            &author,
-        )
-        .await,
-        StatusCode::CONFLICT,
-        "review_already_submitted",
-    );
-    assert_field(
-        &api(
-            &app,
-            Method::POST,
-            &format!("{posts_path}/reviews"),
-            Some(json!({"revision_id": ids::new_id()})),
-            &author,
-        )
-        .await,
-        "revision_id",
-        "invalid_value",
-    );
-    assert_error(
-        &api(
-            &app,
-            Method::PATCH,
-            &review_path,
-            Some(json!({"decision": "approved"})),
-            &author,
-        )
-        .await,
-        StatusCode::FORBIDDEN,
-        "forbidden",
-    );
-    let rejected = api(
-        &app,
-        Method::PATCH,
-        &review_path,
-        Some(json!({"decision": "rejected", "comment": " 补充示例 "})),
-        &editor,
-    )
-    .await;
-    assert_eq!(rejected.json["data"]["status"], "rejected");
-    assert_eq!(rejected.json["data"]["comment"], "补充示例");
-    assert_error(
-        &api(
-            &app,
-            Method::PATCH,
-            &review_path,
-            Some(json!({"decision": "approved"})),
-            &editor,
-        )
-        .await,
-        StatusCode::CONFLICT,
-        "review_not_pending",
-    );
-    assert_error(
-        &api(
-            &app,
-            Method::PUT,
-            &format!("{posts_path}/publication"),
-            Some(json!({"revision_id": revision_two, "expected_publication_version": 0})),
-            &editor,
-        )
-        .await,
-        StatusCode::CONFLICT,
-        "revision_not_approved",
-    );
-
-    // 新修订送审并批准后发布；版本号不符时冲突，作者不能发布。
+    // 有发布权限的用户可直接发布当前保存的内容。
     let saved = api(
         &app,
         Method::POST,
@@ -735,30 +662,6 @@ async fn run(pool: &PgPool, database_url: String) {
     )
     .await;
     let revision_three = saved.json["data"]["id"].as_str().unwrap().to_owned();
-    let review = api(
-        &app,
-        Method::POST,
-        &format!("{posts_path}/reviews"),
-        Some(json!({"revision_id": revision_three})),
-        &author,
-    )
-    .await;
-    let review_path = format!(
-        "{posts_path}/reviews/{}",
-        review.json["data"]["id"].as_str().unwrap()
-    );
-    assert_eq!(
-        api(
-            &app,
-            Method::PATCH,
-            &review_path,
-            Some(json!({"decision": "approved"})),
-            &editor
-        )
-        .await
-        .json["data"]["status"],
-        "approved"
-    );
     let publication = format!("{posts_path}/publication");
     let publish = |version: i64| json!({"revision_id": revision_three, "expected_publication_version": version});
     assert_error(
@@ -771,19 +674,25 @@ async fn run(pool: &PgPool, database_url: String) {
         StatusCode::CONFLICT,
         "publication_conflict",
     );
-    assert_error(
-        &get(&app, "/api/v1/public/site", &author).await,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "site_not_ready",
-    );
+    let empty = get(&app, "/api/v1/public/site-snapshot", &author).await;
+    assert_eq!(empty.generation(), Some(0));
+    assert_eq!(empty.json["data"]["posts"], json!([]));
+    // 发布请求到达时该草稿已被更新，返回指向修订字段的错误且保留当前状态。
+    let stale_revision = api(
+        &app,
+        Method::PUT,
+        &publication,
+        Some(json!({"revision_id":revision_one,"expected_publication_version":0})),
+        &editor,
+    )
+    .await;
+    assert_field(&stale_revision, "revision_id", "invalid_value");
     let accepted = api(&app, Method::PUT, &publication, Some(publish(0)), &editor).await;
-    assert_eq!(accepted.status, StatusCode::ACCEPTED, "{}", accepted.json);
-    assert_eq!(accepted.json["data"]["desired_generation"], 1);
-    assert_eq!(accepted.json["data"]["publication_version"], 1);
-    let first_job = accepted.json["data"]["publish_job_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    assert_eq!(accepted.status, StatusCode::OK, "{}", accepted.json);
+    assert_eq!(
+        accepted.json["data"],
+        json!({"generation": 1, "publication_version": 1})
+    );
     assert_error(
         &api(
             &app,
@@ -797,25 +706,45 @@ async fn run(pool: &PgPool, database_url: String) {
         "slug_locked",
     );
 
-    // Worker 构建并上线 generation 1。
+    // 继续编辑草稿后，线上仍保留发布时的标题、分类和媒体。
+    let later = api(&app, Method::POST, &format!("{posts_path}/revisions"),
+        Some(json!({"expected_revision_id": revision_three, "title":"未发布的新稿", "markdown_body":"新内容"})), &author).await;
+    assert_eq!(later.status, StatusCode::CREATED, "{}", later.json);
     assert_eq!(
-        worker.run_once().await.unwrap(),
-        Some(PublishOutcome::Activated { generation: 1 })
+        get(&app, &posts_path, &author).await.json["data"]["current_revision"]["title"],
+        "未发布的新稿"
     );
-    assert_eq!(worker.run_once().await.unwrap(), None);
-    let detail = get(&app, &posts_path, &author).await;
     assert_eq!(
-        detail.json["data"]["publication"]["live_revision_id"],
-        revision_three
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM post_revisions WHERE post_id=$1")
+            .bind(current_post_id(&posts_path))
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+        1
     );
-    assert_eq!(detail.json["data"]["publication"]["active_generation"], 1);
-    let job = get(
+    let published = get(&app, "/api/v1/public/site-snapshot", &other).await;
+    assert_eq!(published.status, StatusCode::OK);
+    assert_eq!(published.generation(), Some(1));
+    let tag = published.headers[header::ETAG].to_str().unwrap();
+    let validated = call(
         &app,
-        &format!("/api/v1/admin/publishing/jobs/{first_job}"),
-        &editor,
+        Method::GET,
+        "/api/v1/public/site-snapshot",
+        None,
+        None,
+        &[("if-none-match", tag)],
     )
     .await;
-    assert_eq!(job.json["data"]["status"], "active");
+    assert_eq!(validated.status, StatusCode::NOT_MODIFIED);
+    assert!(validated.bytes.is_empty());
+    let snapshot: SiteSnapshot = serde_json::from_value(published.json["data"].clone()).unwrap();
+    assert_eq!(snapshot.posts[0].title, "定稿");
+    assert_eq!(snapshot.posts[0].revision_id.to_string(), revision_three);
+    let detail = get(&app, &posts_path, &author).await;
+    assert_eq!(
+        detail.json["data"]["publication"]["published_revision_id"],
+        revision_three
+    );
 
     // Public API 读取线上快照。
     let site = get(&app, "/api/v1/public/site", &other).await;
@@ -862,7 +791,10 @@ async fn run(pool: &PgPool, database_url: String) {
         get(&app, "/api/v1/public/ai-trending", &other).await.json["data"]["data_date"].is_null()
     );
     let media = get(&app, &format!("/api/v1/public/media/{cover}"), &other).await;
-    assert_eq!((media.status, media.bytes.clone()), (StatusCode::OK, png()));
+    assert_eq!(
+        (media.status, media.bytes.clone()),
+        (StatusCode::OK, png(32))
+    );
     assert_error(
         &get(
             &app,
@@ -885,69 +817,7 @@ async fn run(pool: &PgPool, database_url: String) {
     assert_error(&stale, StatusCode::CONFLICT, "site_generation_changed");
     assert_eq!(stale.generation(), Some(1));
 
-    // 静态站点：目录映射 index.html，缺少结尾斜杠重定向，未知路径返回该版本的 404 页面。
-    let home = call(&site_app, Method::GET, "/", None, None, &[]).await;
-    assert_eq!(home.status, StatusCode::OK);
-    assert!(
-        home.text()
-            .contains(r#"name="silva:generation" content="1""#),
-        "{}",
-        home.text()
-    );
-    assert_eq!(home.headers[header::CACHE_CONTROL], "no-store");
-    let redirect = call(
-        &site_app,
-        Method::GET,
-        "/blog/building-with-axum",
-        None,
-        None,
-        &[],
-    )
-    .await;
-    assert_eq!(redirect.status, StatusCode::MOVED_PERMANENTLY);
-    assert_eq!(
-        redirect.headers[header::LOCATION],
-        "/blog/building-with-axum/"
-    );
-    let article = call(
-        &site_app,
-        Method::GET,
-        "/blog/building-with-axum/",
-        None,
-        None,
-        &[],
-    )
-    .await;
-    assert_eq!(article.status, StatusCode::OK);
-    assert!(article.text().contains("/api/v1/public/media/"));
-    let missing = call(&site_app, Method::GET, "/blog/nope/", None, None, &[]).await;
-    assert_eq!(missing.status, StatusCode::NOT_FOUND);
-    assert!(
-        missing.headers[header::CONTENT_TYPE]
-            .to_str()
-            .unwrap()
-            .starts_with("text/html")
-    );
-    let traversal = call(&site_app, Method::GET, "/../snapshot.json", None, None, &[]).await;
-    assert_eq!(traversal.status, StatusCode::NOT_FOUND);
-    let head = call(&site_app, Method::HEAD, "/", None, None, &[]).await;
-    assert_eq!(head.status, StatusCode::OK);
-    assert!(head.bytes.is_empty());
-    if !real_astro {
-        let asset = call(&site_app, Method::GET, "/_astro/site.css", None, None, &[]).await;
-        assert_eq!(
-            asset.headers[header::CACHE_CONTROL],
-            "public, max-age=31536000, immutable"
-        );
-    }
-    let disabled = call(&app, Method::GET, "/", None, None, &[]).await;
-    assert_eq!(
-        disabled.status,
-        StatusCode::NOT_FOUND,
-        "未开启 SILVA_SITE_SERVE 时不提供站点"
-    );
-
-    // 分类改名：已出现在线上文章中，登记新的站点目标；有修订引用时不能删除，未使用的标签可以删除。
+    // 分类改名：已出现在线上文章中，推进公开版本；有修订引用时不能删除，未使用的标签可以删除。
     let renamed = api(
         &app,
         Method::PATCH,
@@ -957,7 +827,7 @@ async fn run(pool: &PgPool, database_url: String) {
     )
     .await;
     assert_eq!(renamed.json["data"]["item"]["name"], "服务端");
-    assert_eq!(renamed.json["data"]["publication"]["desired_generation"], 2);
+    assert_eq!(renamed.json["data"]["publication"]["generation"], 2);
     let same = api(
         &app,
         Method::PATCH,
@@ -968,7 +838,7 @@ async fn run(pool: &PgPool, database_url: String) {
     .await;
     assert!(
         same.json["data"]["publication"].is_null(),
-        "未变化时不登记站点目标"
+        "未变化时不推进公开版本"
     );
     assert_error(
         &api(
@@ -995,107 +865,15 @@ async fn run(pool: &PgPool, database_url: String) {
         StatusCode::NO_CONTENT
     );
 
-    // 构建失败自动重试，用尽后标记为 failed，线上仍为 generation 1。
-    builder.fail.store(true, Ordering::SeqCst);
-    for attempt in 1..=3 {
-        assert!(matches!(
-            worker.run_once().await.unwrap(),
-            Some(PublishOutcome::Failed { generation: 2, .. })
-        ));
-        if attempt < 3 {
-            // 失败后按退避时间才能再次领取。
-            assert_eq!(worker.run_once().await.unwrap(), None);
-            sqlx::query("UPDATE publish_jobs SET retry_after = now() WHERE status = 'queued'")
-                .execute(pool)
-                .await
-                .unwrap();
-        }
-    }
-    assert_eq!(worker.run_once().await.unwrap(), None);
-    let failed = get(&app, "/api/v1/admin/publishing/jobs?status=failed", &editor).await;
-    let failed_job = failed.json["data"][0]["id"].as_str().unwrap().to_owned();
-    assert!(
-        failed.json["data"][0]["error_message"]
-            .as_str()
-            .unwrap()
-            .contains("simulated build failure")
-    );
     assert_eq!(
         get(&app, "/api/v1/public/site", &other).await.generation(),
-        Some(1)
-    );
-    assert_error(
-        &api(
-            &app,
-            Method::POST,
-            &format!("/api/v1/admin/publishing/jobs/{failed_job}/attempts"),
-            None,
-            &editor,
-        )
-        .await,
-        StatusCode::FORBIDDEN,
-        "forbidden",
-    );
-    let retried = api(
-        &app,
-        Method::POST,
-        &format!("/api/v1/admin/publishing/jobs/{failed_job}/attempts"),
-        None,
-        &admin,
-    )
-    .await;
-    assert_eq!(retried.status, StatusCode::ACCEPTED, "{}", retried.json);
-    assert_eq!(retried.json["data"]["status"], "queued");
-    builder.fail.store(false, Ordering::SeqCst);
-    assert_eq!(
-        worker.run_once().await.unwrap(),
-        Some(PublishOutcome::Activated { generation: 2 })
+        Some(2)
     );
     assert_eq!(
         get(&app, "/api/v1/public/categories", &other).await.json["data"][0]["name"],
         "服务端"
     );
-    assert_error(
-        &api(
-            &app,
-            Method::POST,
-            &format!("/api/v1/admin/publishing/jobs/{first_job}/attempts"),
-            None,
-            &admin,
-        )
-        .await,
-        StatusCode::CONFLICT,
-        "publish_job_not_retryable",
-    );
-    assert_eq!(
-        get(
-            &app,
-            &format!("/api/v1/admin/publishing/jobs/{first_job}"),
-            &editor
-        )
-        .await
-        .json["data"]["status"],
-        "retired"
-    );
-
-    // 取消发布：排队中的旧目标被新目标取代；上线后文章在公开接口与站点上都返回 404。
-    let requested = api(
-        &app,
-        Method::POST,
-        "/api/v1/admin/publishing/jobs",
-        None,
-        &admin,
-    )
-    .await;
-    assert_eq!(requested.status, StatusCode::ACCEPTED);
-    let manual_job = requested.json["data"]["publish_job_id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert_eq!(
-        requested.headers[header::LOCATION],
-        format!("/api/v1/admin/publishing/jobs/{manual_job}").as_str()
-    );
+    // 撤回立即对公开文章、索引和媒体生效。
     assert_field(
         &api(&app, Method::DELETE, &publication, None, &editor).await,
         "expected_publication_version",
@@ -1109,13 +887,25 @@ async fn run(pool: &PgPool, database_url: String) {
         &editor,
     )
     .await;
-    assert_eq!(
-        unpublished.status,
-        StatusCode::ACCEPTED,
-        "{}",
-        unpublished.json
+    assert_eq!(unpublished.status, StatusCode::OK, "{}", unpublished.json);
+    assert_eq!(unpublished.json["data"]["generation"], 3);
+    let changed = call(
+        &app,
+        Method::GET,
+        "/api/v1/public/site-snapshot",
+        None,
+        None,
+        &[("if-none-match", tag)],
+    )
+    .await;
+    assert_eq!(changed.status, StatusCode::OK);
+    assert_ne!(changed.headers[header::ETAG], tag);
+    assert!(changed.json["data"]["posts"].as_array().unwrap().is_empty());
+    assert_error(
+        &get(&app, &format!("/api/v1/public/media/{cover}"), &other).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
     );
-    assert_eq!(unpublished.json["data"]["desired_generation"], 4);
     assert_error(
         &api(
             &app,
@@ -1128,20 +918,6 @@ async fn run(pool: &PgPool, database_url: String) {
         StatusCode::CONFLICT,
         "already_unpublished",
     );
-    assert_eq!(
-        get(
-            &app,
-            &format!("/api/v1/admin/publishing/jobs/{manual_job}"),
-            &editor
-        )
-        .await
-        .json["data"]["status"],
-        "superseded"
-    );
-    assert_eq!(
-        worker.run_once().await.unwrap(),
-        Some(PublishOutcome::Activated { generation: 4 })
-    );
     assert_error(
         &get(&app, "/api/v1/public/posts/building-with-axum", &other).await,
         StatusCode::NOT_FOUND,
@@ -1152,47 +928,14 @@ async fn run(pool: &PgPool, database_url: String) {
         0
     );
     assert_eq!(
-        call(
-            &site_app,
-            Method::GET,
-            "/blog/building-with-axum/",
-            None,
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NOT_FOUND
+        get(&app, "/api/v1/public/site-snapshot", &other).await.json["data"]["posts"],
+        json!([])
     );
     let detail = get(&app, &posts_path, &author).await;
-    assert!(detail.json["data"]["publication"]["live_revision_id"].is_null());
+    assert!(detail.json["data"]["publication"]["published_revision_id"].is_null());
     assert!(
         detail.json["data"]["slug_locked"].as_bool().unwrap(),
         "取消发布不解锁 slug"
-    );
-
-    // 任务可见性：作者只看到自己触发的任务。
-    assert_eq!(
-        get(&app, "/api/v1/admin/publishing/jobs", &author)
-            .await
-            .json["meta"]["pagination"]["total"],
-        0
-    );
-    assert_eq!(
-        get(&app, "/api/v1/admin/publishing/jobs", &editor)
-            .await
-            .json["meta"]["pagination"]["total"],
-        4
-    );
-    assert_error(
-        &get(
-            &app,
-            &format!("/api/v1/admin/publishing/jobs/{first_job}"),
-            &author,
-        )
-        .await,
-        StatusCode::NOT_FOUND,
-        "not_found",
     );
 
     // 校验后被并发删除的分类：写入时外键拒绝，映射为字段错误而不是 500。
@@ -1254,12 +997,8 @@ async fn run(pool: &PgPool, database_url: String) {
         "category.update",
         "post.create",
         "post.publish",
-        "post.review_decide",
-        "post.review_submit",
         "post.revision_create",
         "post.unpublish",
-        "publishing.request",
-        "publishing.retry",
         "tag.create",
         "tag.delete",
     ] {
@@ -1268,28 +1007,113 @@ async fn run(pool: &PgPool, database_url: String) {
             "缺少审计 {expected}: {actions:?}"
         );
     }
-    profile_publishing(
-        pool,
+    profile_publishing(pool, &app, (&admin, &editor, &author)).await;
+    // 撤下后再次发布当前草稿，公开内容与本次编辑一致。
+    let latest = get(&app, &posts_path, &editor).await.json["data"].clone();
+    let republished = api(&app, Method::PUT, &publication,
+        Some(json!({"revision_id": latest["current_revision_id"], "expected_publication_version": latest["publication"]["publication_version"]})), &editor).await;
+    assert_eq!(republished.status, StatusCode::OK);
+    assert_eq!(
+        get(&app, "/api/v1/public/posts/building-with-axum", &editor)
+            .await
+            .json["data"]["title"],
+        "未发布的新稿"
+    );
+
+    // 对同一篇文章验证权限、版本保护，以及撤下前后的删除边界。
+    let rev = latest["current_revision_id"].as_str().unwrap();
+    let version = republished.json["data"]["publication_version"]
+        .as_i64()
+        .unwrap();
+    let delete_url = |revision: &str, version: i64| {
+        format!(
+            "{posts_path}?expected_revision_id={revision}&expected_publication_version={version}"
+        )
+    };
+    assert_field(
+        &api(&app, Method::DELETE, &posts_path, None, &editor).await,
+        "expected_revision_id",
+        "required",
+    );
+    let target = delete_url(rev, version);
+    assert_error(
+        &api(&app, Method::DELETE, &target, None, &author).await,
+        StatusCode::FORBIDDEN,
+        "forbidden",
+    );
+    assert_error(
+        &api(
+            &app,
+            Method::DELETE,
+            &delete_url(&revision_one, version),
+            None,
+            &editor,
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "revision_conflict",
+    );
+    assert_error(
+        &api(
+            &app,
+            Method::DELETE,
+            &delete_url(rev, version - 1),
+            None,
+            &editor,
+        )
+        .await,
+        StatusCode::CONFLICT,
+        "publication_conflict",
+    );
+    assert_error(
+        &api(&app, Method::DELETE, &target, None, &editor).await,
+        StatusCode::CONFLICT,
+        "post_in_use",
+    );
+    let withdrawn = api(
         &app,
-        &site_app,
-        &worker,
-        &builder,
-        (&admin, &editor, &author),
+        Method::DELETE,
+        &format!("{publication}?expected_publication_version={version}"),
+        None,
+        &editor,
     )
     .await;
+    assert_eq!(withdrawn.status, StatusCode::OK);
+    let target = delete_url(rev, version + 1);
+    assert_eq!(
+        api(&app, Method::DELETE, &target, None, &editor)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    assert_error(
+        &get(&app, &posts_path, &editor).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+    assert_error(
+        &api(&app, Method::DELETE, &target, None, &editor).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
+    let deleted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_logs WHERE action='post.delete' AND resource_id=$1",
+    )
+    .bind(current_post_id(&posts_path))
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(deleted, 1);
 }
 
 async fn profile_publishing(
     pool: &PgPool,
     app: &Router,
-    site_app: &Router,
-    worker: &silva_application::publishing::PublishingService,
-    builder: &Switchable,
     (admin, editor, author): (&str, &str, &str),
 ) {
     let path = "/api/v1/admin/users/profile";
     let public = "/api/v1/public/profile";
-    let avatar = ready_media(app, author).await;
+    let avatar = ready_media(app, author, 16).await;
     let first = json!({
         "display_name": "Profile One", "avatar_media_id": avatar, "bio_md": "**hello**",
         "experiences": [{"organization": "Silva", "role": "维护者", "description_md": "**经验**",
@@ -1313,7 +1137,7 @@ async fn profile_publishing(
         "forbidden",
     );
 
-    // 并发首次保存只能创建一份资料，且共用同一发布任务。
+    // 并发首次保存只能创建一份资料，且共用同一公开版本。
     let (a, b) = tokio::join!(
         api(app, Method::PUT, path, Some(first.clone()), editor),
         api(app, Method::PUT, path, Some(first.clone()), admin)
@@ -1321,20 +1145,7 @@ async fn profile_publishing(
     assert_eq!(a.status, StatusCode::OK, "{}", a.json);
     assert_eq!(b.status, StatusCode::OK, "{}", b.json);
     assert_eq!(a.json, b.json);
-    let generation = a.json["data"]["desired_generation"].as_i64().unwrap();
-    let job = a.json["data"]["publish_job_id"].as_str().unwrap();
-    assert_eq!(
-        get(app, &format!("/api/v1/admin/publishing/jobs/{job}"), editor)
-            .await
-            .json["data"]["trigger_type"],
-        "profile.update"
-    );
-    assert_error(
-        &get(app, public, author).await,
-        StatusCode::NOT_FOUND,
-        "not_found",
-    );
-
+    let generation = a.json["data"]["generation"].as_i64().unwrap();
     let mut invalid = first.clone();
     invalid["experiences"][0]["ended_on"] = json!("2020-01-01");
     invalid["links"][0]["url"] = json!("relative");
@@ -1357,10 +1168,6 @@ async fn profile_publishing(
         "media_not_ready",
     );
 
-    assert_eq!(
-        worker.run_once().await.unwrap(),
-        Some(PublishOutcome::Activated { generation })
-    );
     let live = get(app, public, author).await;
     assert_eq!(live.generation(), Some(generation));
     assert_eq!(live.json["data"]["avatar"]["media_id"], avatar);
@@ -1377,40 +1184,22 @@ async fn profile_publishing(
             .unwrap()
             .contains("<strong>经验</strong>")
     );
+    let usage = get(app, &format!("/api/v1/admin/media/{avatar}"), editor).await;
+    assert_eq!(usage.json["meta"]["reference_count"], 1);
+    assert_eq!(
+        usage.json["meta"]["references"][0]["kind"],
+        "profile_avatar"
+    );
     let second =
         json!({"display_name": "Profile Two", "experiences": [], "skills": [], "links": []});
     let saved = api(app, Method::PUT, path, Some(second), admin).await;
-    let next = saved.json["data"]["desired_generation"].as_i64().unwrap();
+    let next = saved.json["data"]["generation"].as_i64().unwrap();
     assert_eq!(next, generation + 1);
     let media_path = format!("/api/v1/admin/media/{avatar}");
-    builder.fail.store(true, Ordering::SeqCst);
-    assert!(
-        matches!(worker.run_once().await.unwrap(), Some(PublishOutcome::Failed {generation, ..}) if generation==next)
-    );
     assert_error(
-        &api(app, Method::DELETE, &media_path, None, editor).await,
-        StatusCode::CONFLICT,
-        "media_in_use",
-    );
-    assert_eq!(
-        get(app, &format!("/api/v1/public/media/{avatar}"), author)
-            .await
-            .bytes,
-        png()
-    );
-    assert_eq!(get(app, public, author).await.json, live.json);
-    let about = get(site_app, "/about/", author).await;
-    assert!(about.text().contains("Profile One"));
-    assert_eq!(about.generation(), Some(generation));
-    builder.fail.store(false, Ordering::SeqCst);
-    sqlx::query("UPDATE publish_jobs SET retry_after=now() WHERE generation=$1")
-        .bind(next)
-        .execute(pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        worker.run_once().await.unwrap(),
-        Some(PublishOutcome::Activated { generation: next })
+        &get(app, &format!("/api/v1/public/media/{avatar}"), author).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
     );
     let refreshed = get(app, public, author).await;
     assert_eq!(refreshed.generation(), Some(next));
@@ -1418,9 +1207,6 @@ async fn profile_publishing(
     assert!(refreshed.json["data"]["avatar"].is_null());
     assert_eq!(refreshed.json["data"]["skills"], json!([]));
     assert_eq!(refreshed.json["data"]["experiences"], json!([]));
-    let about = get(site_app, "/about/", author).await;
-    assert!(about.text().contains("Profile Two"));
-    assert_eq!(about.generation(), Some(next));
     assert_eq!(
         api(app, Method::DELETE, &media_path, None, editor)
             .await

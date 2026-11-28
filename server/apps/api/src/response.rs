@@ -30,6 +30,16 @@ pub(crate) fn ok<T: Serialize>(data: T) -> Response {
     Json(DataBody { data }).into_response()
 }
 
+/// 200，返回资源及其附加信息。
+pub(crate) fn with_meta<T: Serialize, M: Serialize>(data: T, meta: M) -> Response {
+    #[derive(Serialize)]
+    struct Resource<T, M> {
+        data: T,
+        meta: M,
+    }
+    Json(Resource { data, meta }).into_response()
+}
+
 /// 201，返回新建但没有独立 URI 的资源（如会话签发的令牌对）。
 pub(crate) fn created<T: Serialize>(data: T) -> Response {
     (StatusCode::CREATED, Json(DataBody { data })).into_response()
@@ -42,11 +52,6 @@ pub(crate) fn created_at<T: Serialize>(location: &str, data: T) -> Response {
         response.headers_mut().insert(header::LOCATION, value);
     }
     response
-}
-
-/// 202，请求已受理，结果稍后生效（如站点发布）。
-pub(crate) fn accepted<T: Serialize>(data: T) -> Response {
-    (StatusCode::ACCEPTED, Json(DataBody { data })).into_response()
 }
 
 /// 200，返回一页集合与分页元数据。

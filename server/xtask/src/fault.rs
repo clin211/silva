@@ -196,7 +196,7 @@ pub async fn run() -> Result<()> {
     }
     let fault = Fault {
         client: client()?,
-        api: endpoint("SILVA_SMOKE_API", "http://127.0.0.1:8088"),
+        api: endpoint("SILVA_SMOKE_API", "http://127.0.0.1:8090"),
         receiver: endpoint("SILVA_SMOKE_RECEIVER", "http://127.0.0.1:9094"),
         started: Utc::now(),
     };

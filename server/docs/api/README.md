@@ -1,6 +1,6 @@
 # Silva API 接入指南
 
-当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询、媒体上传、文章与审核、分类标签、个人资料维护、站点发布任务和 Public API。AI 采集接口尚未开放。
+当前版本提供健康检查、身份认证、内置角色、账户管理、审计查询、媒体上传、文章保存与发布、文章系列、分类标签、个人资料维护和 Public API。AI 采集接口尚未开放。
 
 ## OpenAPI 交付与 Apifox 导入
 
@@ -67,7 +67,7 @@ SILVA_API_REFRESH=$(jq -er '.data.refresh_token' "$SILVA_API_TMP/refresh.json")
 Editor 和 Admin 使用 `profile.manage` 维护 About 页面的资料。首次启用时运行标准迁移命令 `make migrate`，为现有内置角色同步权限。
 
 - `PUT /api/v1/admin/users/profile` 整体替换资料。提交 `display_name` 和有序数组 `experiences`、`skills`、`links`。空数组清空该列表，省略可选字段或传入 null 会清除原值。头像引用已校验的媒体 ID。
-- 保存返回 200，`data.publish_job_id` 和 `data.desired_generation` 可用于查询发布进度。重复提交相同内容会返回包含该资料的当前站点目标。站点版本激活后，`/about` 和 `GET /api/v1/public/profile` 才展示更新。
+- 保存时在同一事务刷新站点版本。成功返回 200，`data.generation` 给出当前公开内容版本。下次请求 `/about/` 或 `GET /api/v1/public/profile` 即可读取更新。
 
 ## 查询列表与更新账户
 
@@ -94,7 +94,7 @@ curl --fail-with-body --silent --show-error \
 
 更新时字段省略或显式传 `null` 均保持原值；`roles` 提供后会替换整组角色，不能是空数组或重复角色。`status` 可为 `active` 或 `disabled`，禁用账户会原子撤销该账户的全部会话，其令牌立即失效。后续请求按当前账户状态与权限授权。
 
-登录与刷新之外的管理接口都要求有效的 access token。JSON 请求最大 64 KiB，输入不接受未知字段。密码长度按 UTF-8 字节计算，创建账户时为 12–1024 字节；显示名称最多 100 字节。
+登录与刷新之外的管理接口都要求有效的 access token。JSON 请求默认最大 64 KiB，创建文章、保存修订及替换系列目录最大 1 MiB，输入不接受未知字段。密码长度按 UTF-8 字节计算，创建账户时为 12–1024 字节；显示名称最多 100 字节。
 
 操作完成后删除当前会话（退出登录），成功返回 204 且没有响应体；该会话的 access token 和 refresh token 随即失效：
 
@@ -126,29 +126,27 @@ async function uploadImage(file: File, accessToken: string) {
 }
 ```
 
-成功返回 201、媒体详情的 `Location`、已就绪的 `data.media` 和短期只读的 `data.url`。持有链接的人可在有效期内查看图片，默认 15 分钟。长期引用保存媒体 ID；后台可随时用 Bearer Token 读取 `GET /api/v1/admin/media/{id}/content`。替代文本使用 `PATCH /media/{id}` 提交 `{"alt_text":"..."}`，删除使用 `DELETE /media/{id}`。
+首次创建条目返回 201 和媒体详情的 `Location`。同一上传者再次上传字节相同的图片返回 200 和原条目。两种响应都包含已就绪的 `data.media` 和短期只读的 `data.url`。持有链接的人可在有效期内查看图片，默认 15 分钟。长期引用保存媒体 ID；后台可随时用 Bearer Token 读取 `GET /api/v1/admin/media/{id}/content`。替代文本使用 `PATCH /media/{id}` 提交 `{"alt_text":"..."}`，删除使用 `DELETE /media/{id}`。详情响应的 `meta.reference_count` 统计全部引用位置，`meta.references` 列出有权查看的位置。同一修订内的封面与正文分别计数，正文内重复插图只计一次。删除仍被引用的媒体返回 409，`error.media_usage` 包含同样的计数和明细。
 
-## 文章、审核与发布
+## 文章保存与发布
 
-文章的状态由三个独立指针表达：当前编辑版本（`current_revision_id`）、期望公开版本（`publication.desired_published_revision_id`）和线上版本（`publication.live_revision_id`）。不要用单一状态字段推断文章是否已上线。
+每篇文章有一个编辑版本（`current_revision_id`）和一个可空的公开版本（`publication.published_revision_id`）。后续保存只修改草稿。
 
 1. **创建**：`POST /api/v1/admin/posts` 提交 slug 与完整修订内容，返回文章详情（含第 1 条修订）。
 2. **保存与自动保存**：`POST /posts/{id}/revisions` 提交完整内容和 `expected_revision_id`（编辑器读取时的 `current_revision_id`）。
-   - 内容有变化时返回 201 和新修订，之后用它的 `id` 作为下一次的 `expected_revision_id`。
+   - 内容有变化时替换旧的编辑内容，返回 201 和当前修订，之后用它的 `id` 作为下一次的 `expected_revision_id`。
    - 内容与当前版本相同时返回 200 和当前版本，自动保存可以放心按固定间隔提交。
    - 返回 `409 revision_conflict` 时说明别人已经保存过：保留本地输入，重新读取文章，核对差异后再提交。
-3. **送审**：作者 `POST /posts/{id}/reviews` 提交 `{"revision_id": "..."}`。每个修订只能送审一次；被拒绝后保存新修订再送审。
-4. **审核**：Editor/Admin `PATCH /posts/{id}/reviews/{review_id}` 提交 `{"decision": "approved"}` 或 `rejected`，可附 `comment`。
-5. **上线**：Editor/Admin `PUT /posts/{id}/publication` 提交已批准的 `revision_id` 和读取到的 `expected_publication_version`，返回 202 与 `publish_job_id`。**202 不代表已上线**：页面显示「待上线」，用 `GET /publishing/jobs/{id}` 轮询，`active` 表示已上线，`failed` 显示 `error_message`，`superseded` 表示被更新的目标取代（重新读取文章即可）。
-6. **撤下**：`DELETE /posts/{id}/publication?expected_publication_version=N`，同样返回 202；新版本上线后文章在公开站点返回 404。slug 在首次上线后锁定，撤下也不解锁。
+3. **发布**。Editor/Admin 调用 `PUT /posts/{id}/publication`，提交本次保存的 `revision_id` 和 `expected_publication_version`。提交成功返回 200，包含 `generation`、`publication_version`。此时读者已能访问新内容。编辑器可回读文章，按 `published_revision_id` 展示线上状态。
+4. **撤下**。调用 `DELETE /posts/{id}/publication?expected_publication_version=N`。成功返回 200 后，文章详情返回 404，并从公开列表和订阅中移除。首次发布锁定的 slug 会保留。
 
 正文图片写作 `![说明](media:<媒体 ID>)`，只能引用已就绪且本人上传（或持有 `media.manage`）的媒体；原始 HTML 会按文本显示。修订返回的 `rendered_html` 中图片指向公开媒体地址，后台预览时把 `/api/v1/public/media/{id}` 替换为通过 `GET /api/v1/admin/media/{id}/content` 读取的 blob 地址。请求正文上限为 1 MiB，Markdown 正文最多 512 KiB。
 
-分类与标签由 Editor/Admin 维护，所有内容角色都可以读取。修改已出现在线上文章中的分类或标签名称时，响应的 `publication` 给出新登记的发布任务。
+分类与标签由 Editor/Admin 维护，所有内容角色都可以读取。修改已出现在线上文章中的分类或标签名称时，响应的 `publication` 给出同一事务登记的线上版本。
 
 ## Public API
 
-`/api/v1/public/*` 无需认证，只读取当前线上版本，每个响应带 `X-Site-Generation`。静态页面渲染时记录自己的 generation，之后的动态请求带上 `X-Expected-Generation`；返回 `409 site_generation_changed` 时清空页面中的旧数据并提示刷新，不要拼接两个版本的数据。站点尚未上线时返回 `503 site_not_ready`。
+`/api/v1/public/*` 无需认证，只读取当前线上版本，每个响应带 `X-Site-Generation`。Astro 渲染页面时记录自己的 generation，之后的动态请求带上 `X-Expected-Generation`；返回 `409 site_generation_changed` 时清空页面中的旧数据并提示刷新，不要拼接两个版本的数据。空站点版本为 0；未发布的文章详情返回 404。使用 `GET /api/v1/public/site-snapshot` 可读取整份公开投影，携带有效的 `If-None-Match` 可复用已缓存的同一版本。
 
 ## 权限
 
@@ -156,16 +154,15 @@ async function uploadImage(file: File, accessToken: string) {
 | --- | --- |
 | `POST /api/v1/admin/sessions`（登录）、`POST /api/v1/admin/tokens`（刷新） | 无需 access token |
 | `GET /api/v1/admin/users/me`、`DELETE /api/v1/admin/sessions/current`（退出）、`PUT /api/v1/admin/users/me/password` | 有效 access token |
-| `GET/POST /api/v1/admin/users`、`PATCH /api/v1/admin/users/{id}` | `users.manage` |
+| `GET/POST /api/v1/admin/users`、`GET/PATCH/DELETE /api/v1/admin/users/{id}` | `users.manage` |
 | `GET /api/v1/admin/roles` | `roles.read` |
 | `GET /api/v1/admin/audit-logs` | `audit.read` |
-| 文章读取、保存修订、送审 | `posts.manage` 可访问全部文章；只有 `posts.read_own`、`posts.edit_own`、`posts.submit_own` 时只能访问本人文章，他人文章返回 404 |
+| 文章读取、保存修订 | `posts.manage` 可访问全部文章；只有 `posts.read_own`、`posts.edit_own` 时只能访问本人文章，他人文章返回 404 |
+| 读取与编辑系列、按系列筛选文章 | `series.manage`，公开与下线另需 `posts.publish` |
 | 创建文章 | `posts.create` |
-| 审核决定 / 上线与撤下 | `posts.review` / `posts.publish`（Editor、Admin） |
+| 上线与撤下 | `posts.publish`（Editor、Admin） |
 | 整体保存个人资料 | `profile.manage`（Editor、Admin） |
 | 分类标签读取 / 维护 | 任一内容权限 / `taxonomy.manage`（Editor、Admin） |
-| 发布任务查询 | `jobs.read` 可查看全部；只有 `jobs.read_own` 时只返回本人触发的任务 |
-| 登记全站重建、重试失败任务 | `publishing.retry`（Admin） |
 | `/api/v1/public/*` | 无需认证 |
 | `/api/v1/admin/media` 下的全部接口 | `media.manage_own`（所有内置角色）只能看到和操作本人上传的媒体，他人媒体返回 404；`media.manage`（Editor、Admin）可操作全部媒体 |
 
@@ -200,19 +197,16 @@ async function uploadImage(file: File, accessToken: string) {
 | 409 | `last_admin_required` | 至少保留一个启用状态的管理员，先为其他账户分配 admin 再停用或降级 |
 | 409 | `slug_in_use` / `slug_locked` | 更换 slug / 文章已上线过，slug 不能再改 |
 | 409 | `revision_conflict` | 重新读取文章，核对差异后再保存 |
-| 409 | `review_already_submitted` / `review_not_pending` | 该修订已送审 / 审核已有决定 |
-| 409 | `publication_conflict` / `revision_not_approved` / `already_unpublished` | 重新读取发布状态 / 先送审并批准 / 文章没有上线目标 |
+| 409 | `publication_conflict` / `already_unpublished` | 重新读取发布状态 / 文章未发布 |
 | 409 | `taxonomy_in_use` | 分类或标签仍被修订引用，不能删除 |
-| 409 | `publish_job_not_retryable` | 只能重试仍为最新目标的失败任务 |
 | 409 | `site_generation_changed` | 线上版本已更新，清空旧数据并提示刷新 |
 | 409 | `upload_incomplete` / `upload_expired` | 完成直传后重试确认 / 已超过截止时间，重新申请上传 |
-| 409 | `media_not_ready` / `media_in_use` | 媒体尚未通过校验 / 先解除文章或个人资料对该媒体的引用 |
+| 409 | `media_not_ready` / `media_in_use` | 媒体尚未通过校验 / 先解除编辑引用并等待仍使用该媒体的线上版本被替换 |
 | 413 / 415 | `payload_too_large` / `unsupported_media_type` | 检查正文大小和 Content-Type |
 | 422 | `validation_error` | 按 `details` 中的字段与字段错误码修正输入；路径 ID 不是 UUIDv7 时 `field` 为 `id` |
 | 422 | `media_invalid` | 文件未通过校验，原因见错误消息；更换文件后重新上传 |
 | 429 | `rate_limited` | 按 `Retry-After` 等待后重试 |
 | 500 | `internal_error` | 记录请求标识并排查服务依赖 |
-| 503 | `site_not_ready` | 站点尚未有线上版本，稍后重试 |
 | 503 | `storage_unavailable` | 服务端未配置对象存储（仅开发环境），配置 `SILVA_STORAGE_*` 后重启 |
 
 响应头 `X-Request-Id` 是服务端生成的 UUIDv7，排障时提供它；错误正文不重复携带。`X-Trace-Id` 是 32 位小写十六进制 W3C trace ID，用于链路查询，不是 UUID。

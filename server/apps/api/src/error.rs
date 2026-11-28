@@ -30,13 +30,14 @@ pub enum ErrorCode {
     SlugInUse,
     SlugLocked,
     RevisionConflict,
-    ReviewAlreadySubmitted,
-    ReviewNotPending,
     PublicationConflict,
-    RevisionNotApproved,
     AlreadyUnpublished,
+    SeriesEditConflict,
+    SeriesInUse,
+    PostInUse,
+    PostAlreadyInSeries,
+    AlreadyPublished,
     TaxonomyInUse,
-    PublishJobNotRetryable,
     SiteGenerationChanged,
     PayloadTooLarge,
     UnsupportedMediaType,
@@ -45,7 +46,6 @@ pub enum ErrorCode {
     RateLimited,
     InternalError,
     StorageUnavailable,
-    SiteNotReady,
 }
 
 impl ErrorCode {
@@ -66,13 +66,14 @@ impl ErrorCode {
         Self::SlugInUse,
         Self::SlugLocked,
         Self::RevisionConflict,
-        Self::ReviewAlreadySubmitted,
-        Self::ReviewNotPending,
         Self::PublicationConflict,
-        Self::RevisionNotApproved,
         Self::AlreadyUnpublished,
+        Self::SeriesEditConflict,
+        Self::SeriesInUse,
+        Self::PostInUse,
+        Self::PostAlreadyInSeries,
+        Self::AlreadyPublished,
         Self::TaxonomyInUse,
-        Self::PublishJobNotRetryable,
         Self::SiteGenerationChanged,
         Self::PayloadTooLarge,
         Self::UnsupportedMediaType,
@@ -81,7 +82,6 @@ impl ErrorCode {
         Self::RateLimited,
         Self::InternalError,
         Self::StorageUnavailable,
-        Self::SiteNotReady,
     ];
 
     pub fn status(self) -> StatusCode {
@@ -102,20 +102,21 @@ impl ErrorCode {
             | Self::SlugInUse
             | Self::SlugLocked
             | Self::RevisionConflict
-            | Self::ReviewAlreadySubmitted
-            | Self::ReviewNotPending
             | Self::PublicationConflict
-            | Self::RevisionNotApproved
             | Self::AlreadyUnpublished
+            | Self::SeriesEditConflict
+            | Self::PostInUse
+            | Self::SeriesInUse
+            | Self::PostAlreadyInSeries
+            | Self::AlreadyPublished
             | Self::TaxonomyInUse
-            | Self::PublishJobNotRetryable
             | Self::SiteGenerationChanged => StatusCode::CONFLICT,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::ValidationError | Self::MediaInvalid => StatusCode::UNPROCESSABLE_ENTITY,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::StorageUnavailable | Self::SiteNotReady => StatusCode::SERVICE_UNAVAILABLE,
+            Self::StorageUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }
@@ -127,6 +128,7 @@ pub(crate) struct ApiError {
     pub details: Vec<FieldError>,
     /// 设置时附带 `Retry-After` 响应头（秒）。
     pub retry_after: Option<u64>,
+    pub media_usage: Option<Box<silva_application::ports::MediaUsage>>,
     /// 设置时附带 `X-Site-Generation` 响应头，告知客户端当前线上版本。
     pub generation: Option<i64>,
 }
@@ -138,6 +140,7 @@ impl ApiError {
             message: message.into(),
             details: Vec::new(),
             retry_after: None,
+            media_usage: None,
             generation: None,
         }
     }
@@ -149,6 +152,7 @@ impl ApiError {
             message: "Request validation failed".into(),
             details,
             retry_after: None,
+            media_usage: None,
             generation: None,
         }
     }
@@ -185,21 +189,17 @@ impl From<AppError> for ApiError {
             AppError::Conflict(Conflict::MediaInUse) => ErrorCode::MediaInUse,
             AppError::MediaInvalid { .. } => ErrorCode::MediaInvalid,
             AppError::StorageUnavailable => ErrorCode::StorageUnavailable,
-            AppError::SiteNotReady => ErrorCode::SiteNotReady,
             AppError::Conflict(Conflict::SlugInUse) => ErrorCode::SlugInUse,
             AppError::Conflict(Conflict::SlugLocked) => ErrorCode::SlugLocked,
             AppError::Conflict(Conflict::RevisionConflict) => ErrorCode::RevisionConflict,
-            AppError::Conflict(Conflict::ReviewAlreadySubmitted) => {
-                ErrorCode::ReviewAlreadySubmitted
-            }
-            AppError::Conflict(Conflict::ReviewNotPending) => ErrorCode::ReviewNotPending,
             AppError::Conflict(Conflict::PublicationConflict) => ErrorCode::PublicationConflict,
-            AppError::Conflict(Conflict::RevisionNotApproved) => ErrorCode::RevisionNotApproved,
             AppError::Conflict(Conflict::AlreadyUnpublished) => ErrorCode::AlreadyUnpublished,
+            AppError::Conflict(Conflict::SeriesEditConflict) => ErrorCode::SeriesEditConflict,
+            AppError::Conflict(Conflict::PostInUse) => ErrorCode::PostInUse,
+            AppError::Conflict(Conflict::SeriesInUse) => ErrorCode::SeriesInUse,
+            AppError::Conflict(Conflict::PostAlreadyInSeries) => ErrorCode::PostAlreadyInSeries,
+            AppError::Conflict(Conflict::AlreadyPublished) => ErrorCode::AlreadyPublished,
             AppError::Conflict(Conflict::TaxonomyInUse) => ErrorCode::TaxonomyInUse,
-            AppError::Conflict(Conflict::PublishJobNotRetryable) => {
-                ErrorCode::PublishJobNotRetryable
-            }
             AppError::Conflict(Conflict::SiteGenerationChanged) => ErrorCode::SiteGenerationChanged,
         };
         Self::new(code, error.to_string())
@@ -216,6 +216,8 @@ struct ErrorObject<'a> {
     code: ErrorCode,
     message: &'a str,
     details: &'a [FieldError],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_usage: Option<&'a silva_application::ports::MediaUsage>,
 }
 
 impl IntoResponse for ApiError {
@@ -225,6 +227,7 @@ impl IntoResponse for ApiError {
                 code: self.code,
                 message: &self.message,
                 details: &self.details,
+                media_usage: self.media_usage.as_deref(),
             },
         };
         let mut response = (self.code.status(), Json(body)).into_response();

@@ -45,13 +45,15 @@ impl ImageInspector for DecodingInspector {
         &self,
         bytes: Vec<u8>,
     ) -> Result<(Vec<u8>, std::result::Result<VerifiedImage, RejectionReason>)> {
-        let _permit = self
+        let permit = self
             .permits
             .clone()
             .acquire_owned()
             .await
             .map_err(|error| AppError::Internal(error.into()))?;
         tokio::task::spawn_blocking(move || {
+            // 请求取消后阻塞解码仍会继续，许可必须由解码线程持有。
+            let _permit = permit;
             let verdict = inspect_bytes(&bytes);
             (bytes, verdict)
         })

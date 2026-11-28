@@ -1,8 +1,7 @@
-//! 文章、修订、分类标签与审核的领域规则和对外表示。
+//! 文章、修订、分类标签与发布的领域规则和对外表示。
 //!
-//! 文章用三个独立指针表达状态：`current_revision_id` 是当前编辑版本，
-//! `desired_published_revision_id` 是下一次站点构建采用的目标，线上版本由当前
-//! `active_generation` 决定。修订一经保存不再修改。
+//! 保存只替换当前编辑修订。显式发布固定一份公开副本，提交该事务后读者和后台
+//! 同时看到新的公开修订。撤下只清除公开副本，保留编辑内容。
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -26,8 +25,6 @@ pub const SEO_DESCRIPTION_MAX_CHARS: usize = 500;
 pub const MAX_CATEGORIES: usize = 5;
 /// 每个修订最多选择的标签数。
 pub const MAX_TAGS: usize = 20;
-/// 审核意见的最大字符数。
-pub const REVIEW_COMMENT_MAX_CHARS: usize = 2000;
 /// 分类、标签名称的最大字符数。
 pub const TAXONOMY_NAME_MAX_CHARS: usize = 50;
 /// 分类说明的最大字符数。
@@ -193,71 +190,6 @@ impl RevisionContent {
     }
 }
 
-/// 修订审核状态。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewStatus {
-    Pending,
-    Approved,
-    Rejected,
-}
-
-impl ReviewStatus {
-    pub const ALL: [Self; 3] = [Self::Pending, Self::Approved, Self::Rejected];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Approved => "approved",
-            Self::Rejected => "rejected",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|status| status.as_str() == value)
-    }
-}
-
-/// 审核决定。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReviewDecision {
-    Approved,
-    Rejected,
-}
-
-impl ReviewDecision {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "approved" => Some(Self::Approved),
-            "rejected" => Some(Self::Rejected),
-            _ => None,
-        }
-    }
-
-    pub fn status(self) -> ReviewStatus {
-        match self {
-            Self::Approved => ReviewStatus::Approved,
-            Self::Rejected => ReviewStatus::Rejected,
-        }
-    }
-}
-
-/// 规范化审核意见：去首尾空白，空白视为未填写。
-pub fn normalize_review_comment(value: Option<String>) -> Result<Option<String>> {
-    let comment = optional_text(value);
-    let mut errors = Vec::new();
-    if let Some(comment) = &comment {
-        check_chars(&mut errors, "comment", comment, 1, REVIEW_COMMENT_MAX_CHARS);
-    }
-    if errors.is_empty() {
-        Ok(comment)
-    } else {
-        Err(AppError::Validation(errors))
-    }
-}
-
 /// 分类或标签的可编辑字段。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TaxonomyInput {
@@ -320,7 +252,9 @@ pub struct Category {
     pub slug: String,
     pub name: String,
     pub description: Option<String>,
-    /// 引用该分类的文章修订数（含历史修订）；大于 0 时不能删除。
+    /// 当前编辑版本引用该分类的文章数。
+    pub post_count: i64,
+    /// 引用该分类的文章修订数（含公开修订）；大于 0 时不能删除。
     pub revision_count: i64,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
@@ -333,36 +267,14 @@ pub struct Tag {
     pub id: Uuid,
     pub slug: String,
     pub name: String,
-    /// 引用该标签的文章修订数（含历史修订）；大于 0 时不能删除。
+    /// 当前编辑版本引用该标签的文章数。
+    pub post_count: i64,
+    /// 引用该标签的文章修订数（含公开修订）；大于 0 时不能删除。
     pub revision_count: i64,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub updated_at: DateTime<Utc>,
-}
-
-/// 审核记录。
-#[derive(Clone, Debug, Serialize)]
-pub struct Review {
-    pub id: Uuid,
-    pub post_id: Uuid,
-    pub revision_id: Uuid,
-    pub revision_no: i32,
-    pub status: ReviewStatus,
-    pub comment: Option<String>,
-    pub submitted_by: Option<UserRef>,
-    pub reviewer: Option<UserRef>,
-    #[serde(serialize_with = "silva_shared::time::serialize_option")]
-    pub reviewed_at: Option<DateTime<Utc>>,
-    #[serde(serialize_with = "silva_shared::time::serialize")]
-    pub created_at: DateTime<Utc>,
-}
-
-/// 修订上的审核状态摘要；从未提交审核时为 None。
-#[derive(Clone, Debug, Serialize)]
-pub struct ReviewSummary {
-    pub id: Uuid,
-    pub status: ReviewStatus,
 }
 
 /// 修订的完整内容。
@@ -386,7 +298,6 @@ pub struct Revision {
     pub seo_title: Option<String>,
     pub seo_description: Option<String>,
     pub created_by: Option<UserRef>,
-    pub review: Option<ReviewSummary>,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
 }
@@ -398,41 +309,34 @@ pub struct RevisionSummary {
     pub revision_no: i32,
     pub title: String,
     pub created_by: Option<UserRef>,
-    pub review: Option<ReviewSummary>,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
 }
 
-/// 文章的发布状态指针。线上状态由 `live_revision_id` 表示：当前线上站点中公开的修订。
+/// 文章的发布状态指针。保存草稿不会覆盖已公开修订。
 #[derive(Clone, Debug, Serialize)]
 pub struct Publication {
-    pub desired_published_revision_id: Option<Uuid>,
+    pub published_revision_id: Option<Uuid>,
     #[serde(serialize_with = "silva_shared::time::serialize_option")]
-    pub desired_published_at: Option<DateTime<Utc>>,
-    pub live_revision_id: Option<Uuid>,
+    pub published_at: Option<DateTime<Utc>>,
     pub publication_version: i64,
     #[serde(serialize_with = "silva_shared::time::serialize_option")]
     pub first_published_at: Option<DateTime<Utc>>,
-    /// 站点最新提交的 generation；尚无发布任务时为 None。
-    pub desired_generation: Option<i64>,
-    /// 站点当前线上的 generation；尚未上线时为 None。
-    pub active_generation: Option<i64>,
 }
 
 /// 文章列表项。
 #[derive(Clone, Debug, Serialize)]
 pub struct PostSummary {
+    pub series: Option<crate::series::Membership>,
     pub id: Uuid,
     pub slug: String,
     pub slug_locked: bool,
     pub title: String,
+    pub categories: Vec<TaxonomyRef>,
     pub author: Option<UserRef>,
     pub current_revision_id: Uuid,
     pub current_revision_no: i32,
-    /// 当前编辑版本的审核状态。
-    pub current_review: Option<ReviewSummary>,
-    pub desired_published_revision_id: Option<Uuid>,
-    pub live_revision_id: Option<Uuid>,
+    pub published_revision_id: Option<Uuid>,
     pub publication_version: i64,
     #[serde(serialize_with = "silva_shared::time::serialize")]
     pub created_at: DateTime<Utc>,
@@ -440,9 +344,61 @@ pub struct PostSummary {
     pub updated_at: DateTime<Utc>,
 }
 
+/// 文章列表排序方式。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PostSort {
+    #[default]
+    UpdatedDesc,
+    CreatedDesc,
+    TitleAsc,
+    TitleDesc,
+}
+
+impl PostSort {
+    pub const ALL: [Self; 4] = [
+        Self::UpdatedDesc,
+        Self::CreatedDesc,
+        Self::TitleAsc,
+        Self::TitleDesc,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UpdatedDesc => "updated_desc",
+            Self::CreatedDesc => "created_desc",
+            Self::TitleAsc => "title_asc",
+            Self::TitleDesc => "title_desc",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|sort| sort.as_str() == value)
+    }
+}
+
+/// 单个分类在当前可见范围内的文章数。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PostCategoryCount {
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub post_count: i64,
+}
+
+/// 当前可见范围内的文章分类统计。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PostCategoryCounts {
+    pub total: i64,
+    pub uncategorized: i64,
+    pub categories: Vec<PostCategoryCount>,
+}
+
 /// 文章详情，含当前编辑版本的完整内容。
 #[derive(Clone, Debug, Serialize)]
 pub struct Post {
+    pub series: Option<crate::series::Membership>,
     pub id: Uuid,
     pub slug: String,
     pub slug_locked: bool,
@@ -456,18 +412,41 @@ pub struct Post {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SeriesFilter {
+    pub series_id: Option<Uuid>,
+    pub in_series: Option<bool>,
+}
+impl SeriesFilter {
+    pub fn authorize(self, principal: &crate::identity::Principal) -> Result<()> {
+        if self.series_id.is_some() || self.in_series.is_some() {
+            principal.require(crate::series::MANAGE)?;
+        }
+        if self.series_id.is_some() && self.in_series == Some(false) {
+            return Err(AppError::invalid(
+                "in_series",
+                FieldErrorCode::InvalidValue,
+                "in_series=false cannot be combined with series_id",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// 文章列表筛选。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PostFilter {
-    /// 标题关键字，不区分大小写子串匹配。
+    pub series: SeriesFilter,
+    /// 标题或 slug 关键字，不区分大小写子串匹配。
     pub q: Option<String>,
     pub author_id: Option<Uuid>,
     pub category_id: Option<Uuid>,
     pub tag_id: Option<Uuid>,
-    /// 当前编辑版本的审核状态。
-    pub review_status: Option<ReviewStatus>,
-    /// true 只返回有发布目标的文章，false 只返回没有发布目标的文章。
+    /// true 只返回有公开修订的文章，false 只返回没有公开修订的文章。
     pub published: Option<bool>,
+    /// true 只返回未分配分类的文章，false 只返回已分配分类的文章。
+    pub uncategorized: Option<bool>,
+    pub sort: PostSort,
 }
 
 #[cfg(test)]
@@ -585,9 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn review_comment_and_taxonomy_input_are_normalized() {
-        assert_eq!(normalize_review_comment(Some("  ".into())).unwrap(), None);
-        assert!(normalize_review_comment(Some("x".repeat(REVIEW_COMMENT_MAX_CHARS + 1))).is_err());
+    fn taxonomy_input_are_normalized() {
         let input = TaxonomyInput {
             name: " 后端 ".into(),
             description: Some(" ".into()),
@@ -606,14 +583,12 @@ mod tests {
     }
 
     #[test]
-    fn review_status_and_decision_parse() {
-        for status in ReviewStatus::ALL {
-            assert_eq!(ReviewStatus::parse(status.as_str()), Some(status));
+    fn post_sort_parse() {
+        for sort in PostSort::ALL {
+            assert_eq!(PostSort::parse(sort.as_str()), Some(sort));
         }
-        assert_eq!(
-            ReviewDecision::parse("approved").map(ReviewDecision::status),
-            Some(ReviewStatus::Approved)
-        );
-        assert_eq!(ReviewDecision::parse("pending"), None);
+        assert_eq!(PostSort::default(), PostSort::UpdatedDesc);
+        assert_eq!(PostSort::parse("oldest"), None);
+        assert_eq!(PostSort::parse(""), None);
     }
 }

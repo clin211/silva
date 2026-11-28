@@ -130,15 +130,13 @@ fn config(database_url: String) -> Config {
         access_token_ttl: Duration::from_secs(900),
         refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
+        trust_proxy_ip_header: false,
         api_rate_per_minute: 10_000,
         login_rate_per_minute: 1000,
         login_lockout_threshold: 1000,
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
-        site_build: None,
-        publish_poll_interval: Duration::from_secs(5),
-        site_serve: false,
     }
 }
 
@@ -262,6 +260,12 @@ async fn run(pool: &PgPool, database_url: String) {
     let other = login(&app, "other@example.test").await;
     let editor = login(&app, "editor@example.test").await;
 
+    let service = silva_infrastructure::media_service(
+        pool.clone(),
+        Some(storage.clone()),
+        &config(database_url.clone()),
+    );
+    shared_uploads(&app, &author, &other, &service, &storage, pool).await;
     let png = encode(40, 30, image::ImageFormat::Png);
     let created = upload(
         &app,
@@ -280,9 +284,14 @@ async fn run(pool: &PgPool, database_url: String) {
         created.headers[header::LOCATION],
         format!("/api/v1/admin/media/{id}")
     );
+    let key: String = sqlx::query_scalar("SELECT storage_key FROM media_assets WHERE id=$1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
     assert_eq!(
         created.json["data"]["url"],
-        format!("https://storage.test/media/{id}?read=1")
+        format!("https://storage.test/{key}?read=1")
     );
     assert_eq!(media["original_filename"], "image");
     assert_eq!(media["status"], "ready");
@@ -290,7 +299,7 @@ async fn run(pool: &PgPool, database_url: String) {
     assert_eq!(media["size_bytes"], png.len());
     assert_eq!(media["width"], 40);
     assert_eq!(media["height"], 30);
-    assert_eq!(storage.keys(), [format!("media/{id}")]);
+    assert_eq!(storage.keys(), std::slice::from_ref(&key));
     let edited = request(
         &app,
         Method::PATCH,
@@ -300,6 +309,11 @@ async fn run(pool: &PgPool, database_url: String) {
     )
     .await;
     assert_eq!(edited.json["data"]["alt_text"], "热气球封面");
+    let reused = upload(&app, &author, "renamed.png", "image/png", &png, png.len()).await;
+    assert_eq!(reused.status, StatusCode::OK);
+    assert_eq!(reused.json["data"]["media"]["id"], id.to_string());
+    assert_eq!(reused.json["data"]["media"]["original_filename"], "image");
+    assert_eq!(reused.json["data"]["media"]["alt_text"], "热气球封面");
     // 授权读取内容：原始字节、实际类型、不缓存并带沙箱 CSP。
     let content = request(
         &app,
@@ -432,6 +446,16 @@ async fn run(pool: &PgPool, database_url: String) {
     .await
     .unwrap();
     let path = format!("/api/v1/admin/media/{id}");
+    let conflict = request(&app, Method::DELETE, &path, None, &author).await;
+    assert_eq!(
+        conflict.json["error"]["media_usage"],
+        json!({"reference_count":1,"references":[]})
+    );
+    let detail = request(&app, Method::GET, &path, None, &editor).await;
+    assert_eq!(
+        detail.json["meta"]["references"][0]["kind"],
+        "profile_avatar"
+    );
     assert_error(
         &request(&app, Method::DELETE, &path, None, &author).await,
         StatusCode::CONFLICT,
@@ -454,6 +478,20 @@ async fn run(pool: &PgPool, database_url: String) {
     .execute(pool)
     .await
     .unwrap();
+    sqlx::query("INSERT INTO post_revision_media VALUES ($1,$2)")
+        .bind(revision_id)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let detail = request(&app, Method::GET, &path, None, &editor).await;
+    assert_eq!(detail.json["meta"]["reference_count"], 2);
+    assert_eq!(detail.json["meta"]["references"][0]["kind"], "post_body");
+    assert_eq!(detail.json["meta"]["references"][1]["kind"], "post_cover");
+    assert_eq!(
+        detail.json["meta"]["references"][1]["revision_id"],
+        revision_id.to_string()
+    );
     assert_error(
         &request(&app, Method::DELETE, &path, None, &editor).await,
         StatusCode::CONFLICT,
@@ -465,7 +503,8 @@ async fn run(pool: &PgPool, database_url: String) {
         .unwrap();
     let deleted = request(&app, Method::DELETE, &path, None, &author).await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT);
-    assert!(!storage.keys().contains(&format!("media/{id}")));
+    service.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert!(!storage.keys().contains(&key));
     assert_error(
         &request(&app, Method::GET, &path, None, &author).await,
         StatusCode::NOT_FOUND,
@@ -544,6 +583,68 @@ async fn run(pool: &PgPool, database_url: String) {
         .await
         .unwrap();
     assert_eq!(remaining, [webp_id], "ready 媒体不受清理影响");
+
+    let legacy = pending(pool, "old.webp", owner).await;
+    let old_key = format!("media/{legacy}");
+    storage
+        .objects
+        .lock()
+        .unwrap()
+        .insert(old_key.clone(), webp.clone());
+    sqlx::query("UPDATE media_assets SET status='ready',storage_key=$2,mime_type='image/webp',size_bytes=$3,width=8,height=8 WHERE id=$1")
+        .bind(legacy).bind(&old_key).bind(webp.len() as i64).execute(pool).await.unwrap();
+    assert_eq!(
+        service
+            .purge_stale(chrono::Utc::now())
+            .await
+            .unwrap()
+            .failed,
+        0
+    );
+    let keys: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT storage_key FROM media_assets WHERE id=ANY($1)")
+            .bind(vec![legacy, webp_id])
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    assert_eq!(keys.len(), 1);
+    assert!(storage.keys().contains(&old_key));
+    let bytes = request(
+        &app,
+        Method::GET,
+        &format!("/api/v1/admin/media/{legacy}/content"),
+        None,
+        &author,
+    )
+    .await;
+    assert_eq!(bytes.bytes, webp);
+    sqlx::query("UPDATE media_object_deletions SET retry_at=now() WHERE storage_key=$1")
+        .bind(&old_key)
+        .execute(pool)
+        .await
+        .unwrap();
+    service.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert!(!storage.keys().contains(&old_key));
+    // 升级前签发的直传也共享现有文件，确认及重试始终返回已签发的媒体 ID。
+    let old_upload = pending(pool, "pending.webp", owner).await;
+    let upload_key = format!("uploads/{old_upload}");
+    storage
+        .objects
+        .lock()
+        .unwrap()
+        .insert(upload_key.clone(), webp.clone());
+    for _ in 0..2 {
+        let confirmed = confirm(&app, &author, old_upload).await;
+        assert_eq!(confirmed.status, StatusCode::OK, "{}", confirmed.json);
+        assert_eq!(confirmed.json["data"]["id"], old_upload.to_string());
+    }
+    let actual: String = sqlx::query_scalar("SELECT storage_key FROM media_assets WHERE id=$1")
+        .bind(old_upload)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(actual, keys[0]);
+    assert!(!storage.keys().contains(&upload_key));
 
     // 单条清理失败不中断整批，失败记录排到后面；仍被引用的过期记录不清理。
     let mut expired = Vec::new();
@@ -638,4 +739,136 @@ async fn run(pool: &PgPool, database_url: String) {
         .status,
         StatusCode::OK
     );
+}
+
+/// 三个请求竞争同一份新文件；模拟回收失败后重新上传，旧任务不能误删新对象。
+async fn shared_uploads(
+    app: &Router,
+    author: &str,
+    other: &str,
+    service: &silva_application::media::MediaService,
+    storage: &MemoryStorage,
+    pool: &PgPool,
+) {
+    let bytes = encode(11, 7, image::ImageFormat::Png);
+    let (entered, waiting) = tokio::sync::oneshot::channel();
+    let (resume, paused) = tokio::sync::oneshot::channel();
+    *storage.pause_next_put.lock().unwrap() = Some(storage::WritePause {
+        entered,
+        resume: paused,
+    });
+    let check_lock = async {
+        let key = tokio::time::timeout(Duration::from_secs(10), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        // 对象请求仍挂起；新事务必须能立刻取得同一行的排他锁。
+        sqlx::query("SELECT sha256 FROM media_blobs WHERE storage_key=$1 FOR UPDATE NOWAIT")
+            .bind(&key)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE media_blobs SET created_at=now()-interval '2 hours' WHERE storage_key=$1",
+        )
+        .bind(&key)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        service.purge_stale(chrono::Utc::now()).await.unwrap();
+        let reserved: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT FROM media_blobs b
+            JOIN media_blob_writes w USING(sha256) WHERE b.storage_key=$1)",
+        )
+        .bind(key)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(reserved, "回收任务必须保留正在写入的对象键");
+        let (second, third) = tokio::join!(
+            upload(app, author, "b.png", "image/png", &bytes, bytes.len()),
+            upload(app, other, "c.png", "image/png", &bytes, bytes.len())
+        );
+        resume.send(()).unwrap();
+        (second, third)
+    };
+    let (first, (second, third)) = tokio::join!(
+        upload(app, author, "a.png", "image/png", &bytes, bytes.len()),
+        check_lock
+    );
+    let mut statuses = [first.status, second.status];
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::CREATED]);
+    assert_eq!(third.status, StatusCode::CREATED);
+    let mine = &first.json["data"]["media"]["id"];
+    assert_eq!(mine, &second.json["data"]["media"]["id"]);
+    let theirs = &third.json["data"]["media"]["id"];
+    assert_ne!(mine, theirs);
+    let paths = [mine, theirs].map(|id| format!("/api/v1/admin/media/{}", id.as_str().unwrap()));
+    let keys = storage.keys();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(
+        request(app, Method::DELETE, &paths[0], None, author)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    service.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert_eq!(
+        request(
+            app,
+            Method::GET,
+            &format!("{}/content", paths[1]),
+            None,
+            other
+        )
+        .await
+        .bytes,
+        bytes
+    );
+    assert_eq!(
+        request(app, Method::DELETE, &paths[1], None, other)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    storage
+        .failing_deletes
+        .lock()
+        .unwrap()
+        .push(keys[0].clone());
+    assert_eq!(
+        service
+            .purge_stale(chrono::Utc::now())
+            .await
+            .unwrap()
+            .failed,
+        1
+    );
+    let again = upload(app, author, "new.png", "image/png", &bytes, bytes.len()).await;
+    assert_eq!(again.status, StatusCode::CREATED);
+    storage.failing_deletes.lock().unwrap().clear();
+    sqlx::query("UPDATE media_object_deletions SET retry_at=now()")
+        .execute(pool)
+        .await
+        .unwrap();
+    service.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert_eq!(storage.keys().len(), 1);
+    assert_ne!(storage.keys(), keys);
+    let path = again
+        .headers
+        .get(header::LOCATION)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        request(app, Method::DELETE, path, None, author)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    service.purge_stale(chrono::Utc::now()).await.unwrap();
+    assert!(storage.keys().is_empty());
 }

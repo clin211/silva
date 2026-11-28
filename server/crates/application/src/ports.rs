@@ -2,14 +2,14 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use silva_domain::{
     content::{
-        Category, Heading, Post, PostFilter, PostSummary, Review, ReviewDecision, Revision,
+        Category, Heading, Post, PostCategoryCounts, PostFilter, PostSummary, Revision,
         RevisionContent, RevisionSummary, Tag, TaxonomyInput,
     },
     identity::{AuditLog, AuditLogFilter, Principal, Role, User},
     media::{Media, MediaStatus, RejectionReason, VerifiedImage},
     site::{
-        PublicationAccepted, PublishJob, PublishJobFilter, SiteTarget, SnapshotCategory,
-        SnapshotImage, SnapshotMedia, SnapshotPost, SnapshotTag,
+        PublicationResult, SiteVersion, SnapshotCategory, SnapshotImage, SnapshotMedia,
+        SnapshotPost, SnapshotTag,
     },
 };
 use silva_shared::{
@@ -98,7 +98,11 @@ pub trait IdentityRepository: Send + Sync {
     ) -> Result<()>;
     /// 锁定有效账户，在同一事务中创建会话、更新登录时间并写入审计。
     /// `token_hash` 为当前有效 refresh token 的哈希，`expires_at` 为其过期时间。
-    async fn create_session(&self, session: &NewSession<'_>, meta: &RequestMeta) -> Result<()>;
+    async fn create_session(
+        &self,
+        session: &NewSession<'_>,
+        meta: &RequestMeta,
+    ) -> Result<Option<LoginFailure>>;
     /// 按会话 ID 读取未过期、属于该账户且账户仍启用的会话，并重新读取账户状态和角色权限，
     /// 不缓存登录时的授权结果；不满足任一条件返回 `Unauthorized`。
     async fn principal(&self, session_id: Uuid, user_id: Uuid) -> Result<Principal>;
@@ -116,6 +120,7 @@ pub trait IdentityRepository: Send + Sync {
     async fn change_password(
         &self,
         principal: &Principal,
+        verified_hash: &str,
         password_hash: String,
         meta: &RequestMeta,
     ) -> Result<()>;
@@ -138,6 +143,8 @@ pub trait IdentityRepository: Send + Sync {
         changes: UserChanges,
         meta: &RequestMeta,
     ) -> Result<User>;
+    /// 删除登录凭据和角色，保留历史归属并记录审计。
+    async fn delete_user(&self, actor: Uuid, id: Uuid, meta: &RequestMeta) -> Result<()>;
     async fn roles(&self) -> Result<Vec<Role>>;
     /// 按筛选条件分页查询审计记录，`total` 为过滤后的总数。
     async fn audit_logs(
@@ -165,6 +172,8 @@ pub trait Credentials: Send + Sync {
 pub struct NewSession<'a> {
     pub id: Uuid,
     pub user_id: Uuid,
+    /// 通过本次密码校验的哈希，提交时复核。
+    pub verified_hash: &'a str,
     /// 当前有效 refresh token 的哈希。
     pub token_hash: &'a str,
     /// refresh token 的过期时间，即会话失效时间。
@@ -286,6 +295,40 @@ pub struct StaleMedia {
     pub upload_key: String,
 }
 
+pub struct CheckedUpload {
+    pub id: Uuid,
+    pub digest: String,
+    pub image: VerifiedImage,
+}
+
+pub struct BlobReservation {
+    pub id: Uuid,
+    pub key: String,
+    pub stored: bool,
+}
+
+pub enum MediaWrite<'a> {
+    Upload(&'a NewMedia, &'a MediaActor<'a>),
+    Confirm(&'a MediaActor<'a>),
+    Backfill,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct MediaUsage {
+    pub reference_count: i64,
+    pub references: Vec<MediaLocation>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MediaLocation {
+    pub kind: String,
+    pub post_id: Option<Uuid>,
+    pub revision_id: Option<Uuid>,
+    pub revision_no: Option<i32>,
+    pub profile_id: Option<Uuid>,
+    pub series_id: Option<Uuid>,
+}
+
 #[async_trait]
 pub trait MediaRepository: Send + Sync {
     /// 创建 `pending` 记录并写入 `media.create` 审计。
@@ -293,14 +336,22 @@ pub trait MediaRepository: Send + Sync {
     async fn find(&self, id: Uuid) -> Result<Option<MediaRecord>>;
     /// 按筛选条件分页，按 `created_at DESC, id DESC` 排序。
     async fn list(&self, page: &PageRequest, filter: &MediaFilter) -> Result<Page<Media>>;
-    /// 仅当记录仍为 `pending` 时标记为 `ready` 并写入审计；已不是 `pending` 时返回 None。
-    async fn mark_ready(
+    /// 预留摘要对应的对象键，直到确认或写入凭证过期。
+    async fn reserve_blob(&self, digest: &str) -> Result<BlobReservation>;
+    /// 校验写入凭证并原子提交媒体归属和审计。
+    async fn store_image(
         &self,
-        id: Uuid,
-        storage_key: &str,
-        image: &VerifiedImage,
-        actor: &MediaActor<'_>,
-    ) -> Result<Option<Media>>;
+        file: CheckedUpload,
+        mode: MediaWrite<'_>,
+        reservation: BlobReservation,
+    ) -> Result<Option<MediaRecord>>;
+    /// 查找需要归并的旧版媒体。
+    async fn legacy_images(&self, limit: i64) -> Result<Vec<(Uuid, String)>>;
+    /// 分批回收已无媒体条目使用的对象，并重试之前的删除任务。
+    async fn retired_objects(&self, limit: i64) -> Result<Vec<String>>;
+    async fn finish_deletion(&self, key: &str, deleted: bool) -> Result<()>;
+    /// 返回调用者可见的引用位置。
+    async fn references(&self, id: Uuid, principal: &Principal) -> Result<MediaUsage>;
     /// 仅当记录仍为 `pending` 时标记为 `rejected` 并写入审计；已不是 `pending` 时返回 None。
     async fn mark_rejected(
         &self,
@@ -315,9 +366,13 @@ pub trait MediaRepository: Send + Sync {
         alt_text: Option<&str>,
         actor: &MediaActor<'_>,
     ) -> Result<Media>;
-    /// 锁定并删除记录、写入审计，返回删除前的对象键。仍被文章修订或个人资料引用时
-    /// 返回 `Conflict(MediaInUse)` 并回滚。
-    async fn delete(&self, id: Uuid, actor: &MediaActor<'_>) -> Result<MediaRecord>;
+    /// 在媒体行锁内读取引用；有引用时返回计数与可见位置，否则删除并登记回收。
+    async fn delete(
+        &self,
+        id: Uuid,
+        principal: &Principal,
+        meta: &RequestMeta,
+    ) -> Result<Option<MediaUsage>>;
     /// 返回最多 `limit` 条可清理的记录：直传截止时间早于 `expired_before` 的 `pending`，
     /// 以及被拒绝时间早于 `rejected_before` 的 `rejected`。保留期按拒绝时间计算，
     /// 修改替代文本等后续更新不会延后清理。仍被引用的记录不返回；从未清理失败的记录在前，
@@ -494,14 +549,27 @@ pub trait ContentRepository: Send + Sync {
     ) -> Result<(Vec<Uuid>, Vec<Uuid>)>;
     /// 在一个事务内写入文章与首条修订；slug 已被使用时返回 `Conflict(SlugInUse)`。
     async fn create_post(&self, post: NewPost, actor: &ContentActor<'_>) -> Result<Post>;
+    async fn delete_post(
+        &self,
+        post_id: Uuid,
+        expected_revision_id: Uuid,
+        expected_version: i64,
+        actor: &ContentActor<'_>,
+    ) -> Result<()>;
     async fn post_access(&self, id: Uuid) -> Result<Option<PostAccess>>;
     async fn post(&self, id: Uuid) -> Result<Option<Post>>;
-    /// 按筛选条件分页，按 `updated_at DESC, id DESC` 排序。
+    /// 按筛选条件分页，按 `filter.sort` 排序。
     async fn list_posts(
         &self,
         page: &PageRequest,
         filter: &PostFilter,
     ) -> Result<Page<PostSummary>>;
+    /// 统计当前可见范围内的文章总数、未分类数与各分类文章数。
+    async fn post_category_counts(
+        &self,
+        author_id: Option<Uuid>,
+        series: silva_domain::content::SeriesFilter,
+    ) -> Result<PostCategoryCounts>;
     /// 锁定文章并比较当前编辑版本：不一致返回 `Conflict(RevisionConflict)`；
     /// 内容与当前版本相同时不创建修订。
     async fn create_revision(
@@ -520,40 +588,21 @@ pub trait ContentRepository: Send + Sync {
     ) -> Result<Post>;
     async fn revisions(&self, post_id: Uuid, page: &PageRequest) -> Result<Page<RevisionSummary>>;
     async fn revision(&self, post_id: Uuid, revision_id: Uuid) -> Result<Option<Revision>>;
-    /// 为修订创建待审核记录；已提交过返回 `Conflict(ReviewAlreadySubmitted)`。
-    async fn create_review(
-        &self,
-        post_id: Uuid,
-        revision_id: Uuid,
-        actor: &ContentActor<'_>,
-    ) -> Result<Review>;
-    /// 对待审核记录作出决定；不是待审核返回 `Conflict(ReviewNotPending)`。
-    async fn decide_review(
-        &self,
-        post_id: Uuid,
-        review_id: Uuid,
-        decision: ReviewDecision,
-        comment: Option<String>,
-        actor: &ContentActor<'_>,
-    ) -> Result<Review>;
-    async fn reviews(&self, post_id: Uuid, page: &PageRequest) -> Result<Page<Review>>;
-    async fn review(&self, post_id: Uuid, review_id: Uuid) -> Result<Option<Review>>;
-    /// 设置期望公开修订并登记站点目标。版本不一致返回 `Conflict(PublicationConflict)`；
-    /// 修订未获批准返回 `Conflict(RevisionNotApproved)`；修订不属于该文章返回 `NotFound`。
+    /// 锁定当前文章并写入公开副本。
     async fn publish(
         &self,
         post_id: Uuid,
         revision_id: Uuid,
         expected_version: i64,
         actor: &ContentActor<'_>,
-    ) -> Result<PublicationAccepted>;
-    /// 清空期望公开修订并登记站点目标；没有发布目标返回 `Conflict(AlreadyUnpublished)`。
+    ) -> Result<PublicationResult>;
+    /// 撤下公开修订并推进公开版本；没有公开修订返回 `Conflict(AlreadyUnpublished)`。
     async fn unpublish(
         &self,
         post_id: Uuid,
         expected_version: i64,
         actor: &ContentActor<'_>,
-    ) -> Result<PublicationAccepted>;
+    ) -> Result<PublicationResult>;
 }
 
 /// 分类或标签。
@@ -595,30 +644,22 @@ pub trait TaxonomyRepository: Send + Sync {
         input: &TaxonomyInput,
         actor: &ContentActor<'_>,
     ) -> Result<TaxonomyItem>;
-    /// 更新名称与说明；条目被期望公开的修订引用时在同一事务登记站点目标。
+    /// 更新名称与说明；条目被已公开的修订引用时在同一事务推进公开版本。
     async fn update(
         &self,
         kind: TaxonomyKind,
         id: Uuid,
-        input: &TaxonomyInput,
+        name: Option<String>,
+        description: Option<String>,
         actor: &ContentActor<'_>,
-    ) -> Result<(TaxonomyItem, Option<SiteTarget>)>;
+    ) -> Result<(TaxonomyItem, Option<SiteVersion>)>;
     /// 有修订引用时返回 `Conflict(TaxonomyInUse)`。
     async fn delete(&self, kind: TaxonomyKind, id: Uuid, actor: &ContentActor<'_>) -> Result<()>;
 }
 
-/// Worker 领取的构建任务。
-#[derive(Clone, Debug)]
-pub struct ClaimedJob {
-    pub id: Uuid,
-    pub generation: i64,
-    /// 本次构建的序号（从 1 开始），用于隔离产物位置。
-    pub attempt: i32,
-    pub lease_token: Uuid,
-}
-
 /// 导出的站点数据；个人资料的 Markdown 由用例渲染。
 pub struct ExportedSite {
+    pub series: Vec<silva_domain::site::SnapshotSeries>,
     pub posts: Vec<SnapshotPost>,
     pub categories: Vec<SnapshotCategory>,
     pub tags: Vec<SnapshotTag>,
@@ -632,86 +673,12 @@ pub struct ExportedProfile {
     pub avatar: Option<SnapshotImage>,
 }
 
-/// 线上切换的结果。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Activation {
-    /// 已成为线上版本。
-    Activated,
-    /// 期间已有更新的目标，任务标记为 superseded，未切换。
-    Superseded,
-    /// 租约已失效（超时被回收或已由其他 Worker 接手），未做任何修改。
-    LeaseLost,
-}
-
-/// 当前线上站点的位置。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ActiveSite {
-    pub generation: i64,
-    pub manifest_key: String,
-    pub artifact_prefix: String,
-}
-
 #[async_trait]
-pub trait PublishingRepository: Send + Sync {
-    async fn jobs(&self, page: &PageRequest, filter: &PublishJobFilter)
-    -> Result<Page<PublishJob>>;
-    async fn job(&self, id: Uuid) -> Result<Option<PublishJob>>;
-    /// 登记一个新的站点目标（全站重建）。
-    async fn request_build(
-        &self,
-        trigger_type: &str,
-        actor: Option<&ContentActor<'_>>,
-    ) -> Result<SiteTarget>;
-    /// 把仍为最新目标的失败任务重新排队，再给一次构建机会（`attempts` 不清零，再次失败即为
-    /// failed）；否则返回 `Conflict(PublishJobNotRetryable)`。
-    async fn retry(&self, id: Uuid, actor: &ContentActor<'_>) -> Result<PublishJob>;
-    /// 领取最新目标的可构建任务：排队中，或租约已过期且未用尽重试。落后的未上线任务标记为
-    /// superseded。没有可领取的任务时返回 None。
-    async fn claim(
-        &self,
-        lease: std::time::Duration,
-        max_attempts: i32,
-    ) -> Result<Option<ClaimedJob>>;
-    /// 续租；租约已失效时返回 false。
-    async fn renew(&self, job: &ClaimedJob, lease: std::time::Duration) -> Result<bool>;
-    /// 在同一 `REPEATABLE READ` 视图中确认任务仍为最新目标并导出公开数据；
-    /// 已不是最新目标时返回 None。
-    async fn export(&self, job: &ClaimedJob) -> Result<Option<ExportedSite>>;
-    /// 锁定站点状态并原子切换线上版本，同时写入该 generation 的文章修订映射。
-    async fn activate(
-        &self,
-        job: &ClaimedJob,
-        manifest_key: &str,
-        artifact_prefix: &str,
-        posts: &[(Uuid, Uuid)],
-    ) -> Result<Activation>;
-    /// 标记已不是最新目标的任务为 superseded（仅当租约仍有效）。
-    async fn supersede(&self, job: &ClaimedJob) -> Result<()>;
-    /// 记录构建失败：未用尽重试且仍为最新目标时重新排队，并在 `retry_delay` 之后才允许再次
-    /// 领取；否则标记为 failed（落后任务为 superseded）。租约已失效时不做修改。
-    async fn fail(
-        &self,
-        job: &ClaimedJob,
-        error: &str,
-        max_attempts: i32,
-        retry_delay: std::time::Duration,
-    ) -> Result<()>;
-    async fn active_site(&self) -> Result<Option<ActiveSite>>;
-}
-
-/// 构建得到的单个文件。
-#[derive(Debug)]
-pub struct BuiltFile {
-    /// 相对产物根目录、以 `/` 分隔的路径。
-    pub path: String,
-    pub content_type: String,
-    pub bytes: Vec<u8>,
-}
-
-/// 静态站点构建器。
-#[async_trait]
-pub trait SiteBuilder: Send + Sync {
-    /// 用快照构建站点并返回全部产物文件；失败时返回带原因的错误。
-    async fn build(&self, snapshot: &[u8], sha256: &str, generation: i64)
-    -> Result<Vec<BuiltFile>>;
+pub trait PublicSiteRepository: Send + Sync {
+    /// 解析线上媒体的实际存储键。
+    async fn media_storage_key(&self, id: Uuid) -> Result<Option<String>>;
+    /// 当前发布版本。首次发布前为零。
+    async fn generation(&self) -> Result<i64>;
+    /// 在同一数据库读视图导出已发布数据、版本和生效时间。
+    async fn export(&self) -> Result<(i64, chrono::DateTime<chrono::Utc>, ExportedSite)>;
 }

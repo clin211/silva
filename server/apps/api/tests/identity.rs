@@ -465,15 +465,13 @@ fn config(database_url: String) -> Config {
         access_token_ttl: Duration::from_secs(900),
         refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
+        trust_proxy_ip_header: false,
         api_rate_per_minute: 10_000,
         login_rate_per_minute: 1000,
         login_lockout_threshold: 1000,
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
-        site_build: None,
-        publish_poll_interval: Duration::from_secs(5),
-        site_serve: false,
     }
 }
 
@@ -520,6 +518,8 @@ async fn identity_security_and_account_lifecycle() {
         run_acceptance(&app, &test_pool).await;
         run_account_queries(&app).await;
         run_audit_logs(&app, &test_pool).await;
+        run_account_deletion(&app).await;
+        verify_stale_credentials(&service, &test_pool).await;
         run_rate_limits(&test_pool, &database_url).await;
         run_login_lockout(&test_pool, &database_url).await;
     })
@@ -530,6 +530,45 @@ async fn identity_security_and_account_lifecycle() {
         .await
         .unwrap();
     result.expect("identity acceptance assertions failed");
+}
+
+/// 持久化时凭据已变化，两种写入都必须被拒绝，原会话和真实密码仍然有效。
+async fn verify_stale_credentials(
+    service: &silva_application::identity::IdentityService,
+    pool: &PgPool,
+) {
+    use silva_application::ports::{IdentityRepository, LoginFailure, NewSession, RequestMeta};
+    use silva_infrastructure::persistence::PgIdentityRepository;
+    let meta = RequestMeta::default();
+    let issued = service
+        .login("admin@example.test".into(), PASSWORD.into(), &meta)
+        .await
+        .unwrap();
+    let principal = service.authenticate(&issued.access_token).await.unwrap();
+    let repo = PgIdentityRepository::new(pool.clone());
+    let stale = NewSession {
+        id: ids::new_id(),
+        user_id: principal.user.id,
+        verified_hash: "previous-hash",
+        token_hash: "unused",
+        expires_at: issued.refresh_expires_at,
+    };
+    assert_eq!(
+        repo.create_session(&stale, &meta).await.unwrap(),
+        Some(LoginFailure::InvalidCredentials)
+    );
+    assert!(matches!(
+        repo.change_password(&principal, stale.verified_hash, "replacement".into(), &meta)
+            .await,
+        Err(silva_shared::error::AppError::Unauthorized)
+    ));
+    assert!(service.authenticate(&issued.access_token).await.is_ok());
+    assert!(
+        service
+            .login("admin@example.test".into(), PASSWORD.into(), &meta)
+            .await
+            .is_ok()
+    );
 }
 
 async fn run_acceptance(app: &Router, pool: &PgPool) {
@@ -1836,6 +1875,100 @@ async fn run_audit_logs(app: &Router, pool: &PgPool) {
         let forbidden = request(app, Method::GET, &path, None, Some(&author_access)).await;
         assert_error(&forbidden, StatusCode::FORBIDDEN, "forbidden");
     }
+}
+
+/// 删除、重试以及同邮箱重建必须维持历史归属，并立即撤销旧账户的访问。
+async fn run_account_deletion(app: &Router) {
+    let (admin, _, admin_user) = login(app, "admin@example.test").await;
+    let users_path = "/api/v1/admin/users";
+    let admin_path = format!("{users_path}/{}", admin_user["id"].as_str().unwrap());
+    let self_delete = request(app, Method::DELETE, &admin_path, None, Some(&admin)).await;
+    assert_error(&self_delete, StatusCode::FORBIDDEN, "forbidden");
+
+    let email = "delete-me@example.test";
+    let input = json!({"email":email,"display_name":"Former Author","roles":["author"],"password":PASSWORD});
+    let created = request(
+        app,
+        Method::POST,
+        users_path,
+        Some(input.clone()),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let id = created.json["data"]["id"].as_str().unwrap();
+    let path = format!("{users_path}/{id}");
+    let (access, refresh_token, _) = login(app, email).await;
+    let denied = request(app, Method::DELETE, &admin_path, None, Some(&access)).await;
+    assert_error(&denied, StatusCode::FORBIDDEN, "forbidden");
+
+    let post = request(
+        app,
+        Method::POST,
+        "/api/v1/admin/posts",
+        Some(json!({"slug":"former-author","title":"原作者文章","markdown_body":"正文"})),
+        Some(&access),
+    )
+    .await;
+    assert_eq!(post.status, StatusCode::CREATED, "{}", post.json);
+    let post_path = format!(
+        "/api/v1/admin/posts/{}",
+        post.json["data"]["id"].as_str().unwrap()
+    );
+
+    // 同时提交的两次删除只能有一次生效，之后核对审计也只有一条。
+    let (first, second) = tokio::join!(
+        request(app, Method::DELETE, &path, None, Some(&admin)),
+        request(app, Method::DELETE, &path, None, Some(&admin)),
+    );
+    let mut statuses = [first.status, second.status];
+    statuses.sort();
+    assert_eq!(statuses, [StatusCode::NO_CONTENT, StatusCode::NOT_FOUND]);
+    assert_unauthorized(&me(app, &access).await);
+    assert_unauthorized(&refresh(app, &refresh_token).await);
+    assert_error(
+        &login_attempt(app, email, PASSWORD).await,
+        StatusCode::UNAUTHORIZED,
+        "invalid_credentials",
+    );
+    assert_eq!(
+        total(&admin_get(app, &admin, &format!("{users_path}?q={email}")).await),
+        0
+    );
+    for (method, body) in [
+        (Method::GET, None),
+        (Method::DELETE, None),
+        (Method::PATCH, Some(json!({"status":"active"}))),
+    ] {
+        let missing = request(app, method, &path, body, Some(&admin)).await;
+        assert_error(&missing, StatusCode::NOT_FOUND, "not_found");
+    }
+    let audit = admin_get(
+        app,
+        &admin,
+        &format!("/api/v1/admin/audit-logs?action=users.delete&resource_id={id}"),
+    )
+    .await;
+    assert_eq!(total(&audit), 1);
+    assert_eq!(audit.json["data"][0]["actor_user_id"], admin_user["id"]);
+
+    let replacement = request(app, Method::POST, users_path, Some(input), Some(&admin)).await;
+    assert_eq!(
+        replacement.status,
+        StatusCode::CREATED,
+        "{}",
+        replacement.json
+    );
+    assert_ne!(replacement.json["data"]["id"], id);
+    let (new_access, _, new_info) = login(app, email).await;
+    assert_eq!(new_info["id"], replacement.json["data"]["id"]);
+    let old_post = admin_get(app, &admin, &post_path).await;
+    assert_eq!(old_post.json["data"]["author"]["id"], id);
+    assert_error(
+        &get(app, &post_path, &new_access).await,
+        StatusCode::NOT_FOUND,
+        "not_found",
+    );
 }
 
 async fn run_rate_limits(pool: &PgPool, database_url: &str) {

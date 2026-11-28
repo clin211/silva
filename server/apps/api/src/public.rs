@@ -1,16 +1,15 @@
-//! 公开接口与静态站点入口。只读取当前 `active_generation` 的不可变快照与产物：
-//! 每个请求固定一个 generation，并在响应头 `X-Site-Generation` 中返回。
+//! 公开 API 固定一次读取的已发布版本，并通过 X-Site-Generation 返回版本号。
 
 use crate::{
     AppState,
-    error::{ApiError, ErrorCode},
+    error::ApiError,
     http::{HttpResult, IdPath},
     response,
 };
 use axum::{
     body::Body,
     extract::{FromRequestParts, Path, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header, request::Parts},
+    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -27,9 +26,6 @@ use std::sync::Arc;
 
 const GENERATION_HEADER: &str = "x-site-generation";
 const EXPECTED_HEADER: &str = "x-expected-generation";
-/// 带内容哈希的构建资源可以长期缓存。
-const IMMUTABLE_PREFIX: &str = "_astro/";
-
 /// 读取当前线上站点；请求带 `X-Expected-Generation` 且与线上不一致时返回 409。
 async fn live(state: &AppState, headers: &HeaderMap) -> HttpResult<Arc<LiveSite>> {
     let expected = match headers.get(EXPECTED_HEADER) {
@@ -39,12 +35,12 @@ async fn live(state: &AppState, headers: &HeaderMap) -> HttpResult<Arc<LiveSite>
                 .to_str()
                 .ok()
                 .and_then(|value| value.parse::<i64>().ok())
-                .filter(|generation| *generation > 0)
+                .filter(|generation| *generation >= 0)
                 .ok_or_else(|| {
                     ApiError::validation(vec![FieldError::new(
                         "X-Expected-Generation",
                         FieldErrorCode::InvalidType,
-                        "header must be a positive integer",
+                        "header must be a non-negative integer",
                     )])
                 })?,
         ),
@@ -59,6 +55,10 @@ async fn live(state: &AppState, headers: &HeaderMap) -> HttpResult<Arc<LiveSite>
 }
 
 fn with_generation(mut response: Response, generation: i64) -> Response {
+    response
+        .headers_mut()
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     response
         .headers_mut()
         .insert(GENERATION_HEADER, HeaderValue::from(generation));
@@ -138,6 +138,37 @@ struct SiteSummary<'a> {
     latest_posts: Vec<PostCard<'a>>,
     has_profile: bool,
     ai_trending_data_date: Option<chrono::NaiveDate>,
+}
+
+/// SSR 的完整公开数据。浏览器、代理和服务端均需在复用前重验证。
+pub(crate) async fn snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> HttpResult<Response> {
+    let site = live(&state, &headers).await?;
+    let tag = format!("\"site-v1-{}\"", site.generation);
+    let matched = headers
+        .get_all(header::IF_NONE_MATCH)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .any(|candidate| {
+            candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == tag
+        });
+    let mut response = if matched {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        response::ok(&site.snapshot)
+    };
+    response.headers_mut().insert(
+        header::ETAG,
+        HeaderValue::from_str(&format!("W/{tag}")).expect("integer generation yields valid ETag"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    Ok(with_generation(response, site.generation))
 }
 
 /// 首页所需的站点数据。
@@ -241,9 +272,10 @@ pub(crate) async fn posts(
 pub(crate) async fn post(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(slug): Path<String>,
+    slug: Result<Path<String>, axum::extract::rejection::PathRejection>,
 ) -> HttpResult<Response> {
     let site = live(&state, &headers).await?;
+    let Path(slug) = slug.map_err(|_| AppError::NotFound)?;
     let post = site
         .snapshot
         .posts
@@ -352,7 +384,6 @@ pub(crate) async fn ai_trending(
 pub(crate) async fn ai_repository(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path(_slug): Path<String>,
 ) -> HttpResult<Response> {
     live(&state, &headers).await?;
     Err(AppError::NotFound.into())
@@ -381,152 +412,4 @@ pub(crate) async fn media(
         HeaderValue::from_static("default-src 'none'; sandbox"),
     );
     Ok(with_generation(response, site.generation))
-}
-
-/// 解码 URL 路径并拒绝 `.`、`..` 与空段，返回不以 `/` 开头的相对路径。
-fn site_path(raw: &str) -> Option<String> {
-    let bytes = raw.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let hex = raw.get(index + 1..index + 3)?;
-            decoded.push(u8::from_str_radix(hex, 16).ok()?);
-            index += 3;
-        } else {
-            decoded.push(bytes[index]);
-            index += 1;
-        }
-    }
-    let path = String::from_utf8(decoded).ok()?;
-    let relative = path.strip_prefix('/')?;
-    let trailing = relative.is_empty() || relative.ends_with('/');
-    let segments: Vec<&str> = relative.split('/').filter(|s| !s.is_empty()).collect();
-    if segments.iter().any(|segment| {
-        matches!(*segment, "." | "..") || segment.contains('\\') || segment.contains('\0')
-    }) {
-        return None;
-    }
-    let mut joined = segments.join("/");
-    if trailing && !joined.is_empty() {
-        joined.push('/');
-    }
-    Some(joined)
-}
-
-/// 静态站点入口：按线上 generation 的产物清单提供文件。目录路径映射到 `index.html`，
-/// 缺少结尾 `/` 的目录重定向到规范地址，清单中不存在的路径返回该版本的 `404.html`。
-pub(crate) async fn static_site(
-    State(state): State<AppState>,
-    method: Method,
-    uri: Uri,
-) -> Response {
-    let path = uri.path();
-    if !state.config.site_serve
-        || path.starts_with("/api/")
-        || path == "/api"
-        || !matches!(method, Method::GET | Method::HEAD)
-    {
-        return ApiError::new(ErrorCode::NotFound, "Resource not found").into_response();
-    }
-    match serve_static(&state, &method, &uri).await {
-        Ok(response) => response,
-        Err(error) => error.into_response(),
-    }
-}
-
-async fn serve_static(state: &AppState, method: &Method, uri: &Uri) -> HttpResult<Response> {
-    let site = state.public_site.current().await?;
-    let Some(relative) = site_path(uri.path()) else {
-        return not_found_page(state, &site, method).await;
-    };
-    let file = if relative.is_empty() || relative.ends_with('/') {
-        format!("{relative}index.html")
-    } else {
-        relative.clone()
-    };
-    if site.file(&file).is_none() {
-        let index = format!("{relative}/index.html");
-        if !relative.ends_with('/') && site.file(&index).is_some() {
-            let location = match uri.query() {
-                Some(query) => format!("/{relative}/?{query}"),
-                None => format!("/{relative}/"),
-            };
-            let mut response = StatusCode::MOVED_PERMANENTLY.into_response();
-            if let Ok(value) = HeaderValue::from_str(&location) {
-                response.headers_mut().insert(header::LOCATION, value);
-            }
-            return Ok(with_generation(response, site.generation));
-        }
-        return not_found_page(state, &site, method).await;
-    }
-    artifact(state, &site, &file, StatusCode::OK, method).await
-}
-
-async fn not_found_page(
-    state: &AppState,
-    site: &LiveSite,
-    method: &Method,
-) -> HttpResult<Response> {
-    if site.file("404.html").is_some() {
-        artifact(state, site, "404.html", StatusCode::NOT_FOUND, method).await
-    } else {
-        Err(AppError::NotFound.into())
-    }
-}
-
-async fn artifact(
-    state: &AppState,
-    site: &LiveSite,
-    path: &str,
-    status: StatusCode,
-    method: &Method,
-) -> HttpResult<Response> {
-    let (file, body) = state
-        .public_site
-        .artifact(site, path)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let mut response = if method == Method::HEAD {
-        Body::empty().into_response()
-    } else {
-        Body::from_stream(body).into_response()
-    };
-    *response.status_mut() = status;
-    let headers = response.headers_mut();
-    if let Ok(value) = HeaderValue::from_str(&file.content_type) {
-        headers.insert(header::CONTENT_TYPE, value);
-    }
-    headers.insert(header::CONTENT_LENGTH, HeaderValue::from(file.size));
-    if path.starts_with(IMMUTABLE_PREFIX) && status == StatusCode::OK {
-        headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=31536000, immutable"),
-        );
-    }
-    Ok(with_generation(response, site.generation))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn site_paths_are_decoded_and_traversal_is_rejected() {
-        assert_eq!(site_path("/").as_deref(), Some(""));
-        assert_eq!(site_path("/blog/a/").as_deref(), Some("blog/a/"));
-        assert_eq!(site_path("/blog/a").as_deref(), Some("blog/a"));
-        assert_eq!(site_path("//blog//a/").as_deref(), Some("blog/a/"));
-        assert_eq!(site_path("/tags/%E9%95%BF/").as_deref(), Some("tags/长/"));
-        for invalid in [
-            "/../secret",
-            "/a/%2e%2e/b",
-            "/a/./b",
-            "/%zz",
-            "/a%5cb",
-            "/a%00",
-        ] {
-            assert_eq!(site_path(invalid), None, "{invalid}");
-        }
-    }
 }

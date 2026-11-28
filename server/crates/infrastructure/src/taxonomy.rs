@@ -2,14 +2,14 @@
 
 use crate::{
     persistence::{acquire, audit_resource, begin, db},
-    publishing::enqueue_site_publish,
+    public_site::advance_generation,
 };
 use async_trait::async_trait;
 use serde_json::json;
 use silva_application::ports::{ContentActor, TaxonomyItem, TaxonomyKind, TaxonomyRepository};
 use silva_domain::{
     content::{Category, Tag, TaxonomyInput},
-    site::SiteTarget,
+    site::SiteVersion,
 };
 use silva_shared::{
     error::{AppError, Conflict, Result},
@@ -45,7 +45,8 @@ fn select(kind: TaxonomyKind) -> String {
     };
     format!(
         "SELECT t.id, t.slug, t.name, {description}, t.created_at, t.updated_at, \
-         (SELECT count(*) FROM {link} x WHERE x.{column}=t.id) AS revision_count FROM {table} t"
+         (SELECT count(*) FROM posts p JOIN {link} x ON x.revision_id=p.current_revision_id WHERE x.{column}=t.id) AS post_count, \
+         (SELECT count(*) FROM (SELECT revision_id FROM {link} WHERE {column}=t.id UNION SELECT revision_id FROM published_post_{table} WHERE {column}=t.id) refs) AS revision_count FROM {table} t"
     )
 }
 
@@ -56,6 +57,7 @@ fn read(kind: TaxonomyKind, row: &PgRow) -> std::result::Result<TaxonomyItem, sq
             slug: row.try_get("slug")?,
             name: row.try_get("name")?,
             description: row.try_get("description")?,
+            post_count: row.try_get("post_count")?,
             revision_count: row.try_get("revision_count")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -64,6 +66,7 @@ fn read(kind: TaxonomyKind, row: &PgRow) -> std::result::Result<TaxonomyItem, sq
             id: row.try_get("id")?,
             slug: row.try_get("slug")?,
             name: row.try_get("name")?,
+            post_count: row.try_get("post_count")?,
             revision_count: row.try_get("revision_count")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -165,11 +168,12 @@ impl TaxonomyRepository for PgTaxonomyRepository {
         &self,
         kind: TaxonomyKind,
         id: Uuid,
-        input: &TaxonomyInput,
+        name: Option<String>,
+        description: Option<String>,
         actor: &ContentActor<'_>,
-    ) -> Result<(TaxonomyItem, Option<SiteTarget>)> {
+    ) -> Result<(TaxonomyItem, Option<SiteVersion>)> {
         let _timer = METRICS.db_operation("taxonomy_update");
-        let (_, link, column) = tables(kind);
+        let (table, _, column) = tables(kind);
         let mut tx = begin(&self.pool).await.map_err(db)?;
         let current: (String, Option<String>) = match kind {
             TaxonomyKind::Category => {
@@ -184,6 +188,11 @@ impl TaxonomyRepository for PgTaxonomyRepository {
         .await
         .map_err(db)?
         .ok_or(AppError::NotFound)?;
+        let input = TaxonomyInput {
+            name: name.unwrap_or_else(|| current.0.clone()),
+            description: description.or_else(|| current.1.clone()),
+        }
+        .normalize()?;
         let changed = current.0 != input.name || current.1 != input.description;
         let mut target = None;
         if changed {
@@ -201,23 +210,21 @@ impl TaxonomyRepository for PgTaxonomyRepository {
             .execute(&mut *tx)
             .await
             .map_err(db)?;
-            // 名称出现在期望公开的文章中时，公开站点需要重新构建。
+            // 与文章、系列的发布事务串行判断可见性；锁取得后再读取最新已提交的目标。
+            sqlx::query("SELECT singleton FROM site_state WHERE singleton FOR UPDATE")
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
             let public: bool = sqlx::query_scalar(&format!(
-                "SELECT EXISTS (SELECT 1 FROM posts p JOIN {link} x ON x.revision_id=p.desired_published_revision_id WHERE x.{column}=$1)"
+                "SELECT EXISTS (SELECT 1 FROM published_post_{table} x WHERE x.{column}=$1) OR ($2 AND EXISTS (SELECT 1 FROM series s JOIN series_items i ON i.series_id=s.id JOIN published_posts pub ON pub.post_id=i.post_id WHERE s.category_id=$1 AND s.published_at IS NOT NULL))"
             ))
             .bind(id)
+            .bind(kind == TaxonomyKind::Category)
             .fetch_one(&mut *tx)
             .await
             .map_err(db)?;
             if public {
-                target = Some(
-                    enqueue_site_publish(
-                        &mut tx,
-                        &format!("{}.update", kind.resource_type()),
-                        Some(actor.user_id),
-                    )
-                    .await?,
-                );
+                target = Some(advance_generation(&mut tx).await?);
             }
             audit(
                 &mut tx,
@@ -225,7 +232,7 @@ impl TaxonomyRepository for PgTaxonomyRepository {
                 actor,
                 "update",
                 id,
-                json!({"generation": target.map(|t| t.desired_generation)}),
+                json!({"generation": target.map(|t| t.generation)}),
             )
             .await?;
         }

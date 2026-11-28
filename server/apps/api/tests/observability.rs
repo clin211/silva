@@ -23,15 +23,13 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         access_token_ttl: Duration::from_secs(900),
         refresh_token_ttl: Duration::from_secs(3600),
         worker_interval: Duration::from_secs(60),
+        trust_proxy_ip_header: false,
         api_rate_per_minute: 1000,
         login_rate_per_minute: 100,
         login_lockout_threshold: 5,
         login_lockout_duration: Duration::from_secs(900),
         storage: None,
         media_upload_ttl: Duration::from_secs(900),
-        site_build: None,
-        publish_poll_interval: Duration::from_secs(5),
-        site_serve: false,
     };
     let app = silva_api::build_router(config, pool.clone()).await.unwrap();
     let response = app
@@ -126,7 +124,7 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
         .set(123);
     silva_shared::metrics::METRICS
         .queue
-        .with_label_values(&["publish"])
+        .with_label_values(&["ingestion"])
         .set(7);
     assert!(
         tokio::time::timeout(Duration::from_millis(30), silva_api::sample_metrics(&pool))
@@ -136,6 +134,6 @@ async fn metrics_survive_database_failure_and_propagate_trace_context() {
     let body = silva_shared::metrics::METRICS.render();
     assert!(body.contains("silva_business_metrics_up 0"));
     assert!(body.contains("silva_business_metrics_last_success_timestamp_seconds 123"));
-    assert!(body.contains("silva_queue_pending{queue=\"publish\"} 7"));
+    assert!(body.contains("silva_queue_pending{queue=\"ingestion\"} 7"));
     telemetry.shutdown().await;
 }

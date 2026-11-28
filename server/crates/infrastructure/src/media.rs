@@ -1,14 +1,18 @@
 //! 媒体记录的 PostgreSQL 仓储。状态变更与审计在同一事务内提交；
-//! 对象存储读写不在数据库事务内进行。
+//! 写入凭证保护事务外的对象上传，确认引用与回收在短事务中按摘要互斥。
+
+mod blobs;
 
 use crate::persistence::{acquire, audit_resource, begin, db};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::json;
 use silva_application::ports::{
-    MediaActor, MediaFilter, MediaRecord, MediaRepository, NewMedia, RequestMeta, StaleMedia,
+    BlobReservation, CheckedUpload, MediaActor, MediaFilter, MediaRecord, MediaRepository,
+    MediaUsage, MediaWrite, NewMedia, RequestMeta, StaleMedia,
 };
-use silva_domain::media::{Media, MediaStatus, RejectionReason, VerifiedImage};
+use silva_domain::identity::Principal;
+use silva_domain::media::{Media, MediaStatus, RejectionReason};
 use silva_shared::{
     error::{AppError, Conflict, Result},
     metrics::METRICS,
@@ -19,11 +23,8 @@ use uuid::Uuid;
 
 const MEDIA_COLUMNS: &str = "id,status,original_filename,declared_mime_type,declared_size_bytes,mime_type,size_bytes,width,height,alt_text,rejection_reason,uploaded_by,upload_expires_at,created_at,updated_at,upload_key,storage_key";
 
-/// 媒体 `m` 未被任何文章修订、修订正文或个人资料引用；新增引用媒体的表时同步扩充。
-const UNREFERENCED: &str = "NOT EXISTS (SELECT 1 FROM post_revisions r WHERE r.cover_media_id=m.id) \
-     AND NOT EXISTS (SELECT 1 FROM post_revision_media rm WHERE rm.media_id=m.id) \
-     AND NOT EXISTS (SELECT 1 FROM profiles p WHERE p.avatar_media_id=m.id) \
-     AND NOT EXISTS (SELECT 1 FROM site_state s WHERE s.active_avatar_media_id=m.id)";
+/// 引用位置统一由数据库视图维护。
+const UNREFERENCED: &str = "NOT EXISTS (SELECT FROM media_references r WHERE r.media_id=m.id)";
 
 /// 媒体列表筛选；`$1` 状态、`$2` 上传者，未提供时绑定 NULL。
 const MEDIA_FILTER: &str =
@@ -98,40 +99,80 @@ async fn audit(
     .await
 }
 
+async fn reference_usage(
+    connection: &mut PgConnection,
+    id: Uuid,
+    principal: &Principal,
+) -> Result<MediaUsage> {
+    let (reference_count, sqlx::types::Json(references)) = sqlx::query_as(
+        "SELECT count(*), COALESCE(
+            jsonb_agg(to_jsonb(r)-'media_id' ORDER BY r.post_id,r.revision_no,r.kind,r.profile_id,r.series_id)
+            FILTER (WHERE CASE WHEN r.kind='series_cover' THEN $5 WHEN r.kind='profile_avatar' THEN $2 ELSE $3 OR p.author_id=$4 END),
+            '[]'::jsonb)
+         FROM media_references r LEFT JOIN posts p ON p.id=r.post_id WHERE r.media_id=$1",
+    )
+    .bind(id)
+    .bind(principal.require("profile.manage").is_ok())
+    .bind(principal.require("posts.manage").is_ok())
+    .bind(
+        principal
+            .require("posts.read_own")
+            .is_ok()
+            .then_some(principal.user.id),
+    )
+    .bind(principal.require("series.manage").is_ok())
+    .fetch_one(connection)
+    .await
+    .map_err(db)?;
+    Ok(MediaUsage {
+        reference_count,
+        references,
+    })
+}
+
+async fn insert_pending(
+    connection: &mut PgConnection,
+    new: &NewMedia,
+    meta: &RequestMeta,
+) -> Result<Media> {
+    let size =
+        i64::try_from(new.declared_size_bytes).map_err(|error| AppError::Internal(error.into()))?;
+    let row = sqlx::query(&format!(
+        "INSERT INTO media_assets (id,upload_key,original_filename,declared_mime_type,declared_size_bytes,upload_expires_at,uploaded_by) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING {MEDIA_COLUMNS}"
+    ))
+    .bind(new.id)
+    .bind(&new.upload_key)
+    .bind(&new.original_filename)
+    .bind(&new.declared_mime_type)
+    .bind(size)
+    .bind(new.upload_expires_at)
+    .bind(new.uploaded_by)
+    .fetch_one(&mut *connection)
+    .await
+    .map_err(db)?;
+    audit_resource(
+        connection,
+        Some(new.uploaded_by),
+        "media.create",
+        "media",
+        new.id,
+        meta,
+        json!({"declared_mime_type": new.declared_mime_type, "declared_size_bytes": size}),
+    )
+    .await?;
+    media(&row)
+}
+
 #[async_trait]
 impl MediaRepository for PgMediaRepository {
     #[tracing::instrument(name = "db.media_create", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
     async fn create(&self, new: &NewMedia, meta: &RequestMeta) -> Result<Media> {
         let _timer = METRICS.db_operation("media_create");
-        let size = i64::try_from(new.declared_size_bytes)
-            .map_err(|error| AppError::Internal(error.into()))?;
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        let row = sqlx::query(&format!(
-            "INSERT INTO media_assets (id,upload_key,original_filename,declared_mime_type,declared_size_bytes,upload_expires_at,uploaded_by) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING {MEDIA_COLUMNS}"
-        ))
-        .bind(new.id)
-        .bind(&new.upload_key)
-        .bind(&new.original_filename)
-        .bind(&new.declared_mime_type)
-        .bind(size)
-        .bind(new.upload_expires_at)
-        .bind(new.uploaded_by)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(db)?;
-        audit_resource(
-            &mut tx,
-            Some(new.uploaded_by),
-            "media.create",
-            "media",
-            new.id,
-            meta,
-            json!({"declared_mime_type": new.declared_mime_type, "declared_size_bytes": size}),
-        )
-        .await?;
+        let media = insert_pending(&mut tx, new, meta).await?;
         tx.commit().await.map_err(db)?;
-        media(&row)
+        Ok(media)
     }
 
     #[tracing::instrument(name = "db.media_find", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
@@ -181,48 +222,52 @@ impl MediaRepository for PgMediaRepository {
         })
     }
 
-    #[tracing::instrument(name = "db.media_mark_ready", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn mark_ready(
+    async fn reserve_blob(&self, digest: &str) -> Result<BlobReservation> {
+        self.reserve(digest).await
+    }
+
+    #[tracing::instrument(name = "db.media_mark_ready", skip_all)]
+    async fn store_image(
         &self,
-        id: Uuid,
-        storage_key: &str,
-        image: &VerifiedImage,
-        actor: &MediaActor<'_>,
-    ) -> Result<Option<Media>> {
+        file: CheckedUpload,
+        mode: MediaWrite<'_>,
+        reservation: BlobReservation,
+    ) -> Result<Option<MediaRecord>> {
         let _timer = METRICS.db_operation("media_mark_ready");
-        let size =
-            i64::try_from(image.size_bytes).map_err(|error| AppError::Internal(error.into()))?;
-        let width = i32::try_from(image.width).map_err(|error| AppError::Internal(error.into()))?;
-        let height =
-            i32::try_from(image.height).map_err(|error| AppError::Internal(error.into()))?;
-        let mut tx = begin(&self.pool).await.map_err(db)?;
-        let row = sqlx::query(&format!(
-            "UPDATE media_assets SET status='ready',storage_key=$2,mime_type=$3,size_bytes=$4,width=$5,height=$6 \
-             WHERE id=$1 AND status='pending' RETURNING {MEDIA_COLUMNS}"
-        ))
-        .bind(id)
-        .bind(storage_key)
-        .bind(image.mime_type)
-        .bind(size)
-        .bind(width)
-        .bind(height)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?;
-        let Some(row) = row else {
-            tx.commit().await.map_err(db)?;
-            return Ok(None);
-        };
-        audit(
-            &mut tx,
-            actor,
-            "media.ready",
-            id,
-            json!({"mime_type": image.mime_type, "size_bytes": size, "width": width, "height": height}),
+        self.store_checked(file, mode, reservation).await
+    }
+
+    async fn legacy_images(&self, limit: i64) -> Result<Vec<(Uuid, String)>> {
+        sqlx::query_as(
+            "SELECT id,storage_key FROM media_assets WHERE status='ready' AND blob_sha256 IS NULL
+             ORDER BY purge_attempted_at NULLS FIRST,id LIMIT $1",
         )
-        .await?;
-        tx.commit().await.map_err(db)?;
-        media(&row).map(Some)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)
+    }
+
+    async fn retired_objects(&self, limit: i64) -> Result<Vec<String>> {
+        self.reclaim(limit).await
+    }
+
+    async fn finish_deletion(&self, key: &str, deleted: bool) -> Result<()> {
+        let sql = if deleted {
+            "DELETE FROM media_object_deletions WHERE storage_key=$1"
+        } else {
+            "UPDATE media_object_deletions SET retry_at=now()+interval '1 minute' WHERE storage_key=$1"
+        };
+        sqlx::query(sql)
+            .bind(key)
+            .execute(&self.pool)
+            .await
+            .map_err(db)?;
+        Ok(())
+    }
+
+    async fn references(&self, id: Uuid, principal: &Principal) -> Result<MediaUsage> {
+        reference_usage(&mut *acquire(&self.pool).await.map_err(db)?, id, principal).await
     }
 
     #[tracing::instrument(name = "db.media_mark_rejected", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
@@ -267,6 +312,13 @@ impl MediaRepository for PgMediaRepository {
     ) -> Result<Media> {
         let _timer = METRICS.db_operation("media_update");
         let mut tx = begin(&self.pool).await.map_err(db)?;
+        let previous: Option<String> =
+            sqlx::query_scalar("SELECT alt_text FROM media_assets WHERE id=$1 FOR NO KEY UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db)?
+                .ok_or(AppError::NotFound)?;
         let row = sqlx::query(&format!(
             "UPDATE media_assets SET alt_text=$2 WHERE id=$1 RETURNING {MEDIA_COLUMNS}"
         ))
@@ -276,6 +328,23 @@ impl MediaRepository for PgMediaRepository {
         .await
         .map_err(db)?
         .ok_or(AppError::NotFound)?;
+        if previous.as_deref() != alt_text {
+            // 先锁媒体再锁站点，与含图片的发布操作顺序一致。
+            sqlx::query("SELECT singleton FROM site_state WHERE singleton FOR UPDATE")
+                .execute(&mut *tx)
+                .await
+                .map_err(db)?;
+            let visible: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM published_posts WHERE cover_media_id=$1)
+                 OR $1 IS NOT DISTINCT FROM (SELECT avatar_media_id FROM profiles ORDER BY updated_at DESC, id LIMIT 1)
+                 OR EXISTS(SELECT 1 FROM series s JOIN series_items i ON i.series_id=s.id
+                   JOIN published_posts pub ON pub.post_id=i.post_id WHERE s.cover_media_id=$1
+                   AND s.published_at IS NOT NULL)")
+                .bind(id).fetch_one(&mut *tx).await.map_err(db)?;
+            if visible {
+                crate::public_site::advance_generation(&mut tx).await?;
+            }
+        }
         audit(
             &mut tx,
             actor,
@@ -289,28 +358,25 @@ impl MediaRepository for PgMediaRepository {
     }
 
     #[tracing::instrument(name = "db.media_delete", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]
-    async fn delete(&self, id: Uuid, actor: &MediaActor<'_>) -> Result<MediaRecord> {
+    async fn delete(
+        &self,
+        id: Uuid,
+        principal: &Principal,
+        meta: &RequestMeta,
+    ) -> Result<Option<MediaUsage>> {
         let _timer = METRICS.db_operation("media_delete");
         let mut tx = begin(&self.pool).await.map_err(db)?;
-        // 行锁与引用方插入时的 FOR KEY SHARE 互斥：检查期间不会出现新的引用。
-        let row = sqlx::query(&format!(
-            "SELECT {MEDIA_COLUMNS} FROM media_assets WHERE id=$1 FOR UPDATE"
-        ))
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db)?
-        .ok_or(AppError::NotFound)?;
-        let record = read_record(&row).map_err(db)?;
-        let unreferenced: bool = sqlx::query_scalar(&format!(
-            "SELECT {UNREFERENCED} FROM media_assets m WHERE m.id=$1"
-        ))
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(db)?;
-        if !unreferenced {
-            return Err(AppError::Conflict(Conflict::MediaInUse));
+        // 引用方取得的外键锁与行锁互斥，删除判断和返回的明细取自同一次查询。
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM media_assets WHERE id=$1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(db)?
+                .ok_or(AppError::NotFound)?;
+        let usage = reference_usage(&mut tx, id, principal).await?;
+        if usage.reference_count > 0 {
+            return Ok(Some(usage));
         }
         sqlx::query("DELETE FROM media_assets WHERE id=$1")
             .bind(id)
@@ -325,14 +391,17 @@ impl MediaRepository for PgMediaRepository {
             })?;
         audit(
             &mut tx,
-            actor,
+            &MediaActor {
+                user_id: principal.user.id,
+                meta,
+            },
             "media.delete",
             id,
-            json!({"status": record.media.status.as_str()}),
+            json!({"status":status}),
         )
         .await?;
         tx.commit().await.map_err(db)?;
-        Ok(record)
+        Ok(None)
     }
 
     #[tracing::instrument(name = "db.media_stale", skip_all, fields(otel.kind = "client", db.system.name = "postgresql", otel.status_code = tracing::field::Empty))]

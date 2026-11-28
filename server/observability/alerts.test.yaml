@@ -62,19 +62,35 @@ tests:
             value: 1
           - labels: '{__name__="ALERTS",alertname="SilvaWorkerStalled",alertstate="firing",severity="critical",job="silva-worker",instance="b"}'
             value: 1
-  - name: 业务状态过期时不使用旧值触发发布告警
+  - name: 同步发布写入故障与内部快照读取故障可独立观测
     interval: 30s
     input_series:
-      - series: silva_publish_delayed{job="silva-api",instance="a"}
-        values: 1+0x20
-      - series: silva_business_metrics_up{job="silva-api",instance="a"}
-        values: 0+0x20
-      - series: silva_business_metrics_last_success_timestamp_seconds{job="silva-api",instance="a"}
-        values: 0+0x20
+      - series: silva_http_requests_total{job="silva-api",route="/api/v1/admin/posts/{id}/publication",method="PUT",status="500"}
+        values: 0+1x30
+      - series: silva_http_requests_total{job="silva-api",route="/internal/site-snapshot",method="GET",status="503"}
+        values: 0+1x30
+      - series: silva_http_request_duration_seconds_bucket{job="silva-api",route="/api/v1/admin/series/{id}/publication",method="DELETE",le="1"}
+        values: 0+0x30
+      - series: silva_http_request_duration_seconds_bucket{job="silva-api",route="/api/v1/admin/series/{id}/publication",method="DELETE",le="5"}
+        values: 0+5x30
+      - series: silva_http_request_duration_seconds_bucket{job="silva-api",route="/api/v1/admin/series/{id}/publication",method="DELETE",le="+Inf"}
+        values: 0+5x30
     promql_expr_test:
-      - expr: ALERTS{alertname="SilvaPublishDelayed",alertstate="firing"}
+      - expr: ALERTS{alertname="SilvaPublicationErrors",alertstate="firing"}
         eval_time: 5m
-        exp_samples: []
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaPublicationErrors",alertstate="firing",severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="SilvaPublicationSlow",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaPublicationSlow",alertstate="firing",severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="SilvaSnapshotErrors",alertstate="firing"}
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="SilvaSnapshotErrors",alertstate="firing",severity="warning"}'
+            value: 1
   - name: 只有日志导出失败也能触发告警
     interval: 30s
     input_series:

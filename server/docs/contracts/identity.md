@@ -22,14 +22,14 @@
 | 角色 | 权限边界 |
 | --- | --- |
 | Visitor | 无需登录，只读已上线公开内容。 |
-| Author | 创建文章、读取和编辑自己的文章及修订、上传和引用自己的已校验媒体、提交审核。不能审核、发布或取消发布。 |
-| Editor | 管理所有文章及媒体、审核指定修订、发布/取消发布、维护分类标签、个人资料及资源目录、调整 AI 展示、查看相关任务。 |
+| Author | 创建文章、读取和编辑自己的文章及修订、上传和引用自己的已校验媒体。 |
+| Editor | 管理所有文章及媒体、发布/取消发布、维护文章系列（`series.manage`）、分类标签、个人资料及资源目录、调整 AI 展示、查看相关任务。 |
 | Admin | 包含 Editor 权限；额外管理账户、分配内置角色、触发采集、重试发布、查看审计及系统状态。 |
 
 - 即使只有一个管理员，也保留 `users`、`roles`、`permissions`、`user_roles`、`role_permissions`。
-- 允许 Editor/Admin 审核自己编写的修订，但必须显式审核；不能隐式跳过审批。
+- Editor/Admin 可以直接发布当前已保存的文章。
 - 服务端逐管理用例执行 RBAC 和资源归属授权；包含嵌套修订读取、上传确认、媒体引用。隐藏前端按钮不算授权。
-- 只提供内置角色分配、账户创建与停用，不提供公开注册或自定义角色编辑。
+- 只提供内置角色分配、账户创建、停用与删除，不提供公开注册或自定义角色编辑。
 
 ## 第一里程碑管理端点
 
@@ -45,6 +45,7 @@
 | GET, POST | `/users` | Admin；分页列表（支持关键字、角色、状态筛选）、创建账户（201，`Location` 指向新账户）。 |
 | GET | `/users/{id}` | Admin；账户详情。 |
 | PATCH | `/users/{id}` | Admin；启用/停用及分配内置角色。 |
+| DELETE | `/users/{id}` | Admin；删除其他账户，成功返回 204。禁止自删（403），最后一个启用管理员受并发保护（409），目标不存在或已删除返回 404。 |
 | GET | `/roles` | Admin；内置角色。 |
 | GET | `/audit-logs` | Admin；审计记录，支持筛选。 |
 | GET | `/audit-logs/{id}` | Admin；单条审计记录。 |
@@ -57,6 +58,7 @@
 - 重放审计：`action = "auth.refresh_reuse"`，`actor_user_id = null`，`resource_type = "user"`，`resource_id` 为令牌所属账户，`metadata = {}`，不含任何令牌或哈希。
 - 创建账户：`{email,display_name,password,roles:["author"|"editor"|"admin"]}`，201 直接返回 User。
 - 修改账户：`{display_name?,status?:"active"|"disabled",roles?:[...],password?}`，200 直接返回 User。`password` 为管理员重置，设置后撤销该账户全部会话。
+- 删除账户：清除密码、角色及所有会话，账户从列表、详情和角色计数移除，不能再次启用。原邮箱可用于创建新 ID 的账户。保留原 ID、姓名和邮箱以追溯内容归属和审计，删除事务写入 `users.delete`。
 - 修改自己的密码：`{current_password,new_password}`；当前密码错误、新密码不符合 12..1024 字节或与当前密码相同时返回 422 `validation_error`，`details` 分别指向 `current_password`（`incorrect`）或 `new_password`（`out_of_range`、`unchanged`）；与登录共用每 IP 登录限流额度。角色必须是非空、无重复的内置键数组。
 - 新账户密码为 12..1024 UTF-8 字节；用户邮箱去首尾空白后转小写，最大 254 字节；显示名去空白后非空，最大 100 字节。
 - 凭据失败：401 `invalid_credentials`；令牌缺失、无效、已撤销或 refresh 失败：401 `unauthorized`；access token 过期：401 `token_expired`；无权限：403 `forbidden`。
@@ -84,13 +86,13 @@
 
 ## UUIDv7 和响应契约
 
-- 实体 ID、外键实体引用、Outbox ID、审计 ID、服务端 `request_id` 均为 UUIDv7，由 `shared::ids` / `Uuid::now_v7()` 统一生成；测试和种子同样遵守。
+- 实体 ID、外键实体引用、审计 ID、服务端 `request_id` 均为 UUIDv7，由 `shared::ids` / `Uuid::now_v7()` 统一生成；测试和种子同样遵守。
 - API 在路径、查询及 JSON 接受标准连字符 UUID 字符串。格式、版本位或变体位不符统一返回 **422 `validation_error`**，`details` 为 `{"field":"id","code":"invalid_format"}`（字段名随参数而定）。
 - OpenAPI 对业务 ID 定义 `type: string`、`format: uuid` 和同时约束版本位、变体位的 `pattern`。
 - DB 原生 uuid 类型外，使用 `is_uuid_v7()` 校验实体主键和无法经外键保证的引用。普通/复合外键继承已校验主键约束。
 - 外部来源原生 ID、slug、角色键、generation、revision_no、会话/租约 token 不属于实体 ID。
 - 响应结构、状态码选择和错误码登记表以 [API 响应结构规范](api-response.md) 为准。概要：成功为 `{"data": ...}`，分页列表另含 `{"meta":{"pagination":{...}}}`；分页默认 `page=1`、`per_page=20`、最大 100，稳定 ID 打破排序同分。失败为 `{"error":{"code","message","details","request_id"}}`，`details` 为字段级错误。
-- 公开接口未来只读 `active_generation` 公开投影；尚未上线时返回 503 `site_not_ready`，不得假装空数据。
+- 公开接口读取已提交的公开内容版本。空站点返回版本 0。
 
 ## 测试锚点
 

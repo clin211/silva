@@ -135,11 +135,37 @@ fn json_field_error(path: &str, message: &str) -> FieldError {
     }
 }
 
+/// 表单解码器会容忍无效转义并替换无效 UTF-8；在提取参数前按接口约定拒绝。
+pub(crate) fn validate_query_encoding(uri: &axum::http::Uri) -> HttpResult<()> {
+    let raw = uri.query().unwrap_or_default();
+    if !raw.contains('%') {
+        return Ok(());
+    }
+    let escapes_valid = raw.split('%').skip(1).all(|tail| {
+        tail.as_bytes()
+            .get(..2)
+            .is_some_and(|pair| pair.iter().all(u8::is_ascii_hexdigit))
+    });
+    if !escapes_valid
+        || percent_encoding::percent_decode_str(raw)
+            .decode_utf8()
+            .is_err()
+    {
+        return Err(ApiError::validation(vec![FieldError::new(
+            "",
+            FieldErrorCode::InvalidFormat,
+            "query string is not valid URL encoding",
+        )]));
+    }
+    Ok(())
+}
+
 /// 读取查询字符串的全部键值对；编码无效时返回 422 `invalid_format`。
 pub(crate) async fn query_pairs<S: Send + Sync>(
     parts: &mut Parts,
     state: &S,
 ) -> HttpResult<Vec<(String, String)>> {
+    validate_query_encoding(&parts.uri)?;
     let Query(pairs) = Query::<Vec<(String, String)>>::from_request_parts(parts, state)
         .await
         .map_err(|_| {
@@ -329,15 +355,29 @@ pub(crate) fn parse_uuid(field: &'static str, value: &str) -> Result<Uuid, Field
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RequestId(pub Uuid);
 
-/// 审计用的请求来源：直连 peer IP、User-Agent 与请求 ID；不信任客户端提供的转发头。
+/// 限流和审计使用相同的客户端地址。只有显式启用私网网关模式才接受一个有效的 X-Real-IP。
+fn client_ip(req: &Request, trust_proxy: bool) -> Option<IpAddr> {
+    let peer = req.extensions().get::<ConnectInfo<SocketAddr>>()?.0.ip();
+    if trust_proxy {
+        let mut values = req.headers().get_all("x-real-ip").iter();
+        if let Some(ip) = values
+            .next()
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<IpAddr>().ok())
+            && values.next().is_none()
+        {
+            return Some(ip.to_canonical());
+        }
+    }
+    Some(peer.to_canonical())
+}
+
+/// 审计用的请求来源：中间件解析的客户端地址、User-Agent 与请求 ID。
 pub(crate) struct ClientMeta(pub RequestMeta);
 impl<S: Send + Sync> FromRequestParts<S> for ClientMeta {
     type Rejection = std::convert::Infallible;
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let ip_address = parts
-            .extensions
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|value| value.0.ip().to_canonical());
+        let ip_address = parts.extensions.get::<IpAddr>().copied();
         let user_agent = parts
             .headers
             .get(header::USER_AGENT)
@@ -471,11 +511,11 @@ pub(crate) async fn context(
     let response = async move {
         let _in_flight = state.metrics.http_started();
         let started = Instant::now();
-        let ip = req
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|value| value.0.ip())
-            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let ip = client_ip(&req, state.config.trust_proxy_ip_header);
+        if let Some(ip) = ip {
+            req.extensions_mut().insert(ip);
+        }
+        let ip = ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
         let path = req.uri().path();
         let rate_ok = !path.starts_with("/api/")
             || (state
@@ -668,7 +708,7 @@ pub(crate) async fn change_password(
     Ok(response::no_content())
 }
 
-/// 保存 About 页面的单例个人资料，并返回站点发布目标。
+/// 保存 About 页面的单例个人资料，并返回公开内容版本。
 pub(crate) async fn save_profile(
     State(state): State<AppState>,
     ClientMeta(meta): ClientMeta,
@@ -766,6 +806,20 @@ pub(crate) async fn update_user(
     Ok(response::ok(user))
 }
 
+pub(crate) async fn delete_user(
+    State(state): State<AppState>,
+    ClientMeta(meta): ClientMeta,
+    headers: HeaderMap,
+    IdPath(id): IdPath,
+) -> HttpResult<Response> {
+    let principal = authorize(&state, &headers).await?;
+    state
+        .identity
+        .delete_user(&principal, id.as_uuid(), &meta)
+        .await?;
+    Ok(response::no_content())
+}
+
 pub(crate) async fn roles(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -810,6 +864,32 @@ pub(crate) async fn method_not_allowed() -> ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forwarded_address_requires_private_listener_and_one_valid_ip() {
+        let peer: SocketAddr = "192.0.2.10:24".parse().unwrap();
+        let visitor: IpAddr = "203.0.113.2".parse().unwrap();
+        let mut request = Request::new(axum::body::Body::empty());
+        request.extensions_mut().insert(ConnectInfo(peer));
+        let key = "x-real-ip";
+        request
+            .headers_mut()
+            .insert(key, HeaderValue::from_static("::ffff:203.0.113.2"));
+        assert_eq!(client_ip(&request, false), Some(peer.ip()));
+        assert_eq!(client_ip(&request, true), Some(visitor));
+        request
+            .headers_mut()
+            .append(key, HeaderValue::from_static("203.0.113.2"));
+        assert_eq!(client_ip(&request, true), Some(peer.ip()));
+        for value in ["203.0.113.2, 203.0.113.3", "not-an-ip", "203.0.113.2:80"] {
+            request
+                .headers_mut()
+                .insert(key, HeaderValue::from_static(value));
+            assert_eq!(client_ip(&request, true), Some(peer.ip()));
+        }
+        request.headers_mut().remove(key);
+        assert_eq!(client_ip(&request, true), Some(peer.ip()));
+    }
 
     #[test]
     fn rate_limit_groups_ipv6_by_64_prefix() {
@@ -925,6 +1005,9 @@ mod tests {
             ("/?role=owner", "role", FieldErrorCode::InvalidValue),
             ("/?status=locked", "status", FieldErrorCode::InvalidValue),
             ("/?q=a&q=b", "q", FieldErrorCode::Duplicate),
+            ("/?q=%FF", "", FieldErrorCode::InvalidFormat),
+            ("/?q=%2", "", FieldErrorCode::InvalidFormat),
+            ("/?q=a%00b", "q", FieldErrorCode::InvalidFormat),
             (
                 "/?role=admin&role=author",
                 "role",
